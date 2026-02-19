@@ -1,0 +1,16 @@
+services:
+  sharp-seeker:
+    build: .
+    container_name: sharp-seeker
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - sharp-data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  sharp-data:
