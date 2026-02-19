@@ -161,3 +161,103 @@ class Repository:
         cursor = await self._db.execute(sql, (since,))
         row = await cursor.fetchone()
         return row["cnt"] if row else 0
+
+    # ── Backtesting ────────────────────────────────────────────────
+
+    async def get_distinct_fetch_times(
+        self, start: str, end: str
+    ) -> list[str]:
+        """Get all distinct fetched_at timestamps in a date range."""
+        sql = """
+            SELECT DISTINCT fetched_at FROM odds_snapshots
+            WHERE fetched_at >= ? AND fetched_at <= ?
+            ORDER BY fetched_at ASC
+        """
+        cursor = await self._db.execute(sql, (start, end))
+        rows = await cursor.fetchall()
+        return [row["fetched_at"] for row in rows]
+
+    # ── Signal results (performance tracking) ──────────────────────
+
+    async def record_signal_result(
+        self,
+        event_id: str,
+        signal_type: str,
+        market_key: str,
+        outcome_name: str,
+        signal_direction: str,
+        signal_strength: float,
+        signal_at: str,
+        details_json: str | None = None,
+    ) -> None:
+        sql = """
+            INSERT OR IGNORE INTO signal_results
+                (event_id, signal_type, market_key, outcome_name,
+                 signal_direction, signal_strength, signal_at, details_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        await self._db.execute(
+            sql,
+            (
+                event_id, signal_type, market_key, outcome_name,
+                signal_direction, signal_strength, signal_at, details_json,
+            ),
+        )
+        await self._db.commit()
+
+    async def resolve_signal(
+        self, event_id: str, signal_type: str, market_key: str,
+        outcome_name: str, signal_at: str, result: str,
+    ) -> None:
+        """Mark a signal as won/lost/push."""
+        now = datetime.now(timezone.utc).isoformat()
+        sql = """
+            UPDATE signal_results
+            SET result = ?, resolved_at = ?
+            WHERE event_id = ? AND signal_type = ? AND market_key = ?
+              AND outcome_name = ? AND signal_at = ?
+        """
+        await self._db.execute(
+            sql, (result, now, event_id, signal_type, market_key, outcome_name, signal_at)
+        )
+        await self._db.commit()
+
+    async def get_unresolved_signals(self) -> list[aiosqlite.Row]:
+        """Get signals that haven't been resolved yet."""
+        sql = "SELECT * FROM signal_results WHERE result IS NULL"
+        cursor = await self._db.execute(sql)
+        return await cursor.fetchall()
+
+    async def get_performance_stats(
+        self, since: str | None = None
+    ) -> dict[str, dict[str, int]]:
+        """Get win/loss/push counts grouped by signal type."""
+        where = "WHERE result IS NOT NULL"
+        params: tuple = ()
+        if since:
+            where += " AND signal_at >= ?"
+            params = (since,)
+
+        sql = f"""
+            SELECT signal_type, result, COUNT(*) AS cnt
+            FROM signal_results
+            {where}
+            GROUP BY signal_type, result
+        """
+        cursor = await self._db.execute(sql, params)
+        rows = await cursor.fetchall()
+
+        stats: dict[str, dict[str, int]] = {}
+        for row in rows:
+            st = row["signal_type"]
+            stats.setdefault(st, {"won": 0, "lost": 0, "push": 0, "total": 0})
+            stats[st][row["result"]] = row["cnt"]
+            stats[st]["total"] += row["cnt"]
+        return stats
+
+    async def get_signal_count_since(self, since: str) -> int:
+        """Count signals recorded since the given timestamp."""
+        sql = "SELECT COUNT(*) AS cnt FROM signal_results WHERE signal_at >= ?"
+        cursor = await self._db.execute(sql, (since,))
+        row = await cursor.fetchone()
+        return row["cnt"] if row else 0

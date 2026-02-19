@@ -43,4 +43,22 @@ CREATE INDEX IF NOT EXISTS idx_snapshots_fetched
 
 CREATE INDEX IF NOT EXISTS idx_alerts_dedup
     ON sent_alerts(event_id, alert_type, market_key, outcome_name, sent_at);
+
+CREATE TABLE IF NOT EXISTS signal_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id TEXT NOT NULL,
+    signal_type TEXT NOT NULL,
+    market_key TEXT NOT NULL,
+    outcome_name TEXT NOT NULL,
+    signal_direction TEXT NOT NULL,
+    signal_strength REAL NOT NULL,
+    signal_at TEXT NOT NULL,
+    result TEXT,
+    resolved_at TEXT,
+    details_json TEXT,
+    UNIQUE(event_id, signal_type, market_key, outcome_name, signal_at)
+);
+
+CREATE INDEX IF NOT EXISTS idx_signal_results_resolved
+    ON signal_results(result, resolved_at);
 """
