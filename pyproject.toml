@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sharp-seeker"
-version = "0.1.0"
+version = "0.3.0"
 description = "Sharp sports betting activity detector with Discord alerts"
 requires-python = ">=3.11"
 dependencies = [
@@ -27,6 +27,7 @@ dev = [
 
 [project.scripts]
 sharp-seeker = "sharp_seeker.main:main"
+sharp-seeker-tools = "sharp_seeker.cli:cli"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

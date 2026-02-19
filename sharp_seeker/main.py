@@ -9,6 +9,8 @@ import sys
 import structlog
 
 from sharp_seeker.alerts.discord import DiscordAlerter
+from sharp_seeker.analysis.performance import PerformanceTracker
+from sharp_seeker.analysis.reports import ReportGenerator
 from sharp_seeker.api.odds_client import OddsClient
 from sharp_seeker.config import Settings
 from sharp_seeker.db.migrations import init_db
@@ -37,7 +39,7 @@ async def run() -> None:
     configure_logging(settings.log_level)
 
     log = structlog.get_logger()
-    log.info("starting", version="0.1.0")
+    log.info("starting", version="0.3.0")
 
     db = await init_db(settings.db_path)
     repo = Repository(db)
@@ -45,8 +47,12 @@ async def run() -> None:
     pipeline = DetectionPipeline(settings, repo)
     alerter = DiscordAlerter(settings, repo)
     budget = BudgetTracker(settings, repo)
+    perf_tracker = PerformanceTracker(repo)
+    report_gen = ReportGenerator(settings, repo)
 
-    poller = Poller(settings, odds_client, pipeline, alerter, budget)
+    poller = Poller(
+        settings, odds_client, pipeline, alerter, budget, perf_tracker, report_gen
+    )
     scheduler = create_scheduler(poller, settings)
 
     stop_event = asyncio.Event()

@@ -8,6 +8,8 @@ import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from sharp_seeker.alerts.discord import DiscordAlerter
+from sharp_seeker.analysis.performance import PerformanceTracker
+from sharp_seeker.analysis.reports import ReportGenerator
 from sharp_seeker.api.odds_client import OddsClient
 from sharp_seeker.config import Settings
 from sharp_seeker.engine.pipeline import DetectionPipeline
@@ -24,16 +26,20 @@ class Poller:
         pipeline: DetectionPipeline,
         alerter: DiscordAlerter,
         budget: BudgetTracker,
+        perf_tracker: PerformanceTracker,
+        report_gen: ReportGenerator,
     ) -> None:
         self._settings = settings
         self._odds_client = odds_client
         self._pipeline = pipeline
         self._alerter = alerter
         self._budget = budget
+        self._perf_tracker = perf_tracker
+        self._report_gen = report_gen
         self._cycle_count = 0
 
     async def poll_cycle(self) -> None:
-        """Execute one full poll → detect → alert cycle."""
+        """Execute one full poll → detect → alert → track cycle."""
         self._cycle_count += 1
         log.info("poll_cycle_start", cycle=self._cycle_count)
 
@@ -58,6 +64,7 @@ class Poller:
 
         if signals:
             await self._alerter.send_signals(signals)
+            await self._perf_tracker.record_signals(signals, fetched_at)
             log.info("poll_cycle_alerts", count=len(signals))
         else:
             log.info("poll_cycle_no_signals")
@@ -68,6 +75,20 @@ class Poller:
             await self._budget.send_daily_summary()
         except Exception:
             log.exception("daily_summary_error")
+
+    async def daily_report(self) -> None:
+        """Send daily signal performance report."""
+        try:
+            await self._report_gen.send_daily_report()
+        except Exception:
+            log.exception("daily_report_error")
+
+    async def weekly_report(self) -> None:
+        """Send weekly signal performance report."""
+        try:
+            await self._report_gen.send_weekly_report()
+        except Exception:
+            log.exception("weekly_report_error")
 
 
 def create_scheduler(poller: Poller, settings: Settings) -> AsyncIOScheduler:
@@ -91,6 +112,27 @@ def create_scheduler(poller: Poller, settings: Settings) -> AsyncIOScheduler:
         minute=0,
         id="daily_summary",
         name="Send daily budget summary",
+    )
+
+    # Daily signal performance report at 6 AM UTC
+    scheduler.add_job(
+        poller.daily_report,
+        "cron",
+        hour=6,
+        minute=0,
+        id="daily_report",
+        name="Send daily signal report",
+    )
+
+    # Weekly report every Monday at 7 AM UTC
+    scheduler.add_job(
+        poller.weekly_report,
+        "cron",
+        day_of_week="mon",
+        hour=7,
+        minute=0,
+        id="weekly_report",
+        name="Send weekly signal report",
     )
 
     return scheduler
