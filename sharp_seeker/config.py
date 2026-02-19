@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     rapid_spread_threshold: float = 0.5
     rapid_ml_threshold: float = 20.0
 
+    # Detection — Pinnacle divergence
+    pinnacle_spread_threshold: float = 1.0
+    pinnacle_ml_threshold: float = 30.0
+
+    # Detection — exchange monitor
+    exchange_shift_threshold: float = 0.05  # 5% implied probability shift
+
     # Alert dedup
     alert_cooldown_minutes: int = 60
 

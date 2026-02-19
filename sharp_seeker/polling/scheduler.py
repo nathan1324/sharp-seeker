@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 
 import structlog
@@ -31,17 +30,21 @@ class Poller:
         self._pipeline = pipeline
         self._alerter = alerter
         self._budget = budget
+        self._cycle_count = 0
 
     async def poll_cycle(self) -> None:
         """Execute one full poll → detect → alert cycle."""
-        log.info("poll_cycle_start")
+        self._cycle_count += 1
+        log.info("poll_cycle_start", cycle=self._cycle_count)
 
         if not await self._budget.should_poll():
             log.warning("poll_skipped_budget")
             return
 
         try:
-            results = await self._odds_client.fetch_all_sports_odds()
+            results = await self._odds_client.fetch_all_sports_odds(
+                cycle_count=self._cycle_count
+            )
         except Exception:
             log.exception("poll_fetch_error")
             return
@@ -59,6 +62,13 @@ class Poller:
         else:
             log.info("poll_cycle_no_signals")
 
+    async def daily_summary(self) -> None:
+        """Send daily budget summary to Discord."""
+        try:
+            await self._budget.send_daily_summary()
+        except Exception:
+            log.exception("daily_summary_error")
+
 
 def create_scheduler(poller: Poller, settings: Settings) -> AsyncIOScheduler:
     """Create and configure the APScheduler instance."""
@@ -71,6 +81,16 @@ def create_scheduler(poller: Poller, settings: Settings) -> AsyncIOScheduler:
         id="poll_odds",
         name="Poll odds and detect signals",
         next_run_time=datetime.now(timezone.utc),  # run immediately on start
+    )
+
+    # Daily budget summary at midnight UTC
+    scheduler.add_job(
+        poller.daily_summary,
+        "cron",
+        hour=0,
+        minute=0,
+        id="daily_summary",
+        name="Send daily budget summary",
     )
 
     return scheduler

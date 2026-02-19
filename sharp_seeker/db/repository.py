@@ -145,3 +145,19 @@ class Repository:
         cursor = await self._db.execute(sql)
         row = await cursor.fetchone()
         return row["credits_remaining"] if row else None
+
+    # ── Aggregate queries (for daily summaries) ────────────────────
+
+    async def get_alerts_count_since(self, since: str) -> int:
+        """Count alerts sent since the given ISO timestamp."""
+        sql = "SELECT COUNT(*) AS cnt FROM sent_alerts WHERE sent_at >= ?"
+        cursor = await self._db.execute(sql, (since,))
+        row = await cursor.fetchone()
+        return row["cnt"] if row else 0
+
+    async def get_poll_count_since(self, since: str) -> int:
+        """Count API polls since the given ISO timestamp."""
+        sql = "SELECT COUNT(*) AS cnt FROM api_usage WHERE timestamp >= ?"
+        cursor = await self._db.execute(sql, (since,))
+        row = await cursor.fetchone()
+        return row["cnt"] if row else 0

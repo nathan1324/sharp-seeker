@@ -82,6 +82,38 @@ class DiscordAlerter:
                 name="Details", value=f"Book: {bm} | Delta: {delta}", inline=False
             )
 
+        # Pinnacle divergence details
+        if signal.signal_type.value == "pinnacle_divergence":
+            us_book = signal.details.get("us_book", "?")
+            us_val = signal.details.get("us_value", "?")
+            pin_val = signal.details.get("pinnacle_value", "?")
+            embed.add_embed_field(
+                name="Details",
+                value=f"{us_book}: {us_val} vs Pinnacle: {pin_val}",
+                inline=False,
+            )
+
+        # Reverse line movement details
+        if signal.signal_type.value == "reverse_line":
+            us_dir = signal.details.get("us_direction", "?")
+            pin_dir = signal.details.get("pinnacle_direction", "?")
+            movers = ", ".join(signal.details.get("us_movers", []))
+            embed.add_embed_field(
+                name="Details",
+                value=f"US ({movers}): {us_dir} | Pinnacle: {pin_dir}",
+                inline=False,
+            )
+
+        # Exchange shift details
+        if signal.signal_type.value == "exchange_shift":
+            direction = signal.details.get("direction", "?")
+            shift = signal.details.get("shift", 0)
+            embed.add_embed_field(
+                name="Details",
+                value=f"Betfair {direction} | Probability shift: {shift:.1%}",
+                inline=False,
+            )
+
         embed.set_timestamp(datetime.now(timezone.utc).isoformat())
         embed.set_footer(text="Sharp Seeker")
 

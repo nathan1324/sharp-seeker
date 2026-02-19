@@ -7,7 +7,10 @@ import structlog
 from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
 from sharp_seeker.engine.base import BaseDetector, Signal
+from sharp_seeker.engine.exchange_monitor import ExchangeMonitorDetector
+from sharp_seeker.engine.pinnacle_divergence import PinnacleDivergenceDetector
 from sharp_seeker.engine.rapid_change import RapidChangeDetector
+from sharp_seeker.engine.reverse_line import ReverseLineDetector
 from sharp_seeker.engine.steam_move import SteamMoveDetector
 
 log = structlog.get_logger()
@@ -20,6 +23,9 @@ class DetectionPipeline:
         self._detectors: list[BaseDetector] = [
             SteamMoveDetector(settings, repo),
             RapidChangeDetector(settings, repo),
+            PinnacleDivergenceDetector(settings, repo),
+            ReverseLineDetector(settings, repo),
+            ExchangeMonitorDetector(settings, repo),
         ]
 
     async def run(self, fetched_at: str) -> list[Signal]:
