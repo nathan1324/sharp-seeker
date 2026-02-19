@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     odds_api_base_url: str = "https://api.the-odds-api.com/v4"
     odds_api_monthly_credits: int = 500
 
-    # Target bookmakers (comma-separated in .env, parsed to list)
+    # Target bookmakers (JSON array in .env)
     bookmakers: list[str] = Field(
         default=[
             "draftkings",
@@ -25,7 +25,7 @@ class Settings(BaseSettings):
         ]
     )
 
-    # Sports to track
+    # Sports to track (JSON array in .env)
     sports: list[str] = Field(
         default=["americanfootball_nfl", "basketball_nba", "baseball_mlb"]
     )
