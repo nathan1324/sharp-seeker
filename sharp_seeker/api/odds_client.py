@@ -11,6 +11,7 @@ import structlog
 from sharp_seeker.api.schemas import EventOddsSchema, SportSchema
 from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
+from sharp_seeker.polling.smart import filter_events_for_cycle
 
 log = structlog.get_logger()
 
@@ -88,8 +89,10 @@ class OddsClient:
         )
         return events
 
-    async def fetch_all_sports_odds(self) -> dict[str, list[EventOddsSchema]]:
-        """Fetch odds for all configured sports. Returns dict keyed by sport."""
+    async def fetch_all_sports_odds(
+        self, cycle_count: int = 1
+    ) -> dict[str, list[EventOddsSchema]]:
+        """Fetch odds for all configured sports with smart polling. Returns dict keyed by sport."""
         active = await self.get_active_sports()
         active_keys = {s.key for s in active if not s.has_outrights}
 
@@ -99,7 +102,9 @@ class OddsClient:
                 log.info("sport_not_active", sport=sport_key)
                 continue
             try:
-                results[sport_key] = await self.fetch_odds(sport_key)
+                all_events = await self.fetch_odds(sport_key)
+                # Smart polling: filter events based on proximity to game time
+                results[sport_key] = filter_events_for_cycle(all_events, cycle_count)
             except httpx.HTTPStatusError as exc:
                 log.error("odds_fetch_failed", sport=sport_key, status=exc.response.status_code)
         return results
