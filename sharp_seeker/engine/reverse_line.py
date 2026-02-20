@@ -49,6 +49,15 @@ class ReverseLineDetector(BaseDetector):
         if meta is None:
             return []
 
+        # Build current lines for value book detection
+        latest = await self._repo.get_latest_snapshots(event_id)
+        current_lines: dict[tuple[str, str, str], float] = {}
+        for _row in latest:
+            row = dict(_row)
+            mk, on, bm = row["market_key"], row["outcome_name"], row["bookmaker_key"]
+            val = row["point"] if mk != "h2h" and row["point"] is not None else row["price"]
+            current_lines[(mk, on, bm)] = val
+
         signals: list[Signal] = []
 
         for (market_key, outcome_name), book_data in grouped.items():
@@ -85,6 +94,17 @@ class ReverseLineDetector(BaseDetector):
                 pin_dir = "up" if pin_delta > 0 else "down"
                 strength = min(1.0, (abs(us_avg) + abs(pin_delta)) / 4.0)
 
+                # Value: US books moved the WRONG way — bet in Pinnacle's direction
+                # at US books (they have the "wrong" line)
+                value_books: list[dict] = []
+                for bm_key in us_movers:
+                    current_val = current_lines.get((market_key, outcome_name, bm_key))
+                    if current_val is not None:
+                        value_books.append({
+                            "bookmaker": bm_key,
+                            "current_line": current_val,
+                        })
+
                 signals.append(
                     Signal(
                         signal_type=SignalType.REVERSE_LINE,
@@ -106,6 +126,8 @@ class ReverseLineDetector(BaseDetector):
                             "us_movers": us_movers,
                             "pinnacle_direction": pin_dir,
                             "pinnacle_delta": round(pin_delta, 2),
+                            "bet_direction": pin_dir,
+                            "value_books": value_books,
                         },
                     )
                 )

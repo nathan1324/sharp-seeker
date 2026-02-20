@@ -33,14 +33,15 @@ def _snap(
 
 
 @pytest.mark.asyncio
-async def test_pinnacle_divergence_spread(settings, repo):
-    """US book diverging 1.5 from Pinnacle on spreads should trigger."""
+async def test_pinnacle_divergence_spread_value(settings, repo):
+    """US book with better spread than Pinnacle should trigger."""
     event = "evt_pin1"
     t = "2025-01-15T12:00:00+00:00"
 
+    # DK has -1.5 (better for bettor) vs Pinnacle -3.0 — value at DK
     snapshots = [
         _snap(event, "pinnacle", "spreads", "Lakers", -110, -3.0, t),
-        _snap(event, "draftkings", "spreads", "Lakers", -110, -4.5, t),  # 1.5 diff
+        _snap(event, "draftkings", "spreads", "Lakers", -110, -1.5, t),  # 1.5 better
         _snap(event, "fanduel", "spreads", "Lakers", -110, -3.0, t),    # same as pin
     ]
     await repo.insert_snapshots(snapshots)
@@ -56,14 +57,34 @@ async def test_pinnacle_divergence_spread(settings, repo):
 
 
 @pytest.mark.asyncio
-async def test_pinnacle_divergence_moneyline(settings, repo):
-    """US book diverging 40 cents from Pinnacle on h2h should trigger (threshold 30)."""
+async def test_pinnacle_divergence_no_signal_when_pinnacle_better(settings, repo):
+    """US book with worse spread than Pinnacle should NOT trigger."""
+    event = "evt_pin1b"
+    t = "2025-01-15T12:00:00+00:00"
+
+    # DK has -4.5 (worse for bettor) vs Pinnacle -3.0 — no value at DK
+    snapshots = [
+        _snap(event, "pinnacle", "spreads", "Lakers", -110, -3.0, t),
+        _snap(event, "draftkings", "spreads", "Lakers", -110, -4.5, t),  # 1.5 worse
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 0
+
+
+@pytest.mark.asyncio
+async def test_pinnacle_divergence_moneyline_value(settings, repo):
+    """US book with better ML odds than Pinnacle should trigger."""
     event = "evt_pin2"
     t = "2025-01-15T12:00:00+00:00"
 
+    # BetMGM has -110 (better for bettor) vs Pinnacle -150 — value at BetMGM
     snapshots = [
         _snap(event, "pinnacle", "h2h", "Lakers", -150, None, t),
-        _snap(event, "betmgm", "h2h", "Lakers", -190, None, t),  # 40 diff
+        _snap(event, "betmgm", "h2h", "Lakers", -110, None, t),  # 40 better
     ]
     await repo.insert_snapshots(snapshots)
 
