@@ -44,7 +44,6 @@ class OddsClient:
         """Fetch odds for a sport and store snapshots. Returns parsed events."""
         params: dict[str, Any] = {
             "apiKey": self._settings.odds_api_key,
-            "regions": "us,eu,uk",
             "markets": self.MARKETS,
             "bookmakers": ",".join(self._settings.bookmakers),
             "oddsFormat": "american",
