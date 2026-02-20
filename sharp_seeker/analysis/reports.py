@@ -30,6 +30,12 @@ _SIGNAL_FRIENDLY: dict[str, str] = {
 
 RESULT_EMOJI = {"won": "\u2705", "lost": "\u274c", "push": "\u2796"}
 
+_MARKET_FRIENDLY: dict[str, str] = {
+    "h2h": "Moneyline",
+    "spreads": "Spreads",
+    "totals": "Totals",
+}
+
 
 class ReportGenerator:
     def __init__(self, settings: Settings, repo: Repository) -> None:
@@ -100,6 +106,26 @@ class ReportGenerator:
                     inline=False,
                 )
 
+            # Per-market breakdown for this signal type
+            market_stats = await self._repo.get_performance_stats_by_market(
+                since, signal_type=signal_type_val
+            )
+            if market_stats:
+                mlines = []
+                for mk, mc in sorted(market_stats.items()):
+                    mname = _MARKET_FRIENDLY.get(mk, mk)
+                    mw = mc.get("won", 0)
+                    ml = mc.get("lost", 0)
+                    mp = mc.get("push", 0)
+                    md = mw + ml
+                    mr = f"{mw / md:.0%}" if md else "N/A"
+                    mlines.append(f"**{mname}**: {mr} ({mw}W/{ml}L/{mp}P)")
+                embed.add_embed_field(
+                    name="By Market",
+                    value="\n".join(mlines),
+                    inline=False,
+                )
+
             embed.set_timestamp(datetime.now(timezone.utc).isoformat())
             embed.set_footer(text="Sharp Seeker")
 
@@ -151,6 +177,24 @@ class ReportGenerator:
                 value="\n".join(lines) if lines else "No resolved signals",
                 inline=False,
             )
+
+            # Overall market breakdown
+            market_stats = await self._repo.get_performance_stats_by_market(since)
+            if market_stats:
+                mlines = []
+                for mk, mc in sorted(market_stats.items()):
+                    mname = _MARKET_FRIENDLY.get(mk, mk)
+                    mw = mc.get("won", 0)
+                    ml = mc.get("lost", 0)
+                    mp = mc.get("push", 0)
+                    md = mw + ml
+                    mr = f"{mw / md:.0%}" if md else "N/A"
+                    mlines.append(f"**{mname}**: {mr} ({mw}W/{ml}L/{mp}P)")
+                embed.add_embed_field(
+                    name="By Market",
+                    value="\n".join(mlines),
+                    inline=False,
+                )
         else:
             embed.add_embed_field(
                 name="Performance", value="No resolved signals yet", inline=False

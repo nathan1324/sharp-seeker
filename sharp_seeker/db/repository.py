@@ -266,6 +266,38 @@ class Repository:
             stats[st]["total"] += row["cnt"]
         return stats
 
+    async def get_performance_stats_by_market(
+        self,
+        since: str | None = None,
+        signal_type: str | None = None,
+    ) -> dict[str, dict[str, int]]:
+        """Get win/loss/push counts grouped by market_key."""
+        where = "WHERE result IS NOT NULL"
+        params: list[str] = []
+        if since:
+            where += " AND signal_at >= ?"
+            params.append(since)
+        if signal_type:
+            where += " AND signal_type = ?"
+            params.append(signal_type)
+
+        sql = f"""
+            SELECT market_key, result, COUNT(*) AS cnt
+            FROM signal_results
+            {where}
+            GROUP BY market_key, result
+        """
+        cursor = await self._db.execute(sql, tuple(params))
+        rows = await cursor.fetchall()
+
+        stats: dict[str, dict[str, int]] = {}
+        for row in rows:
+            mk = row["market_key"]
+            stats.setdefault(mk, {"won": 0, "lost": 0, "push": 0, "total": 0})
+            stats[mk][row["result"]] = row["cnt"]
+            stats[mk]["total"] += row["cnt"]
+        return stats
+
     async def get_signal_count_since(self, since: str) -> int:
         """Count signals recorded since the given timestamp."""
         sql = "SELECT COUNT(*) AS cnt FROM signal_results WHERE signal_at >= ?"

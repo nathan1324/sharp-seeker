@@ -26,7 +26,7 @@ Sharp Seeker automatically grades every signal against final game scores. Each m
 - **Spreads** — Did the team cover the spread at signal time?
 - **Totals** — Did the over/under hit against the line at signal time?
 
-Grading runs at 14:00 UTC (7 AM MT), followed by daily performance reports at 15:00 UTC (8 AM MT). Each signal type gets its own per-channel report with W/L/P record and individual outcomes, plus a combined summary goes to the default channel.
+Grading runs at 14:00 UTC (7 AM MT), followed by daily performance reports at 15:00 UTC (8 AM MT). Each signal type gets its own per-channel report with W/L/P record, individual outcomes, and a market-type breakdown (moneyline/spreads/totals), plus a combined summary goes to the default channel with overall stats by detector and by market.
 
 ### Signal Pipeline
 
