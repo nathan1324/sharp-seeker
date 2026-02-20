@@ -11,9 +11,33 @@ from discord_webhook import DiscordEmbed, DiscordWebhook
 from sharp_seeker.alerts.models import SIGNAL_COLORS, SIGNAL_LABELS
 from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
-from sharp_seeker.engine.base import Signal
+from sharp_seeker.engine.base import Signal, SignalType
 
 log = structlog.get_logger()
+
+# Map market_key to a readable name
+MARKET_NAMES = {
+    "spreads": "Spread",
+    "totals": "Total",
+    "h2h": "Moneyline",
+}
+
+
+def _strength_bar(strength: float) -> str:
+    """Render strength as a visual bar."""
+    filled = round(strength * 10)
+    return f"`{'█' * filled}{'░' * (10 - filled)}` **{strength:.0%}**"
+
+
+def _format_line_value(point: float | None, price: float | None, market: str) -> str:
+    """Format a line value for display."""
+    if market == "h2h" and price is not None:
+        return f"{price:+.0f}" if price < 0 else f"+{price:.0f}"
+    if point is not None:
+        return str(point)
+    if price is not None:
+        return f"{price:+.0f}" if price < 0 else f"+{price:.0f}"
+    return "?"
 
 
 class DiscordAlerter:
@@ -41,83 +65,110 @@ class DiscordAlerter:
             except Exception:
                 log.exception("alert_send_failed", event_id=signal.event_id)
 
-    def _send_embed(self, signal: Signal) -> None:
+    def _send_embed(self, sig: Signal) -> None:
         webhook = DiscordWebhook(url=self._webhook_url)
 
-        label = SIGNAL_LABELS.get(signal.signal_type, signal.signal_type.value)
-        color = SIGNAL_COLORS.get(signal.signal_type, 0x95A5A6)
+        label = SIGNAL_LABELS.get(sig.signal_type, sig.signal_type.value)
+        color = SIGNAL_COLORS.get(sig.signal_type, 0x95A5A6)
+        market_name = MARKET_NAMES.get(sig.market_key, sig.market_key)
+        matchup = f"{sig.away_team} @ {sig.home_team}"
 
-        embed = DiscordEmbed(
-            title=f"{label} Detected",
-            description=signal.description,
-            color=color,
-        )
+        # Title: signal type
+        # Description: matchup + big line movement block
+        title = f"{label}"
+        desc = self._build_description(sig, matchup, market_name)
 
-        embed.add_embed_field(name="Sport", value=signal.sport_key, inline=True)
+        embed = DiscordEmbed(title=title, description=desc, color=color)
+
+        # Strength bar
         embed.add_embed_field(
-            name="Matchup",
-            value=f"{signal.away_team} @ {signal.home_team}",
-            inline=True,
-        )
-        embed.add_embed_field(name="Market", value=signal.market_key, inline=True)
-        embed.add_embed_field(name="Outcome", value=signal.outcome_name, inline=True)
-        embed.add_embed_field(
-            name="Strength", value=f"{signal.strength:.0%}", inline=True
+            name="Strength", value=_strength_bar(sig.strength), inline=False
         )
 
-        # Add book-level details for steam moves
-        if signal.signal_type.value == "steam_move":
-            book_details = signal.details.get("book_details", [])
-            if book_details:
-                lines = [f"  {b['bookmaker']}: {b['delta']:+.1f}" for b in book_details]
-                embed.add_embed_field(
-                    name="Book Movements", value="\n".join(lines), inline=False
-                )
-
-        # Add delta for rapid changes
-        if signal.signal_type.value == "rapid_change":
-            bm = signal.details.get("bookmaker", "?")
-            delta = signal.details.get("delta", 0)
-            embed.add_embed_field(
-                name="Details", value=f"Book: {bm} | Delta: {delta}", inline=False
-            )
-
-        # Pinnacle divergence details
-        if signal.signal_type.value == "pinnacle_divergence":
-            us_book = signal.details.get("us_book", "?")
-            us_val = signal.details.get("us_value", "?")
-            pin_val = signal.details.get("pinnacle_value", "?")
-            embed.add_embed_field(
-                name="Details",
-                value=f"{us_book}: {us_val} vs Pinnacle: {pin_val}",
-                inline=False,
-            )
-
-        # Reverse line movement details
-        if signal.signal_type.value == "reverse_line":
-            us_dir = signal.details.get("us_direction", "?")
-            pin_dir = signal.details.get("pinnacle_direction", "?")
-            movers = ", ".join(signal.details.get("us_movers", []))
-            embed.add_embed_field(
-                name="Details",
-                value=f"US ({movers}): {us_dir} | Pinnacle: {pin_dir}",
-                inline=False,
-            )
-
-        # Exchange shift details
-        if signal.signal_type.value == "exchange_shift":
-            direction = signal.details.get("direction", "?")
-            shift = signal.details.get("shift", 0)
-            embed.add_embed_field(
-                name="Details",
-                value=f"Betfair {direction} | Probability shift: {shift:.1%}",
-                inline=False,
-            )
+        # Signal-type-specific details
+        self._add_details(embed, sig, market_name)
 
         embed.set_timestamp(datetime.now(timezone.utc).isoformat())
-        embed.set_footer(text="Sharp Seeker")
+        embed.set_footer(text=f"Sharp Seeker • {sig.sport_key.replace('_', ' ').title()}")
 
         webhook.add_embed(embed)
         resp = webhook.execute()
         if resp and hasattr(resp, "status_code") and resp.status_code >= 400:
             log.error("discord_webhook_error", status=resp.status_code)
+
+    def _build_description(self, sig: Signal, matchup: str, market_name: str) -> str:
+        """Build the main description block with prominent line movement."""
+        d = sig.details
+        lines = [f"**{matchup}**", ""]
+
+        if sig.signal_type == SignalType.RAPID_CHANGE:
+            bm = d.get("bookmaker", "?").title()
+            old_val = _format_line_value(d.get("old_point"), d.get("old_price"), sig.market_key)
+            new_val = _format_line_value(d.get("new_point"), d.get("new_price"), sig.market_key)
+            delta = d.get("delta", 0)
+            lines.append(f"📊 **{market_name}** — {sig.outcome_name}")
+            lines.append(f"## {old_val}  →  {new_val}")
+            lines.append(f"**Delta: {delta:+.1f}** at {bm}")
+
+        elif sig.signal_type == SignalType.STEAM_MOVE:
+            direction = d.get("direction", "?")
+            arrow = "📈" if direction == "up" else "📉"
+            books_moved = d.get("books_moved", 0)
+            avg_delta = d.get("avg_delta", 0)
+            lines.append(f"{arrow} **{market_name}** — {sig.outcome_name}")
+            lines.append(f"## {books_moved} books moved {direction}")
+            lines.append(f"**Avg delta: {avg_delta:+.1f}**")
+
+        elif sig.signal_type == SignalType.PINNACLE_DIVERGENCE:
+            us_book = d.get("us_book", "?").title()
+            us_val = d.get("us_value", "?")
+            pin_val = d.get("pinnacle_value", "?")
+            delta = d.get("delta", 0)
+            lines.append(f"📊 **{market_name}** — {sig.outcome_name}")
+            lines.append(f"## {us_book}: {us_val}  vs  Pinnacle: {pin_val}")
+            lines.append(f"**Divergence: {delta:+.1f}**")
+
+        elif sig.signal_type == SignalType.REVERSE_LINE:
+            us_dir = d.get("us_direction", "?")
+            pin_dir = d.get("pinnacle_direction", "?")
+            us_avg = d.get("us_avg_delta", 0)
+            pin_delta = d.get("pinnacle_delta", 0)
+            lines.append(f"🔄 **{market_name}** — {sig.outcome_name}")
+            lines.append(f"## US {us_dir} ({us_avg:+.1f})  vs  Pinnacle {pin_dir} ({pin_delta:+.1f})")
+            lines.append("**Public vs Sharp money divergence**")
+
+        elif sig.signal_type == SignalType.EXCHANGE_SHIFT:
+            direction = d.get("direction", "?")
+            shift = d.get("shift", 0)
+            old_prob = d.get("old_implied_prob", 0)
+            new_prob = d.get("new_implied_prob", 0)
+            arrow = "📈" if direction == "up" else "📉"
+            lines.append(f"{arrow} **{market_name}** — {sig.outcome_name}")
+            lines.append(f"## {old_prob:.1%}  →  {new_prob:.1%}")
+            lines.append(f"**Betfair shift: {shift:+.1%}**")
+
+        else:
+            lines.append(sig.description)
+
+        return "\n".join(lines)
+
+    def _add_details(self, embed: DiscordEmbed, sig: Signal, market_name: str) -> None:
+        """Add signal-type-specific detail fields."""
+        d = sig.details
+
+        if sig.signal_type == SignalType.STEAM_MOVE:
+            book_details = d.get("book_details", [])
+            if book_details:
+                lines = [f"`{b['bookmaker'].title():15s}` **{b['delta']:+.1f}**" for b in book_details]
+                embed.add_embed_field(
+                    name="Book Movements", value="\n".join(lines), inline=False
+                )
+
+        elif sig.signal_type == SignalType.REVERSE_LINE:
+            movers = d.get("us_movers", [])
+            if movers:
+                embed.add_embed_field(
+                    name="US Books Moving",
+                    value=", ".join(m.title() for m in movers),
+                    inline=False,
+                )
