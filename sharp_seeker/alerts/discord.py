@@ -57,8 +57,20 @@ def _format_odds(market: str, price: float | None, point: float | None) -> str:
 
 class DiscordAlerter:
     def __init__(self, settings: Settings, repo: Repository) -> None:
-        self._webhook_url = settings.discord_webhook_url
+        self._default_url = settings.discord_webhook_url
         self._repo = repo
+        # Per-signal-type webhook URLs; fall back to default if not set.
+        self._webhook_urls: dict[SignalType, str] = {}
+        _mapping = {
+            SignalType.STEAM_MOVE: settings.discord_webhook_steam_move,
+            SignalType.RAPID_CHANGE: settings.discord_webhook_rapid_change,
+            SignalType.PINNACLE_DIVERGENCE: settings.discord_webhook_pinnacle_divergence,
+            SignalType.REVERSE_LINE: settings.discord_webhook_reverse_line,
+            SignalType.EXCHANGE_SHIFT: settings.discord_webhook_exchange_shift,
+        }
+        for sig_type, url in _mapping.items():
+            if url:
+                self._webhook_urls[sig_type] = url
 
     async def send_signals(self, signals: list[Signal]) -> None:
         """Send each signal as a Discord embed and record it."""
@@ -81,7 +93,8 @@ class DiscordAlerter:
                 log.exception("alert_send_failed", event_id=signal.event_id)
 
     def _send_embed(self, sig: Signal) -> None:
-        webhook = DiscordWebhook(url=self._webhook_url)
+        url = self._webhook_urls.get(sig.signal_type, self._default_url)
+        webhook = DiscordWebhook(url=url)
 
         label = SIGNAL_LABELS.get(sig.signal_type, sig.signal_type.value)
         color = SIGNAL_COLORS.get(sig.signal_type, 0x95A5A6)
