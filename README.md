@@ -18,6 +18,16 @@ Every detector also identifies **value bets** — sportsbooks that haven't adjus
 
 When a signal is detected, a color-coded Discord embed is sent with the matchup, market, line movement, strength bar, book-level details, and actionable value bets.
 
+### Auto-Grading
+
+Sharp Seeker automatically grades every signal against final game scores. Each morning it fetches completed scores from The Odds API and resolves each signal as **won**, **lost**, or **push**:
+
+- **Moneyline (H2H)** — Did the picked team win?
+- **Spreads** — Did the team cover the spread at signal time?
+- **Totals** — Did the over/under hit against the line at signal time?
+
+Grading runs at 14:00 UTC (7 AM MT), followed by daily performance reports at 15:00 UTC (8 AM MT). Each signal type gets its own per-channel report with W/L/P record and individual outcomes, plus a combined summary goes to the default channel.
+
 ### Signal Pipeline
 
 Raw signals pass through a 3-stage filter before alerting:
@@ -32,13 +42,13 @@ Raw signals pass through a 3-stage filter before alerting:
 sharp_seeker/
 ├── main.py                      # Entry point, scheduler setup
 ├── config.py                    # Pydantic settings from .env
-├── cli.py                       # CLI tools (backtest, stats, reports)
+├── cli.py                       # CLI tools (backtest, stats, reports, resolve)
 ├── db/
-│   ├── models.py                # SQLite schema (4 tables)
+│   ├── models.py                # SQLite schema (5 tables)
 │   ├── repository.py            # Data access layer
 │   └── migrations.py            # Schema creation
 ├── api/
-│   ├── odds_client.py           # The Odds API client + credit tracking
+│   ├── odds_client.py           # The Odds API client + credit tracking + scores
 │   └── schemas.py               # Pydantic models for API responses
 ├── engine/
 │   ├── base.py                  # Signal dataclass + BaseDetector ABC
@@ -57,8 +67,9 @@ sharp_seeker/
 │   └── smart.py                 # Priority polling by game proximity
 ├── analysis/
 │   ├── backtest.py              # Replay historical snapshots through detectors
+│   ├── grader.py                # Auto-grade signals against final scores
 │   ├── performance.py           # Signal win/loss/push tracking
-│   └── reports.py               # Daily/weekly Discord reports
+│   └── reports.py               # Daily/weekly Discord reports (per-type + combined)
 └── deploy/
     ├── setup-server.sh          # Server provisioning (Docker install)
     ├── start.sh                 # Build and start container
@@ -151,7 +162,12 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 
 ### API Credit Usage
 
-Each poll costs **3 credits per sport** (using the `bookmakers` parameter instead of `regions` to avoid double-counting). With the default 1 sport (NBA), that's 3 credits per poll.
+Each odds poll costs **3 credits per sport** (using the `bookmakers` parameter instead of `regions` to avoid double-counting). The daily grading job costs **2 credits per sport** to fetch final scores. With the default 1 sport (NBA):
+
+| Action | Credits | Frequency |
+|--------|---------|-----------|
+| Odds poll | 3/sport | Every 20 min (during active hours) |
+| Score fetch (grading) | 2/sport | Once daily at 14:00 UTC |
 
 | Tier | Cost | Credits/mo | Polls (1 sport) | Effective Interval |
 |------|------|-----------|-----------------|-------------------|
@@ -183,13 +199,31 @@ sharp-seeker-tools backtest 2025-01-15T00:00:00 2025-01-16T00:00:00
 # Send a report to Discord
 sharp-seeker-tools report daily
 sharp-seeker-tools report weekly
+
+# Manually grade unresolved signals against final scores
+sharp-seeker-tools resolve
 ```
 
 In Docker:
 
 ```bash
 docker compose exec sharp-seeker sharp-seeker-tools stats
+docker compose exec sharp-seeker sharp-seeker-tools resolve
 ```
+
+## Scheduled Jobs
+
+The daemon runs these jobs automatically via APScheduler:
+
+| Job | UTC | Mountain | Purpose |
+|-----|-----|----------|---------|
+| Odds polling | Every 20 min | — | Fetch odds, detect signals, send alerts |
+| **Resolve signals** | **14:00** | **7:00 AM** | Grade yesterday's games against final scores |
+| **Daily report** | **15:00** | **8:00 AM** | Per-type + combined performance report |
+| **Weekly report** | **Mon 15:30** | **Mon 8:30 AM** | Weekly summary |
+| Budget summary | 00:00 | 5:00 PM (prev day) | API credit usage |
+
+Grading runs before the daily report so that results are included. Quiet hours (default 05:00–14:00 UTC) only affect odds polling — reports and grading run regardless.
 
 ## Server Management
 
