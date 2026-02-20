@@ -40,7 +40,7 @@ class OddsClient:
         resp.raise_for_status()
         return [SportSchema(**s) for s in resp.json()]
 
-    async def fetch_odds(self, sport_key: str) -> list[EventOddsSchema]:
+    async def fetch_odds(self, sport_key: str, fetched_at: str | None = None) -> list[EventOddsSchema]:
         """Fetch odds for a sport and store snapshots. Returns parsed events."""
         params: dict[str, Any] = {
             "apiKey": self._settings.odds_api_key,
@@ -55,7 +55,7 @@ class OddsClient:
         await self._track_credits(resp, f"/sports/{sport_key}/odds")
 
         events = [EventOddsSchema(**e) for e in resp.json()]
-        now = datetime.now(timezone.utc).isoformat()
+        now = fetched_at or datetime.now(timezone.utc).isoformat()
 
         # Flatten into snapshot rows
         rows = []
@@ -90,23 +90,27 @@ class OddsClient:
 
     async def fetch_all_sports_odds(
         self, cycle_count: int = 1
-    ) -> dict[str, list[EventOddsSchema]]:
-        """Fetch odds for all configured sports with smart polling. Returns dict keyed by sport."""
+    ) -> tuple[str, dict[str, list[EventOddsSchema]]]:
+        """Fetch odds for all configured sports with smart polling.
+
+        Returns (fetched_at, results_dict) so callers use the same timestamp.
+        """
         active = await self.get_active_sports()
         active_keys = {s.key for s in active if not s.has_outrights}
 
+        fetched_at = datetime.now(timezone.utc).isoformat()
         results: dict[str, list[EventOddsSchema]] = {}
         for sport_key in self._settings.sports:
             if sport_key not in active_keys:
                 log.info("sport_not_active", sport=sport_key)
                 continue
             try:
-                all_events = await self.fetch_odds(sport_key)
+                all_events = await self.fetch_odds(sport_key, fetched_at=fetched_at)
                 # Smart polling: filter events based on proximity to game time
                 results[sport_key] = filter_events_for_cycle(all_events, cycle_count)
             except httpx.HTTPStatusError as exc:
                 log.error("odds_fetch_failed", sport=sport_key, status=exc.response.status_code)
-        return results
+        return fetched_at, results
 
     # ── Internal ────────────────────────────────────────────────────
 
