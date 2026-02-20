@@ -144,7 +144,6 @@ class DetectionPipeline:
                 event_id=sig.event_id,
                 alert_type=sig.signal_type.value,
                 market_key=sig.market_key,
-                outcome_name=sig.outcome_name,
                 cooldown_minutes=self._settings.alert_cooldown_minutes,
             )
             if already_sent:
