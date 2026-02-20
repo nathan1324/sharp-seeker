@@ -261,3 +261,77 @@ class Repository:
         cursor = await self._db.execute(sql, (since,))
         row = await cursor.fetchone()
         return row["cnt"] if row else 0
+
+    async def get_reference_line(
+        self,
+        event_id: str,
+        market_key: str,
+        outcome_name: str,
+        signal_at: str,
+    ) -> float | None:
+        """Get the spread/total point closest to signal time.
+
+        Prefers Pinnacle, falls back to any bookmaker.
+        """
+        # Try Pinnacle first
+        sql = """
+            SELECT point FROM odds_snapshots
+            WHERE event_id = ? AND market_key = ? AND outcome_name = ?
+              AND fetched_at <= ? AND point IS NOT NULL
+              AND bookmaker_key = 'pinnacle'
+            ORDER BY fetched_at DESC
+            LIMIT 1
+        """
+        cursor = await self._db.execute(
+            sql, (event_id, market_key, outcome_name, signal_at)
+        )
+        row = await cursor.fetchone()
+        if row:
+            return row["point"]
+
+        # Fall back to any bookmaker
+        sql = """
+            SELECT point FROM odds_snapshots
+            WHERE event_id = ? AND market_key = ? AND outcome_name = ?
+              AND fetched_at <= ? AND point IS NOT NULL
+            ORDER BY fetched_at DESC
+            LIMIT 1
+        """
+        cursor = await self._db.execute(
+            sql, (event_id, market_key, outcome_name, signal_at)
+        )
+        row = await cursor.fetchone()
+        return row["point"] if row else None
+
+    async def get_resolved_signals_since(
+        self, since: str, signal_type: str | None = None
+    ) -> list[aiosqlite.Row]:
+        """Get resolved signals since a timestamp, optionally filtered by type."""
+        if signal_type:
+            sql = """
+                SELECT * FROM signal_results
+                WHERE result IS NOT NULL AND resolved_at >= ? AND signal_type = ?
+                ORDER BY resolved_at DESC
+            """
+            cursor = await self._db.execute(sql, (since, signal_type))
+        else:
+            sql = """
+                SELECT * FROM signal_results
+                WHERE result IS NOT NULL AND resolved_at >= ?
+                ORDER BY resolved_at DESC
+            """
+            cursor = await self._db.execute(sql, (since,))
+        return await cursor.fetchall()
+
+    async def get_event_teams(self, event_id: str) -> tuple[str, str] | None:
+        """Get (home_team, away_team) for an event from snapshots."""
+        sql = """
+            SELECT home_team, away_team FROM odds_snapshots
+            WHERE event_id = ?
+            LIMIT 1
+        """
+        cursor = await self._db.execute(sql, (event_id,))
+        row = await cursor.fetchone()
+        if row:
+            return row["home_team"], row["away_team"]
+        return None

@@ -9,6 +9,7 @@ import sys
 import structlog
 
 from sharp_seeker.alerts.discord import DiscordAlerter
+from sharp_seeker.analysis.grader import ScoreGrader
 from sharp_seeker.analysis.performance import PerformanceTracker
 from sharp_seeker.analysis.reports import ReportGenerator
 from sharp_seeker.api.odds_client import OddsClient
@@ -49,9 +50,11 @@ async def run() -> None:
     budget = BudgetTracker(settings, repo)
     perf_tracker = PerformanceTracker(repo)
     report_gen = ReportGenerator(settings, repo)
+    grader = ScoreGrader(settings, odds_client, repo)
 
     poller = Poller(
-        settings, odds_client, pipeline, alerter, budget, perf_tracker, report_gen
+        settings, odds_client, pipeline, alerter, budget, perf_tracker, report_gen,
+        grader,
     )
     scheduler = create_scheduler(poller, settings)
 

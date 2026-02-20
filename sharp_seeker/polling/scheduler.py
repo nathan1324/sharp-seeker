@@ -8,6 +8,7 @@ import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from sharp_seeker.alerts.discord import DiscordAlerter
+from sharp_seeker.analysis.grader import ScoreGrader
 from sharp_seeker.analysis.performance import PerformanceTracker
 from sharp_seeker.analysis.reports import ReportGenerator
 from sharp_seeker.api.odds_client import OddsClient
@@ -28,6 +29,7 @@ class Poller:
         budget: BudgetTracker,
         perf_tracker: PerformanceTracker,
         report_gen: ReportGenerator,
+        grader: ScoreGrader,
     ) -> None:
         self._settings = settings
         self._odds_client = odds_client
@@ -36,6 +38,7 @@ class Poller:
         self._budget = budget
         self._perf_tracker = perf_tracker
         self._report_gen = report_gen
+        self._grader = grader
         self._cycle_count = 0
 
     async def poll_cycle(self) -> None:
@@ -102,6 +105,14 @@ class Poller:
         except Exception:
             log.exception("weekly_report_error")
 
+    async def resolve_signals(self) -> None:
+        """Grade unresolved signals against final game scores."""
+        try:
+            counts = await self._grader.resolve_all()
+            log.info("resolve_signals_done", **counts)
+        except Exception:
+            log.exception("resolve_signals_error")
+
 
 def create_scheduler(poller: Poller, settings: Settings) -> AsyncIOScheduler:
     """Create and configure the APScheduler instance."""
@@ -126,23 +137,33 @@ def create_scheduler(poller: Poller, settings: Settings) -> AsyncIOScheduler:
         name="Send daily budget summary",
     )
 
-    # Daily signal performance report at 6 AM UTC
+    # Resolve signals at 14:00 UTC (7 AM MT) — grade yesterday's games
+    scheduler.add_job(
+        poller.resolve_signals,
+        "cron",
+        hour=14,
+        minute=0,
+        id="resolve_signals",
+        name="Grade signals against final scores",
+    )
+
+    # Daily signal performance report at 15:00 UTC (8 AM MT) — after grading
     scheduler.add_job(
         poller.daily_report,
         "cron",
-        hour=6,
+        hour=15,
         minute=0,
         id="daily_report",
         name="Send daily signal report",
     )
 
-    # Weekly report every Monday at 7 AM UTC
+    # Weekly report every Monday at 15:30 UTC (8:30 AM MT)
     scheduler.add_job(
         poller.weekly_report,
         "cron",
         day_of_week="mon",
-        hour=7,
-        minute=0,
+        hour=15,
+        minute=30,
         id="weekly_report",
         name="Send weekly signal report",
     )

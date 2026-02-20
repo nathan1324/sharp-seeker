@@ -112,6 +112,33 @@ class OddsClient:
                 log.error("odds_fetch_failed", sport=sport_key, status=exc.response.status_code)
         return fetched_at, results
 
+    async def fetch_scores(
+        self, sport_key: str, days_from: int = 1
+    ) -> list[dict]:
+        """Fetch completed game scores for a sport.
+
+        Uses /v4/sports/{sport}/scores (costs ~2 credits per call with daysFrom).
+        Returns only completed games.
+        """
+        params = {
+            "apiKey": self._settings.odds_api_key,
+            "daysFrom": days_from,
+        }
+        resp = await self._client.get(f"/sports/{sport_key}/scores", params=params)
+        resp.raise_for_status()
+
+        await self._track_credits(resp, f"/sports/{sport_key}/scores")
+
+        all_games = resp.json()
+        completed = [g for g in all_games if g.get("completed")]
+        log.info(
+            "scores_fetched",
+            sport=sport_key,
+            total=len(all_games),
+            completed=len(completed),
+        )
+        return completed
+
     # ── Internal ────────────────────────────────────────────────────
 
     async def _track_credits(self, resp: httpx.Response, endpoint: str) -> None:

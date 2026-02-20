@@ -9,8 +9,10 @@ import sys
 import structlog
 
 from sharp_seeker.analysis.backtest import Backtester
+from sharp_seeker.analysis.grader import ScoreGrader
 from sharp_seeker.analysis.performance import PerformanceTracker
 from sharp_seeker.analysis.reports import ReportGenerator
+from sharp_seeker.api.odds_client import OddsClient
 from sharp_seeker.config import Settings
 from sharp_seeker.db.migrations import init_db
 from sharp_seeker.db.repository import Repository
@@ -46,6 +48,25 @@ async def run_report(period: str) -> None:
         await report_gen.send_weekly_report()
         print("Weekly report sent to Discord.")
 
+    await db.close()
+
+
+async def run_resolve() -> None:
+    settings = Settings()  # type: ignore[call-arg]
+    configure_logging(settings.log_level)
+
+    db = await init_db(settings.db_path)
+    repo = Repository(db)
+    odds_client = OddsClient(settings, repo)
+    grader = ScoreGrader(settings, odds_client, repo)
+
+    counts = await grader.resolve_all()
+    print(
+        f"Grading complete: {counts['resolved']} resolved, "
+        f"{counts['skipped']} skipped, {counts['errors']} errors"
+    )
+
+    await odds_client.close()
     await db.close()
 
 
@@ -86,6 +107,7 @@ def cli() -> None:
     rp.add_argument("period", choices=["daily", "weekly"], help="Report period")
 
     sub.add_parser("stats", help="Show signal performance stats")
+    sub.add_parser("resolve", help="Grade unresolved signals against final scores")
 
     args = parser.parse_args()
 
@@ -95,6 +117,8 @@ def cli() -> None:
         asyncio.run(run_report(args.period))
     elif args.command == "stats":
         asyncio.run(run_stats())
+    elif args.command == "resolve":
+        asyncio.run(run_resolve())
     else:
         parser.print_help()
         sys.exit(1)
