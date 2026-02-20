@@ -18,10 +18,7 @@ class Settings(BaseSettings):
             "draftkings",
             "fanduel",
             "betmgm",
-            "caesars",
-            "williamhill_us",
             "pinnacle",
-            "betfair_ex_eu",
         ]
     )
 
