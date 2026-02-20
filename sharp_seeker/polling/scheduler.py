@@ -61,7 +61,7 @@ class Poller:
             return
 
         try:
-            results = await self._odds_client.fetch_all_sports_odds(
+            fetched_at, results = await self._odds_client.fetch_all_sports_odds(
                 cycle_count=self._cycle_count
             )
         except Exception:
@@ -72,7 +72,6 @@ class Poller:
             log.info("poll_no_data")
             return
 
-        fetched_at = datetime.now(timezone.utc).isoformat()
         signals = await self._pipeline.run(fetched_at)
 
         if signals:
