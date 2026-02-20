@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     # Sports to track (JSON array in .env)
     sports: list[str] = Field(
-        default=["americanfootball_nfl", "basketball_nba", "baseball_mlb"]
+        default=["basketball_nba"]
     )
 
     # Discord
