@@ -99,13 +99,15 @@ class ExchangeMonitorDetector(BaseDetector):
                 if direction == "shortened" and us_prob < new_prob:
                     value_books.append({
                         "bookmaker": bm_key,
-                        "current_line": us_row["price"],
+                        "price": us_row["price"],
+                        "point": us_row.get("point"),
                         "implied_prob": round(us_prob, 4),
                     })
                 elif direction == "drifted" and us_prob > new_prob:
                     value_books.append({
                         "bookmaker": bm_key,
-                        "current_line": us_row["price"],
+                        "price": us_row["price"],
+                        "point": us_row.get("point"),
                         "implied_prob": round(us_prob, 4),
                     })
 

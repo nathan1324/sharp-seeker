@@ -40,6 +40,21 @@ def _format_line_value(point: float | None, price: float | None, market: str) ->
     return "?"
 
 
+def _format_odds(market: str, price: float | None, point: float | None) -> str:
+    """Format odds for display: 'spreads -3.5 (-110)' or 'h2h +150'."""
+    if market == "h2h":
+        if price is not None:
+            return f"{price:+.0f}"
+        return "?"
+    # spreads / totals: show point and price
+    parts = []
+    if point is not None:
+        parts.append(f"{point:+.1f}" if point != int(point) else f"{point:+.0f}")
+    if price is not None:
+        parts.append(f"({price:+.0f})")
+    return " ".join(parts) if parts else "?"
+
+
 class DiscordAlerter:
     def __init__(self, settings: Settings, repo: Repository) -> None:
         self._webhook_url = settings.discord_webhook_url
@@ -125,8 +140,11 @@ class DiscordAlerter:
             pin_val = d.get("pinnacle_value", "?")
             delta = d.get("delta", 0)
             lines.append(f"💰 **{market_name}** — {sig.outcome_name}")
-            lines.append(f"## {us_book}: {us_val}  vs  Pinnacle: {pin_val}")
-            lines.append(f"**Value edge: {delta:+.1f}** — bet at {us_book}")
+            if sig.market_key == "h2h":
+                lines.append(f"## {us_book}: {us_val:+.0f}  vs  Pinnacle: {pin_val:+.0f}")
+            else:
+                lines.append(f"## {us_book}: {us_val}  vs  Pinnacle: {pin_val}")
+            lines.append(f"**Value edge: {delta:+.1f}** — bet {sig.outcome_name} at {us_book}")
 
         elif sig.signal_type == SignalType.REVERSE_LINE:
             us_dir = d.get("us_direction", "?")
@@ -178,13 +196,10 @@ class DiscordAlerter:
             lines = []
             for vb in value_books:
                 bm = vb["bookmaker"].title()
-                line = vb["current_line"]
-                if isinstance(line, float) and abs(line) > 50:
-                    lines.append(f"**{bm}** — {line:+.0f}")
-                else:
-                    lines.append(f"**{bm}** — {line}")
+                odds = _format_odds(sig.market_key, vb.get("price"), vb.get("point"))
+                lines.append(f"**{bm}** — {sig.outcome_name} **{odds}**")
             embed.add_embed_field(
-                name="💰 Value Bets (stale lines)",
+                name="💰 Value Bets",
                 value="\n".join(lines),
                 inline=False,
             )

@@ -47,12 +47,11 @@ class SteamMoveDetector(BaseDetector):
 
         # Build current lines for value book detection
         latest = await self._repo.get_latest_snapshots(event_id)
-        current_lines: dict[tuple[str, str, str], float] = {}
+        current_lines: dict[tuple[str, str, str], dict] = {}
         for _row in latest:
             row = dict(_row)
             mk, on, bm = row["market_key"], row["outcome_name"], row["bookmaker_key"]
-            val = row["point"] if row["market_key"] != "h2h" and row["point"] is not None else row["price"]
-            current_lines[(mk, on, bm)] = val
+            current_lines[(mk, on, bm)] = row
 
         signals: list[Signal] = []
 
@@ -104,11 +103,12 @@ class SteamMoveDetector(BaseDetector):
                 if bm_key in moved_books:
                     continue
                 # This book didn't move — still on old line
-                current_val = current_lines.get((market_key, outcome_name, bm_key))
-                if current_val is not None:
+                current = current_lines.get((market_key, outcome_name, bm_key))
+                if current is not None:
                     value_books.append({
                         "bookmaker": bm_key,
-                        "current_line": current_val,
+                        "price": current["price"],
+                        "point": current.get("point"),
                     })
 
             signals.append(
