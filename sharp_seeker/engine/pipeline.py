@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
+
 import structlog
 
 from sharp_seeker.config import Settings
@@ -56,9 +58,35 @@ class DetectionPipeline:
             min_strength=min_str,
         )
 
+        # Deduplicate opposite sides of the same market.
+        # e.g. "Nuggets -7.5" and "Clippers +7.5" are mirror signals — keep only
+        # the most actionable side (more value books, then higher strength).
+        grouped: dict[tuple[str, str, str], list[Signal]] = defaultdict(list)
+        for sig in strong_signals:
+            grouped[(sig.event_id, sig.signal_type.value, sig.market_key)].append(sig)
+
+        deduped_signals: list[Signal] = []
+        for key, sigs in grouped.items():
+            if len(sigs) <= 1:
+                deduped_signals.extend(sigs)
+            else:
+                best = max(
+                    sigs,
+                    key=lambda s: (len(s.details.get("value_books", [])), s.strength),
+                )
+                deduped_signals.append(best)
+                log.debug(
+                    "market_side_dedup",
+                    event_id=key[0],
+                    signal_type=key[1],
+                    market=key[2],
+                    kept=best.outcome_name,
+                    dropped=[s.outcome_name for s in sigs if s is not best],
+                )
+
         # Deduplicate against recently sent alerts
         new_signals: list[Signal] = []
-        for sig in strong_signals:
+        for sig in deduped_signals:
             already_sent = await self._repo.was_alert_sent_recently(
                 event_id=sig.event_id,
                 alert_type=sig.signal_type.value,
@@ -74,6 +102,8 @@ class DetectionPipeline:
         log.info(
             "pipeline_complete",
             total_signals=len(all_signals),
+            after_strength=len(strong_signals),
+            after_side_dedup=len(deduped_signals),
             new_signals=len(new_signals),
         )
         return new_signals

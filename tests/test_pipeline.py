@@ -67,3 +67,34 @@ async def test_deduplication(settings, repo):
     # Second run should be deduped
     signals2 = await pipeline.run(t2)
     assert len(signals2) == 0
+
+
+@pytest.mark.asyncio
+async def test_market_side_dedup(settings, repo):
+    """Both sides of the same market should be deduped to one signal."""
+    event = "evt_sides"
+    t1 = "2025-01-15T12:00:00+00:00"
+    t2 = "2025-01-15T12:20:00+00:00"
+
+    # Create data for BOTH sides of a spread that trigger a steam move.
+    # Three books all move Lakers from -3.5 to -4.0 AND Celtics from +3.5 to +4.0.
+    snapshots = []
+    for bm in ("draftkings", "fanduel", "betmgm"):
+        # Lakers side
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
+        # Celtics side (mirror)
+        snapshots.append(_snap(event, bm, "spreads", "Celtics", -110, 3.5, t1))
+        snapshots.append(_snap(event, bm, "spreads", "Celtics", -110, 4.0, t2))
+
+    await repo.insert_snapshots(snapshots)
+
+    pipeline = DetectionPipeline(settings, repo)
+    signals = await pipeline.run(t2)
+
+    # Should only get ONE steam move signal for spreads, not two
+    steam_spread = [
+        s for s in signals
+        if s.signal_type.value == "steam_move" and s.market_key == "spreads"
+    ]
+    assert len(steam_spread) == 1
