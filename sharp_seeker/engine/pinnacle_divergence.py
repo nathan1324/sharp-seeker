@@ -7,6 +7,7 @@ import structlog
 from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
 from sharp_seeker.engine.base import BaseDetector, Signal, SignalType
+from sharp_seeker.engine.exchange_monitor import american_to_implied_prob
 
 log = structlog.get_logger()
 
@@ -74,8 +75,10 @@ class PinnacleDivergenceDetector(BaseDetector):
                 if market_key == "h2h":
                     us_val = row["price"]
                     pin_val = pinnacle["price"]
-                    delta = abs(us_val - pin_val)
-                    threshold = self._settings.pinnacle_ml_threshold
+                    us_prob = american_to_implied_prob(us_val)
+                    pin_prob = american_to_implied_prob(pin_val)
+                    delta = abs(us_prob - pin_prob)
+                    threshold = self._settings.pinnacle_ml_prob_threshold
                 else:
                     if row["point"] is not None and pinnacle["point"] is not None:
                         us_val = row["point"]
@@ -94,6 +97,16 @@ class PinnacleDivergenceDetector(BaseDetector):
 
                 strength = min(1.0, delta / (threshold * 3))
 
+                details: dict = {
+                    "us_book": bm_key,
+                    "us_value": us_val,
+                    "pinnacle_value": pin_val,
+                    "delta": round(delta, 4 if market_key == "h2h" else 2),
+                }
+                if market_key == "h2h":
+                    details["us_implied_prob"] = round(us_prob, 4)
+                    details["pinnacle_implied_prob"] = round(pin_prob, 4)
+
                 signals.append(
                     Signal(
                         signal_type=SignalType.PINNACLE_DIVERGENCE,
@@ -107,14 +120,13 @@ class PinnacleDivergenceDetector(BaseDetector):
                         description=(
                             f"Value at {bm_key}: {outcome_name} "
                             f"{market_key} better than Pinnacle "
+                            f"(delta {delta:.4f})"
+                            if market_key == "h2h"
+                            else f"Value at {bm_key}: {outcome_name} "
+                            f"{market_key} better than Pinnacle "
                             f"(delta {delta:.1f})"
                         ),
-                        details={
-                            "us_book": bm_key,
-                            "us_value": us_val,
-                            "pinnacle_value": pin_val,
-                            "delta": round(delta, 2),
-                        },
+                        details=details,
                     )
                 )
 

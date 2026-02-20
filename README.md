@@ -154,7 +154,7 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `RAPID_SPREAD_THRESHOLD` | `0.5` | Min spread change (points) |
 | `RAPID_ML_THRESHOLD` | `20` | Min moneyline change (cents) |
 | `PINNACLE_SPREAD_THRESHOLD` | `1.0` | Divergence threshold (points) |
-| `PINNACLE_ML_THRESHOLD` | `30` | Divergence threshold (cents) |
+| `PINNACLE_ML_PROB_THRESHOLD` | `0.03` | ML divergence threshold (implied prob, 3%) |
 | `EXCHANGE_SHIFT_THRESHOLD` | `0.05` | Implied probability shift (5%) |
 | `MIN_SIGNAL_STRENGTH` | `0.5` | Min strength to alert (0.0–1.0) |
 | `ALERT_COOLDOWN_MINUTES` | `60` | Dedup cooldown per signal |
