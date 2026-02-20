@@ -36,10 +36,10 @@ class DiscordAlerter:
                 log.info(
                     "alert_sent",
                     signal_type=signal.signal_type.value,
-                    event=signal.event_id,
+                    event_id=signal.event_id,
                 )
             except Exception:
-                log.exception("alert_send_failed", event=signal.event_id)
+                log.exception("alert_send_failed", event_id=signal.event_id)
 
     def _send_embed(self, signal: Signal) -> None:
         webhook = DiscordWebhook(url=self._webhook_url)
