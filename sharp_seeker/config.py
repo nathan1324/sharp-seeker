@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     quiet_hours_start: int = 5
     quiet_hours_end: int = 14
 
+    # Minimum signal strength to alert (0.0–1.0)
+    min_signal_strength: float = 0.5
+
     # Alert dedup
     alert_cooldown_minutes: int = 60
 

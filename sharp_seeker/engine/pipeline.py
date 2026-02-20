@@ -46,9 +46,19 @@ class DetectionPipeline:
                         event_id=event_id,
                     )
 
+        # Filter by minimum strength
+        min_str = self._settings.min_signal_strength
+        strong_signals = [s for s in all_signals if s.strength >= min_str]
+        log.info(
+            "strength_filter",
+            before=len(all_signals),
+            after=len(strong_signals),
+            min_strength=min_str,
+        )
+
         # Deduplicate against recently sent alerts
         new_signals: list[Signal] = []
-        for sig in all_signals:
+        for sig in strong_signals:
             already_sent = await self._repo.was_alert_sent_recently(
                 event_id=sig.event_id,
                 alert_type=sig.signal_type.value,
