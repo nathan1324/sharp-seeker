@@ -92,20 +92,31 @@ class Repository:
         event_id: str,
         alert_type: str,
         market_key: str,
-        outcome_name: str,
         cooldown_minutes: int,
+        outcome_name: str | None = None,
     ) -> bool:
-        """Check if an alert was sent within the cooldown window."""
-        cutoff = datetime.now(timezone.utc).isoformat()
-        sql = """
-            SELECT 1 FROM sent_alerts
-            WHERE event_id = ? AND alert_type = ? AND market_key = ? AND outcome_name = ?
-              AND sent_at >= datetime(?, '-' || ? || ' minutes')
-            LIMIT 1
+        """Check if an alert was sent within the cooldown window.
+
+        When outcome_name is None, checks at market level (any side).
         """
-        cursor = await self._db.execute(
-            sql, (event_id, alert_type, market_key, outcome_name, cutoff, cooldown_minutes)
-        )
+        cutoff = datetime.now(timezone.utc).isoformat()
+        if outcome_name is not None:
+            sql = """
+                SELECT 1 FROM sent_alerts
+                WHERE event_id = ? AND alert_type = ? AND market_key = ? AND outcome_name = ?
+                  AND sent_at >= datetime(?, '-' || ? || ' minutes')
+                LIMIT 1
+            """
+            params = (event_id, alert_type, market_key, outcome_name, cutoff, cooldown_minutes)
+        else:
+            sql = """
+                SELECT 1 FROM sent_alerts
+                WHERE event_id = ? AND alert_type = ? AND market_key = ?
+                  AND sent_at >= datetime(?, '-' || ? || ' minutes')
+                LIMIT 1
+            """
+            params = (event_id, alert_type, market_key, cutoff, cooldown_minutes)
+        cursor = await self._db.execute(sql, params)
         return (await cursor.fetchone()) is not None
 
     async def record_alert(

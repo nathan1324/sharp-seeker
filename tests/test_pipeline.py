@@ -101,6 +101,49 @@ async def test_market_side_dedup(settings, repo):
     assert len(steam_spread) == 1
 
 
+@pytest.mark.asyncio
+async def test_mirror_side_suppressed_by_cooldown(settings, repo):
+    """After alerting one side of an h2h market, the mirror side should be
+    suppressed within the cooldown window (market-level dedup)."""
+    event = "evt_mirror"
+    t1 = "2025-01-15T12:00:00+00:00"
+    t2 = "2025-01-15T12:20:00+00:00"
+
+    # Create h2h data for both sides that would trigger a steam move.
+    # Three books all shorten Pacers and drift Wizards.
+    snapshots = []
+    for bm in ("draftkings", "fanduel", "betmgm"):
+        snapshots.append(_snap(event, bm, "h2h", "Pacers", -150, None, t1))
+        snapshots.append(_snap(event, bm, "h2h", "Pacers", -170, None, t2))
+        snapshots.append(_snap(event, bm, "h2h", "Wizards", 130, None, t1))
+        snapshots.append(_snap(event, bm, "h2h", "Wizards", 150, None, t2))
+    await repo.insert_snapshots(snapshots)
+
+    pipeline = DetectionPipeline(settings, repo)
+
+    # First run — should fire a signal for one side only (market-side dedup).
+    signals1 = await pipeline.run(t2)
+    h2h_signals = [s for s in signals1 if s.market_key == "h2h"]
+    assert len(h2h_signals) == 1
+    alerted_side = h2h_signals[0].outcome_name
+
+    # Record the alert (as the alert dispatcher would).
+    await repo.record_alert(
+        event_id=h2h_signals[0].event_id,
+        alert_type=h2h_signals[0].signal_type.value,
+        market_key=h2h_signals[0].market_key,
+        outcome_name=alerted_side,
+    )
+
+    # Second run — the mirror side should be suppressed by market-level cooldown.
+    signals2 = await pipeline.run(t2)
+    h2h_signals2 = [s for s in signals2 if s.market_key == "h2h"]
+    assert len(h2h_signals2) == 0, (
+        f"Mirror side should be suppressed but got: "
+        f"{[s.outcome_name for s in h2h_signals2]}"
+    )
+
+
 def _make_signal(
     signal_type: SignalType,
     outcome: str = "Team A",
