@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     # Detection — exchange monitor
     exchange_shift_threshold: float = 0.05  # 5% implied probability shift
 
+    # Quiet hours (UTC) — skip polling during this window to save credits
+    # Default: 5-14 UTC = midnight-9am ET
+    quiet_hours_start: int = 5
+    quiet_hours_end: int = 14
+
     # Alert dedup
     alert_cooldown_minutes: int = 60
 
