@@ -8,7 +8,7 @@ import structlog
 
 from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
-from sharp_seeker.engine.base import BaseDetector, Signal
+from sharp_seeker.engine.base import BaseDetector, Signal, SignalType
 from sharp_seeker.engine.exchange_monitor import ExchangeMonitorDetector
 from sharp_seeker.engine.pinnacle_divergence import PinnacleDivergenceDetector
 from sharp_seeker.engine.rapid_change import RapidChangeDetector
@@ -16,6 +16,62 @@ from sharp_seeker.engine.reverse_line import ReverseLineDetector
 from sharp_seeker.engine.steam_move import SteamMoveDetector
 
 log = structlog.get_logger()
+
+
+def _pick_best_signal(sigs: list[Signal]) -> Signal:
+    """From mirror-side signals, pick the most actionable one.
+
+    Each signal type has a preferred side based on its directional context:
+    - Reverse Line: follow Pinnacle's direction (pinnacle_delta > 0)
+    - Steam Move: stale books are value on the side where the line moved
+      AGAINST bettors (direction "down" for h2h/spreads; for totals,
+      "up" favors Over and "down" favors Under)
+    - Exchange Shift: the side that shortened (exchange thinks more likely)
+    - Rapid Change: the side with the larger delta
+    - Pinnacle Divergence: already fires only for the value side, but
+      falls through to generic tiebreaker if both sides appear.
+    """
+    if len(sigs) == 1:
+        return sigs[0]
+
+    sig_type = sigs[0].signal_type
+    market = sigs[0].market_key
+
+    if sig_type == SignalType.REVERSE_LINE:
+        # Follow Pinnacle: keep the side where Pinnacle moved favorably
+        for s in sigs:
+            if s.details.get("pinnacle_delta", 0) > 0:
+                return s
+
+    elif sig_type == SignalType.STEAM_MOVE:
+        # Value is at stale books on the side where the line moved AGAINST
+        # bettors.  h2h/spreads: "down" means the line got worse for this
+        # side's bettors → stale books still on the old (better) line.
+        # Totals: "up" favors Over (lower stale total easier to clear),
+        # "down" favors Under (higher stale total easier to stay under).
+        for s in sigs:
+            direction = s.details.get("direction", "")
+            if market == "totals":
+                if s.outcome_name.lower() == "over" and direction == "up":
+                    return s
+                if s.outcome_name.lower() == "under" and direction == "down":
+                    return s
+            else:
+                if direction == "down":
+                    return s
+
+    elif sig_type == SignalType.EXCHANGE_SHIFT:
+        # Prefer the side the exchange shortened (thinks more likely)
+        for s in sigs:
+            if s.details.get("direction") == "shortened":
+                return s
+
+    elif sig_type == SignalType.RAPID_CHANGE:
+        # Prefer the side with the larger move
+        return max(sigs, key=lambda s: abs(s.details.get("delta", 0)))
+
+    # Fallback: most value books, then highest strength
+    return max(sigs, key=lambda s: (len(s.details.get("value_books", [])), s.strength))
 
 
 class DetectionPipeline:
@@ -70,10 +126,7 @@ class DetectionPipeline:
             if len(sigs) <= 1:
                 deduped_signals.extend(sigs)
             else:
-                best = max(
-                    sigs,
-                    key=lambda s: (len(s.details.get("value_books", [])), s.strength),
-                )
+                best = _pick_best_signal(sigs)
                 deduped_signals.append(best)
                 log.debug(
                     "market_side_dedup",
