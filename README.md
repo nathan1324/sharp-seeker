@@ -126,7 +126,12 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ODDS_API_KEY` | — | Your Odds API key (required) |
-| `DISCORD_WEBHOOK_URL` | — | Discord webhook URL (required) |
+| `DISCORD_WEBHOOK_URL` | — | Default Discord webhook (required) |
+| `DISCORD_WEBHOOK_STEAM_MOVE` | — | Channel for steam move alerts |
+| `DISCORD_WEBHOOK_RAPID_CHANGE` | — | Channel for rapid change alerts |
+| `DISCORD_WEBHOOK_PINNACLE_DIVERGENCE` | — | Channel for Pinnacle divergence alerts |
+| `DISCORD_WEBHOOK_REVERSE_LINE` | — | Channel for reverse line movement alerts |
+| `DISCORD_WEBHOOK_EXCHANGE_SHIFT` | — | Channel for exchange shift alerts |
 | `ODDS_API_MONTHLY_CREDITS` | `500` | Monthly API credit budget |
 | `SPORTS` | `["basketball_nba"]` | Sports to track (JSON array) |
 | `BOOKMAKERS` | `["draftkings","fanduel","betmgm","pinnacle"]` | Bookmakers to monitor (JSON array) |

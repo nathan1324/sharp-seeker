@@ -27,8 +27,13 @@ class Settings(BaseSettings):
         default=["basketball_nba"]
     )
 
-    # Discord
+    # Discord — default webhook (required), per-signal-type webhooks (optional)
     discord_webhook_url: str
+    discord_webhook_steam_move: str | None = None
+    discord_webhook_rapid_change: str | None = None
+    discord_webhook_pinnacle_divergence: str | None = None
+    discord_webhook_reverse_line: str | None = None
+    discord_webhook_exchange_shift: str | None = None
 
     # Polling
     poll_interval_minutes: int = 20
