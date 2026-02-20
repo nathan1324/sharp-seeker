@@ -11,6 +11,7 @@ from sharp_seeker.engine.base import BaseDetector, Signal, SignalType
 log = structlog.get_logger()
 
 BETFAIR_KEY = "betfair_ex_eu"
+US_BOOKS = {"draftkings", "fanduel", "betmgm", "caesars", "williamhill_us"}
 
 
 def american_to_implied_prob(price: float) -> float:
@@ -43,7 +44,17 @@ class ExchangeMonitorDetector(BaseDetector):
         if not prev_map:
             return []
 
+        # Index current US book lines by (market, outcome, bookmaker)
+        us_current: dict[tuple[str, str, str], dict] = {}
         meta: tuple[str, str, str] | None = None
+
+        for _row in latest:
+            row = dict(_row)
+            if meta is None:
+                meta = (row["sport_key"], row["home_team"], row["away_team"])
+            if row["bookmaker_key"] in US_BOOKS:
+                us_current[(row["market_key"], row["outcome_name"], row["bookmaker_key"])] = row
+
         signals: list[Signal] = []
 
         for _row in latest:
@@ -72,6 +83,32 @@ class ExchangeMonitorDetector(BaseDetector):
             direction = "shortened" if new_prob > old_prob else "drifted"
             strength = min(1.0, shift / 0.15)  # 15% shift = max strength
 
+            # Find US books that haven't adjusted to the exchange movement
+            # "Shortened" means exchange thinks more likely → US books with lower
+            # implied prob are offering value (higher payout)
+            new_exchange_price = row["price"]
+            value_books: list[dict] = []
+            for (mk, on, bm_key), us_row in us_current.items():
+                if mk != row["market_key"] or on != row["outcome_name"]:
+                    continue
+                us_prob = american_to_implied_prob(us_row["price"])
+                # If exchange shortened (more likely) but US book still has
+                # lower implied prob → US book offers better payout (value)
+                # If exchange drifted (less likely) but US book still has
+                # higher implied prob → US book hasn't adjusted
+                if direction == "shortened" and us_prob < new_prob:
+                    value_books.append({
+                        "bookmaker": bm_key,
+                        "current_line": us_row["price"],
+                        "implied_prob": round(us_prob, 4),
+                    })
+                elif direction == "drifted" and us_prob > new_prob:
+                    value_books.append({
+                        "bookmaker": bm_key,
+                        "current_line": us_row["price"],
+                        "implied_prob": round(us_prob, 4),
+                    })
+
             signals.append(
                 Signal(
                     signal_type=SignalType.EXCHANGE_SHIFT,
@@ -93,6 +130,7 @@ class ExchangeMonitorDetector(BaseDetector):
                         "new_implied_prob": round(new_prob, 4),
                         "shift": round(shift, 4),
                         "direction": direction,
+                        "value_books": value_books,
                     },
                 )
             )

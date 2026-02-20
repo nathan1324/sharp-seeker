@@ -29,6 +29,12 @@ class RapidChangeDetector(BaseDetector):
             key = (row["bookmaker_key"], row["market_key"], row["outcome_name"])
             prev_map[key] = dict(row)
 
+        # Index ALL current lines by (market, outcome, bookmaker)
+        current_lines: dict[tuple[str, str, str], dict] = {}
+        for _row in latest:
+            row = dict(_row)
+            current_lines[(row["market_key"], row["outcome_name"], row["bookmaker_key"])] = row
+
         meta: tuple[str, str, str] | None = None
         signals: list[Signal] = []
 
@@ -48,12 +54,12 @@ class RapidChangeDetector(BaseDetector):
             if market_key == "h2h":
                 delta = abs(row["price"] - prev["price"])
                 threshold = self._settings.rapid_ml_threshold
-                label = f"{prev['price']:+.0f} → {row['price']:+.0f}"
+                new_val = row["price"]
             else:
                 if row["point"] is not None and prev["point"] is not None:
                     delta = abs(row["point"] - prev["point"])
                     threshold = self._settings.rapid_spread_threshold
-                    label = f"{prev['point']} → {row['point']}"
+                    new_val = row["point"]
                 else:
                     continue
 
@@ -61,6 +67,30 @@ class RapidChangeDetector(BaseDetector):
                 continue
 
             strength = min(1.0, delta / (threshold * 3))
+
+            # Find other books still on old lines (value bets)
+            value_books: list[dict] = []
+            for (mk, on, other_bm), other_row in current_lines.items():
+                if mk != market_key or on != row["outcome_name"] or other_bm == bm:
+                    continue
+                if market_key == "h2h":
+                    other_val = other_row["price"]
+                elif other_row["point"] is not None:
+                    other_val = other_row["point"]
+                else:
+                    continue
+                # Book is "stale" if it's closer to the old line than the new one
+                if market_key == "h2h":
+                    old_val = prev["price"]
+                else:
+                    old_val = prev.get("point", prev["price"])
+                dist_to_old = abs(other_val - old_val)
+                dist_to_new = abs(other_val - new_val)
+                if dist_to_old < dist_to_new:
+                    value_books.append({
+                        "bookmaker": other_bm,
+                        "current_line": other_val,
+                    })
 
             signals.append(
                 Signal(
@@ -74,7 +104,7 @@ class RapidChangeDetector(BaseDetector):
                     strength=round(strength, 2),
                     description=(
                         f"Rapid change at {bm}: {row['outcome_name']} "
-                        f"({market_key}) {label} (delta {delta:.1f})"
+                        f"({market_key}) delta {delta:.1f}"
                     ),
                     details={
                         "bookmaker": bm,
@@ -83,6 +113,7 @@ class RapidChangeDetector(BaseDetector):
                         "old_point": prev.get("point"),
                         "new_point": row.get("point"),
                         "delta": round(delta, 2),
+                        "value_books": value_books,
                     },
                 )
             )

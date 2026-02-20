@@ -165,10 +165,26 @@ class DiscordAlerter:
                 )
 
         elif sig.signal_type == SignalType.REVERSE_LINE:
-            movers = d.get("us_movers", [])
-            if movers:
-                embed.add_embed_field(
-                    name="US Books Moving",
-                    value=", ".join(m.title() for m in movers),
-                    inline=False,
-                )
+            bet_dir = d.get("bet_direction", "?")
+            embed.add_embed_field(
+                name="Action",
+                value=f"Follow Pinnacle — bet **{bet_dir}** at US books",
+                inline=False,
+            )
+
+        # Value books — shown for all signal types
+        value_books = d.get("value_books", [])
+        if value_books:
+            lines = []
+            for vb in value_books:
+                bm = vb["bookmaker"].title()
+                line = vb["current_line"]
+                if isinstance(line, float) and abs(line) > 50:
+                    lines.append(f"**{bm}** — {line:+.0f}")
+                else:
+                    lines.append(f"**{bm}** — {line}")
+            embed.add_embed_field(
+                name="💰 Value Bets (stale lines)",
+                value="\n".join(lines),
+                inline=False,
+            )

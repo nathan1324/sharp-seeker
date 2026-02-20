@@ -44,6 +44,16 @@ class SteamMoveDetector(BaseDetector):
                 meta[event_id] = (snap["sport_key"], snap["home_team"], snap["away_team"])
 
         sport_key, home, away = meta.get(event_id, ("", "", ""))
+
+        # Build current lines for value book detection
+        latest = await self._repo.get_latest_snapshots(event_id)
+        current_lines: dict[tuple[str, str, str], float] = {}
+        for _row in latest:
+            row = dict(_row)
+            mk, on, bm = row["market_key"], row["outcome_name"], row["bookmaker_key"]
+            val = row["point"] if row["market_key"] != "h2h" and row["point"] is not None else row["price"]
+            current_lines[(mk, on, bm)] = val
+
         signals: list[Signal] = []
 
         for (market_key, outcome_name), book_data in grouped.items():
@@ -87,6 +97,20 @@ class SteamMoveDetector(BaseDetector):
                 {"bookmaker": bm, "delta": round(d, 2)} for bm, d in aligned
             ]
 
+            # Find books that haven't moved yet (stale lines = value bets)
+            moved_books = {bm for bm, _ in aligned}
+            value_books: list[dict] = []
+            for bm_key, entries in book_data.items():
+                if bm_key in moved_books:
+                    continue
+                # This book didn't move — still on old line
+                current_val = current_lines.get((market_key, outcome_name, bm_key))
+                if current_val is not None:
+                    value_books.append({
+                        "bookmaker": bm_key,
+                        "current_line": current_val,
+                    })
+
             signals.append(
                 Signal(
                     signal_type=SignalType.STEAM_MOVE,
@@ -106,6 +130,7 @@ class SteamMoveDetector(BaseDetector):
                         "books_moved": len(aligned),
                         "avg_delta": round(avg_delta, 2),
                         "book_details": book_details,
+                        "value_books": value_books,
                     },
                 )
             )
