@@ -179,9 +179,12 @@ class DiscordAlerter:
             pin_dir = d.get("pinnacle_direction", "?")
             us_avg = d.get("us_avg_delta", 0)
             pin_delta = d.get("pinnacle_delta", 0)
+            pin_odds = _format_odds(
+                sig.market_key, d.get("pinnacle_price"), d.get("pinnacle_point")
+            )
             lines.append(bet_line or f"🔄 **{market_name}** — {sig.outcome_name}")
             lines.append(f"## US {us_dir} ({us_avg:+.1f})  vs  Pinnacle {pin_dir} ({pin_delta:+.1f})")
-            lines.append("**Public vs Sharp money divergence**")
+            lines.append(f"**Pinnacle line: {pin_odds}**")
 
         elif sig.signal_type == SignalType.EXCHANGE_SHIFT:
             direction = d.get("direction", "?")
