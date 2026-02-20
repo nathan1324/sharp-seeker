@@ -89,7 +89,8 @@ class RapidChangeDetector(BaseDetector):
                 if dist_to_old < dist_to_new:
                     value_books.append({
                         "bookmaker": other_bm,
-                        "current_line": other_val,
+                        "price": other_row["price"],
+                        "point": other_row.get("point"),
                     })
 
             signals.append(
