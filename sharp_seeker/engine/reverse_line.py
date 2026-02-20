@@ -105,6 +105,11 @@ class ReverseLineDetector(BaseDetector):
                             "point": current.get("point"),
                         })
 
+                # Pinnacle's current line for display
+                pin_current = current_lines.get(
+                    (market_key, outcome_name, PINNACLE_KEY)
+                )
+
                 signals.append(
                     Signal(
                         signal_type=SignalType.REVERSE_LINE,
@@ -126,6 +131,8 @@ class ReverseLineDetector(BaseDetector):
                             "us_movers": us_movers,
                             "pinnacle_direction": pin_dir,
                             "pinnacle_delta": round(pin_delta, 2),
+                            "pinnacle_price": pin_current["price"] if pin_current else None,
+                            "pinnacle_point": pin_current.get("point") if pin_current else None,
                             "bet_direction": pin_dir,
                             "value_books": value_books,
                         },
