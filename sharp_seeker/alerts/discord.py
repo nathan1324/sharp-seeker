@@ -55,6 +55,17 @@ def _format_odds(market: str, price: float | None, point: float | None) -> str:
     return " ".join(parts) if parts else "?"
 
 
+def _bet_recommendation(sig: Signal, market_name: str) -> str | None:
+    """Build a prominent bet recommendation line from the best value book."""
+    value_books = sig.details.get("value_books", [])
+    if not value_books:
+        return None
+    best = value_books[0]
+    bm = best["bookmaker"].title()
+    odds = _format_odds(sig.market_key, best.get("price"), best.get("point"))
+    return f"💰 **Bet {sig.outcome_name} {odds} @ {bm}**"
+
+
 class DiscordAlerter:
     def __init__(self, settings: Settings, repo: Repository) -> None:
         self._default_url = settings.discord_webhook_url
@@ -129,21 +140,22 @@ class DiscordAlerter:
         d = sig.details
         lines = [f"**{matchup}**", ""]
 
+        bet_line = _bet_recommendation(sig, market_name)
+
         if sig.signal_type == SignalType.RAPID_CHANGE:
             bm = d.get("bookmaker", "?").title()
             old_val = _format_line_value(d.get("old_point"), d.get("old_price"), sig.market_key)
             new_val = _format_line_value(d.get("new_point"), d.get("new_price"), sig.market_key)
             delta = d.get("delta", 0)
-            lines.append(f"📊 **{market_name}** — {sig.outcome_name}")
+            lines.append(bet_line or f"📊 **{market_name}** — {sig.outcome_name}")
             lines.append(f"## {old_val}  →  {new_val}")
             lines.append(f"**Delta: {delta:+.1f}** at {bm}")
 
         elif sig.signal_type == SignalType.STEAM_MOVE:
             direction = d.get("direction", "?")
-            arrow = "📈" if direction == "up" else "📉"
             books_moved = d.get("books_moved", 0)
             avg_delta = d.get("avg_delta", 0)
-            lines.append(f"{arrow} **{market_name}** — {sig.outcome_name}")
+            lines.append(bet_line or f"📉 **{market_name}** — {sig.outcome_name}")
             lines.append(f"## {books_moved} books moved {direction}")
             lines.append(f"**Avg delta: {avg_delta:+.1f}**")
 
@@ -152,22 +164,22 @@ class DiscordAlerter:
             us_val = d.get("us_value", "?")
             pin_val = d.get("pinnacle_value", "?")
             delta = d.get("delta", 0)
-            lines.append(f"💰 **{market_name}** — {sig.outcome_name}")
+            lines.append(bet_line or f"💰 **{market_name}** — {sig.outcome_name}")
             if sig.market_key == "h2h":
                 lines.append(f"## {us_book}: {us_val:+.0f}  vs  Pinnacle: {pin_val:+.0f}")
             else:
                 lines.append(f"## {us_book}: {us_val}  vs  Pinnacle: {pin_val}")
             if sig.market_key == "h2h":
-                lines.append(f"**Value edge: {delta:.1%}** — bet {sig.outcome_name} at {us_book}")
+                lines.append(f"**Value edge: {delta:.1%}**")
             else:
-                lines.append(f"**Value edge: {delta:+.1f}** — bet {sig.outcome_name} at {us_book}")
+                lines.append(f"**Value edge: {delta:+.1f}**")
 
         elif sig.signal_type == SignalType.REVERSE_LINE:
             us_dir = d.get("us_direction", "?")
             pin_dir = d.get("pinnacle_direction", "?")
             us_avg = d.get("us_avg_delta", 0)
             pin_delta = d.get("pinnacle_delta", 0)
-            lines.append(f"🔄 **{market_name}** — {sig.outcome_name}")
+            lines.append(bet_line or f"🔄 **{market_name}** — {sig.outcome_name}")
             lines.append(f"## US {us_dir} ({us_avg:+.1f})  vs  Pinnacle {pin_dir} ({pin_delta:+.1f})")
             lines.append("**Public vs Sharp money divergence**")
 
@@ -176,8 +188,7 @@ class DiscordAlerter:
             shift = d.get("shift", 0)
             old_prob = d.get("old_implied_prob", 0)
             new_prob = d.get("new_implied_prob", 0)
-            arrow = "📈" if direction == "up" else "📉"
-            lines.append(f"{arrow} **{market_name}** — {sig.outcome_name}")
+            lines.append(bet_line or f"📈 **{market_name}** — {sig.outcome_name}")
             lines.append(f"## {old_prob:.1%}  →  {new_prob:.1%}")
             lines.append(f"**Betfair shift: {shift:+.1%}**")
 
@@ -198,24 +209,17 @@ class DiscordAlerter:
                     name="Book Movements", value="\n".join(lines), inline=False
                 )
 
-        elif sig.signal_type == SignalType.REVERSE_LINE:
-            bet_dir = d.get("bet_direction", "?")
-            embed.add_embed_field(
-                name="Action",
-                value=f"Follow Pinnacle — bet **{bet_dir}** at US books",
-                inline=False,
-            )
-
-        # Value books — shown for all signal types
+        # Additional value books (best one is already shown in description)
         value_books = d.get("value_books", [])
-        if value_books:
+        remaining = value_books[1:]
+        if remaining:
             lines = []
-            for vb in value_books:
+            for vb in remaining:
                 bm = vb["bookmaker"].title()
                 odds = _format_odds(sig.market_key, vb.get("price"), vb.get("point"))
                 lines.append(f"**{bm}** — {sig.outcome_name} **{odds}**")
             embed.add_embed_field(
-                name="💰 Value Bets",
+                name="💰 More Value Bets",
                 value="\n".join(lines),
                 inline=False,
             )
