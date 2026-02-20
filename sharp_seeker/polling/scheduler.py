@@ -40,6 +40,19 @@ class Poller:
 
     async def poll_cycle(self) -> None:
         """Execute one full poll → detect → alert → track cycle."""
+        now = datetime.now(timezone.utc)
+        start = self._settings.quiet_hours_start
+        end = self._settings.quiet_hours_end
+
+        if start < end:
+            in_quiet = start <= now.hour < end
+        else:
+            in_quiet = now.hour >= start or now.hour < end
+
+        if in_quiet:
+            log.info("poll_skipped_quiet_hours", hour_utc=now.hour)
+            return
+
         self._cycle_count += 1
         log.info("poll_cycle_start", cycle=self._cycle_count)
 
