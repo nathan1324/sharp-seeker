@@ -124,9 +124,9 @@ class DiscordAlerter:
             us_val = d.get("us_value", "?")
             pin_val = d.get("pinnacle_value", "?")
             delta = d.get("delta", 0)
-            lines.append(f"📊 **{market_name}** — {sig.outcome_name}")
+            lines.append(f"💰 **{market_name}** — {sig.outcome_name}")
             lines.append(f"## {us_book}: {us_val}  vs  Pinnacle: {pin_val}")
-            lines.append(f"**Divergence: {delta:+.1f}**")
+            lines.append(f"**Value edge: {delta:+.1f}** — bet at {us_book}")
 
         elif sig.signal_type == SignalType.REVERSE_LINE:
             us_dir = d.get("us_direction", "?")

@@ -1,4 +1,4 @@
-"""Pinnacle divergence detector: US books diverge significantly from Pinnacle's line."""
+"""Pinnacle divergence detector: find value where US books offer better odds than Pinnacle."""
 
 from __future__ import annotations
 
@@ -12,6 +12,28 @@ log = structlog.get_logger()
 
 PINNACLE_KEY = "pinnacle"
 US_BOOKS = {"draftkings", "fanduel", "betmgm", "caesars", "williamhill_us"}
+
+
+def _us_has_better_value(
+    market_key: str, outcome_name: str, us_value: float, pin_value: float
+) -> bool:
+    """Check if the US book offers better value to the bettor than Pinnacle.
+
+    - h2h: higher price = better payout (works for both + and - odds)
+    - spreads: higher point = better for bettor (less to cover / more points received)
+    - totals over: lower point = easier to go over
+    - totals under: higher point = easier to stay under
+    """
+    if market_key == "h2h":
+        return us_value > pin_value
+    elif market_key == "spreads":
+        return us_value > pin_value
+    elif market_key == "totals":
+        if outcome_name.lower() == "over":
+            return us_value < pin_value
+        else:
+            return us_value > pin_value
+    return False
 
 
 class PinnacleDivergenceDetector(BaseDetector):
@@ -50,20 +72,24 @@ class PinnacleDivergenceDetector(BaseDetector):
                     continue
 
                 if market_key == "h2h":
-                    delta = abs(row["price"] - pinnacle["price"])
+                    us_val = row["price"]
+                    pin_val = pinnacle["price"]
+                    delta = abs(us_val - pin_val)
                     threshold = self._settings.pinnacle_ml_threshold
-                    pin_label = f"{pinnacle['price']:+.0f}"
-                    us_label = f"{row['price']:+.0f}"
                 else:
                     if row["point"] is not None and pinnacle["point"] is not None:
-                        delta = abs(row["point"] - pinnacle["point"])
+                        us_val = row["point"]
+                        pin_val = pinnacle["point"]
+                        delta = abs(us_val - pin_val)
                         threshold = self._settings.pinnacle_spread_threshold
-                        pin_label = str(pinnacle["point"])
-                        us_label = str(row["point"])
                     else:
                         continue
 
                 if delta < threshold:
+                    continue
+
+                # Only alert when US book has BETTER value than Pinnacle
+                if not _us_has_better_value(market_key, outcome_name, us_val, pin_val):
                     continue
 
                 strength = min(1.0, delta / (threshold * 3))
@@ -79,14 +105,14 @@ class PinnacleDivergenceDetector(BaseDetector):
                         outcome_name=outcome_name,
                         strength=round(strength, 2),
                         description=(
-                            f"Pinnacle divergence: {bm_key} has {outcome_name} "
-                            f"at {us_label} vs Pinnacle {pin_label} "
-                            f"({market_key}, delta {delta:.1f})"
+                            f"Value at {bm_key}: {outcome_name} "
+                            f"{market_key} better than Pinnacle "
+                            f"(delta {delta:.1f})"
                         ),
                         details={
                             "us_book": bm_key,
-                            "us_value": row["point"] if market_key != "h2h" else row["price"],
-                            "pinnacle_value": pinnacle["point"] if market_key != "h2h" else pinnacle["price"],
+                            "us_value": us_val,
+                            "pinnacle_value": pin_val,
                             "delta": round(delta, 2),
                         },
                     )
