@@ -77,14 +77,18 @@ async def test_pinnacle_divergence_no_signal_when_pinnacle_better(settings, repo
 
 @pytest.mark.asyncio
 async def test_pinnacle_divergence_moneyline_value(settings, repo):
-    """US book with better ML odds than Pinnacle should trigger."""
+    """US book with better ML odds than Pinnacle should trigger.
+
+    BetMGM -110 implied = 110/210 ≈ 0.5238
+    Pinnacle -150 implied = 150/250 = 0.6000
+    Delta ≈ 0.0762 (7.6%), well above 3% threshold.
+    """
     event = "evt_pin2"
     t = "2025-01-15T12:00:00+00:00"
 
-    # BetMGM has -110 (better for bettor) vs Pinnacle -150 — value at BetMGM
     snapshots = [
         _snap(event, "pinnacle", "h2h", "Lakers", -150, None, t),
-        _snap(event, "betmgm", "h2h", "Lakers", -110, None, t),  # 40 better
+        _snap(event, "betmgm", "h2h", "Lakers", -110, None, t),
     ]
     await repo.insert_snapshots(snapshots)
 
@@ -93,7 +97,59 @@ async def test_pinnacle_divergence_moneyline_value(settings, repo):
 
     assert len(signals) == 1
     sig = signals[0]
-    assert sig.details["delta"] == 40.0
+    # Delta is now in implied probability units
+    assert abs(sig.details["delta"] - 0.0762) < 0.001
+    assert "us_implied_prob" in sig.details
+    assert "pinnacle_implied_prob" in sig.details
+
+
+@pytest.mark.asyncio
+async def test_pinnacle_divergence_ml_cross_zero_no_fire(settings, repo):
+    """Cross-zero case: +100 vs -104 is only ~1% edge — should NOT fire.
+
+    +100 implied = 100/200 = 0.5000
+    -104 implied = 104/204 ≈ 0.5098
+    Delta ≈ 0.0098 (0.98%), below 3% threshold.
+    """
+    event = "evt_pin_cross"
+    t = "2025-01-15T12:00:00+00:00"
+
+    snapshots = [
+        _snap(event, "pinnacle", "h2h", "Lakers", -104, None, t),
+        _snap(event, "betmgm", "h2h", "Lakers", 100, None, t),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 0
+
+
+@pytest.mark.asyncio
+async def test_pinnacle_divergence_ml_large_gap(settings, repo):
+    """Real divergence: +200 vs -200 should fire.
+
+    +200 implied = 100/300 ≈ 0.3333
+    -200 implied = 200/300 ≈ 0.6667
+    Delta ≈ 0.3333 (33.3%), way above 3% threshold.
+    """
+    event = "evt_pin_large"
+    t = "2025-01-15T12:00:00+00:00"
+
+    # US book has +200 (better for bettor) vs Pinnacle -200
+    snapshots = [
+        _snap(event, "pinnacle", "h2h", "Lakers", -200, None, t),
+        _snap(event, "fanduel", "h2h", "Lakers", 200, None, t),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 1
+    sig = signals[0]
+    assert abs(sig.details["delta"] - 0.3333) < 0.001
 
 
 @pytest.mark.asyncio

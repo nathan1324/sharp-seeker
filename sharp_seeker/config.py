@@ -48,7 +48,7 @@ class Settings(BaseSettings):
 
     # Detection — Pinnacle divergence
     pinnacle_spread_threshold: float = 1.0
-    pinnacle_ml_threshold: float = 30.0
+    pinnacle_ml_prob_threshold: float = 0.03  # 3% implied probability edge
 
     # Detection — exchange monitor
     exchange_shift_threshold: float = 0.05  # 5% implied probability shift
