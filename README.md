@@ -10,11 +10,21 @@ Sharp Seeker polls [The Odds API](https://the-odds-api.com) on an interval, stor
 |----------|----------------|
 | **Steam Move** | 3+ books move the same line in the same direction within 30 min |
 | **Rapid Change** | A single book moves a spread by 0.5+ pts or moneyline by 20+ cents |
-| **Pinnacle Divergence** | US books diverge significantly from Pinnacle (the sharpest global book) |
+| **Pinnacle Divergence** | US book offers better value than Pinnacle (the sharpest global book) |
 | **Reverse Line Movement** | US consensus moves opposite to Pinnacle — public vs sharp money |
 | **Exchange Monitor** | Betfair exchange implied probability shifts by 5%+ |
 
-When a signal is detected, a color-coded Discord embed is sent with the sport, matchup, market, direction, strength, and book-level details.
+Every detector also identifies **value bets** — sportsbooks that haven't adjusted to the detected movement yet, showing the outcome and current odds you can still bet at.
+
+When a signal is detected, a color-coded Discord embed is sent with the matchup, market, line movement, strength bar, book-level details, and actionable value bets.
+
+### Signal Pipeline
+
+Raw signals pass through a 3-stage filter before alerting:
+
+1. **Strength filter** — drops signals below a configurable threshold (default 0.5)
+2. **Market-side dedup** — when both sides of a spread/total fire (e.g., Team A -7.5 and Team B +7.5), keeps only the actionable side using signal-type-aware logic (follows Pinnacle direction for RLM, sharp money direction for steam moves, etc.)
+3. **Cooldown dedup** — suppresses repeat alerts for the same (event, signal, market, outcome) within 60 minutes
 
 ## Project Structure
 
@@ -130,18 +140,21 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `PINNACLE_SPREAD_THRESHOLD` | `1.0` | Divergence threshold (points) |
 | `PINNACLE_ML_THRESHOLD` | `30` | Divergence threshold (cents) |
 | `EXCHANGE_SHIFT_THRESHOLD` | `0.05` | Implied probability shift (5%) |
+| `MIN_SIGNAL_STRENGTH` | `0.5` | Min strength to alert (0.0–1.0) |
 | `ALERT_COOLDOWN_MINUTES` | `60` | Dedup cooldown per signal |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
 ### API Credit Usage
 
-Credits per poll depend on the number of bookmakers and markets requested per sport. With the default 4 bookmakers and 1 sport, each poll costs ~10-18 credits.
+Each poll costs **3 credits per sport** (using the `bookmakers` parameter instead of `regions` to avoid double-counting). With the default 1 sport (NBA), that's 3 credits per poll.
 
-| Tier | Cost | Credits/mo | Approx. Polls |
-|------|------|-----------|---------------|
-| Free | $0 | 500 | ~28-50 |
-| 20K | $30/mo | 20,000 | ~1,100-2,000 |
-| 100K | $59/mo | 100,000 | ~5,500-10,000 |
+| Tier | Cost | Credits/mo | Polls (1 sport) | Effective Interval |
+|------|------|-----------|-----------------|-------------------|
+| Free | $0 | 500 | ~166 | ~every 5 hrs (dev only) |
+| 20K | $30/mo | 20,000 | ~6,600 | every 7 min |
+| 100K | $59/mo | 100,000 | ~33,000 | every 1-2 min |
+
+With quiet hours enabled (default: midnight–9am ET), polls are skipped overnight, stretching your budget further.
 
 ### Adding Sports
 
