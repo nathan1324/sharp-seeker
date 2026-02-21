@@ -92,9 +92,14 @@ class SteamMoveDetector(BaseDetector):
             avg_delta = sum(abs(m[1]) for m in aligned) / len(aligned)
             strength = min(1.0, len(aligned) / max(len(book_data), 1))
 
-            book_details = [
-                {"bookmaker": bm, "delta": round(d, 2)} for bm, d in aligned
-            ]
+            book_details = []
+            for bm_key, d in aligned:
+                entry: dict = {"bookmaker": bm_key, "delta": round(d, 2)}
+                current = current_lines.get((market_key, outcome_name, bm_key))
+                if current is not None:
+                    entry["price"] = current["price"]
+                    entry["point"] = current.get("point")
+                book_details.append(entry)
 
             # Find books that haven't moved yet (stale lines = value bets)
             moved_books = {bm for bm, _ in aligned}

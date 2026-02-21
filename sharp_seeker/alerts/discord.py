@@ -210,7 +210,10 @@ class DiscordAlerter:
         if sig.signal_type == SignalType.STEAM_MOVE:
             book_details = d.get("book_details", [])
             if book_details:
-                lines = [f"`{b['bookmaker'].title():15s}` **{b['delta']:+.1f}**" for b in book_details]
+                lines = []
+                for b in book_details:
+                    odds = _format_odds(sig.market_key, b.get("price"), b.get("point"))
+                    lines.append(f"`{b['bookmaker'].title():15s}` **{odds}**")
                 embed.add_embed_field(
                     name="Book Movements", value="\n".join(lines), inline=False
                 )
