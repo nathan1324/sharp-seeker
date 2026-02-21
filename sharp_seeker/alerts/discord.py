@@ -15,6 +15,8 @@ from sharp_seeker.engine.base import Signal, SignalType
 
 log = structlog.get_logger()
 
+LOGO_URL = "https://raw.githubusercontent.com/nathan1324/sharp-seeker/main/assets/logo-square.png"
+
 # Map market_key to a readable name
 MARKET_NAMES = {
     "spreads": "Spread",
@@ -131,7 +133,10 @@ class DiscordAlerter:
         self._add_details(embed, sig, market_name)
 
         embed.set_timestamp(datetime.now(timezone.utc).isoformat())
-        embed.set_footer(text=f"Sharp Seeker • {sig.sport_key.replace('_', ' ').title()}")
+        embed.set_footer(
+            text=f"Sandbox Sports • {sig.sport_key.replace('_', ' ').title()}",
+            icon_url=LOGO_URL,
+        )
 
         webhook.add_embed(embed)
         resp = webhook.execute()

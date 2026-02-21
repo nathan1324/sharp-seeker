@@ -14,6 +14,8 @@ from sharp_seeker.engine.base import SignalType
 
 log = structlog.get_logger()
 
+LOGO_URL = "https://raw.githubusercontent.com/nathan1324/sharp-seeker/main/assets/logo-square.png"
+
 # Map signal_type DB values to their per-channel webhook setting names
 _SIGNAL_WEBHOOK_ATTRS: dict[str, str] = {
     SignalType.STEAM_MOVE.value: "discord_webhook_steam_move",
@@ -127,7 +129,7 @@ class ReportGenerator:
                 )
 
             embed.set_timestamp(datetime.now(timezone.utc).isoformat())
-            embed.set_footer(text="Sharp Seeker")
+            embed.set_footer(text="Sandbox Sports", icon_url=LOGO_URL)
 
             self._send_webhook(webhook_url, embed, f"{period} {friendly}")
 
