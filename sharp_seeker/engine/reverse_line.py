@@ -10,6 +10,7 @@ import structlog
 from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
 from sharp_seeker.engine.base import BaseDetector, Signal, SignalType
+from sharp_seeker.engine.pinnacle_divergence import _us_has_better_value
 
 log = structlog.get_logger()
 
@@ -93,22 +94,33 @@ class ReverseLineDetector(BaseDetector):
                 pin_dir = "up" if pin_delta > 0 else "down"
                 strength = min(1.0, (abs(us_avg) + abs(pin_delta)) / 4.0)
 
-                # Value: US books moved the WRONG way — bet in Pinnacle's direction
-                # at US books (they have the "wrong" line)
-                value_books: list[dict] = []
-                for bm_key in us_movers:
-                    current = current_lines.get((market_key, outcome_name, bm_key))
-                    if current is not None:
-                        value_books.append({
-                            "bookmaker": bm_key,
-                            "price": current["price"],
-                            "point": current.get("point"),
-                        })
-
-                # Pinnacle's current line for display
+                # Pinnacle's current line for display and value comparison
                 pin_current = current_lines.get(
                     (market_key, outcome_name, PINNACLE_KEY)
                 )
+
+                # Only include US books that offer better value than Pinnacle
+                value_books: list[dict] = []
+                for bm_key in us_movers:
+                    current = current_lines.get((market_key, outcome_name, bm_key))
+                    if current is None:
+                        continue
+                    if pin_current is not None:
+                        if market_key == "h2h":
+                            us_val = current["price"]
+                            pin_val = pin_current["price"]
+                        elif current.get("point") is not None and pin_current.get("point") is not None:
+                            us_val = current["point"]
+                            pin_val = pin_current["point"]
+                        else:
+                            continue
+                        if not _us_has_better_value(market_key, outcome_name, us_val, pin_val):
+                            continue
+                    value_books.append({
+                        "bookmaker": bm_key,
+                        "price": current["price"],
+                        "point": current.get("point"),
+                    })
 
                 signals.append(
                     Signal(
