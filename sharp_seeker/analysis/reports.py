@@ -203,7 +203,7 @@ class ReportGenerator:
             )
 
         embed.set_timestamp(datetime.now(timezone.utc).isoformat())
-        embed.set_footer(text="Sharp Seeker")
+        embed.set_footer(text="Sandbox Sports", icon_url=LOGO_URL)
 
         self._send_webhook(
             self._settings.discord_webhook_url, embed, title

@@ -12,6 +12,8 @@ from sharp_seeker.db.repository import Repository
 
 log = structlog.get_logger()
 
+LOGO_URL = "https://raw.githubusercontent.com/nathan1324/sharp-seeker/main/assets/logo-square.png"
+
 CREDITS_PER_POLL = 9  # 3 sports x 3 credits each (3 markets x 1 region-equivalent)
 
 
@@ -71,7 +73,7 @@ class BudgetTracker:
         webhook = DiscordWebhook(url=self._settings.discord_webhook_url)
         embed = DiscordEmbed(
             title="Daily Budget Summary",
-            description="Sharp Seeker daily status report",
+            description="Daily status report",
             color=0x3498DB,
         )
         embed.add_embed_field(
@@ -96,7 +98,7 @@ class BudgetTracker:
             name="Alerts Today", value=str(alerts_today), inline=True
         )
         embed.set_timestamp(datetime.now(timezone.utc).isoformat())
-        embed.set_footer(text="Sharp Seeker")
+        embed.set_footer(text="Sandbox Sports", icon_url=LOGO_URL)
 
         webhook.add_embed(embed)
         resp = webhook.execute()
@@ -119,7 +121,7 @@ class BudgetTracker:
             color=0xE74C3C,
         )
         embed.set_timestamp(datetime.now(timezone.utc).isoformat())
-        embed.set_footer(text="Sharp Seeker")
+        embed.set_footer(text="Sandbox Sports", icon_url=LOGO_URL)
         webhook.add_embed(embed)
         webhook.execute()
 
