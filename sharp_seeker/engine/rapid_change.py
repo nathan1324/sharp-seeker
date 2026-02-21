@@ -10,6 +10,8 @@ from sharp_seeker.engine.base import BaseDetector, Signal, SignalType
 
 log = structlog.get_logger()
 
+US_BOOKS = {"draftkings", "fanduel", "betmgm", "caesars", "williamhill_us"}
+
 
 class RapidChangeDetector(BaseDetector):
     def __init__(self, settings: Settings, repo: Repository) -> None:
@@ -71,7 +73,7 @@ class RapidChangeDetector(BaseDetector):
             # Find other books still on old lines (value bets)
             value_books: list[dict] = []
             for (mk, on, other_bm), other_row in current_lines.items():
-                if mk != market_key or on != row["outcome_name"] or other_bm == bm:
+                if mk != market_key or on != row["outcome_name"] or other_bm == bm or other_bm not in US_BOOKS:
                     continue
                 if market_key == "h2h":
                     other_val = other_row["price"]
