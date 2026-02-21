@@ -70,22 +70,28 @@ class RapidChangeDetector(BaseDetector):
 
             strength = min(1.0, delta / (threshold * 3))
 
-            # Find other books still on old lines (value bets)
+            # Find stale books (closer to old line than new) + the mover itself
             value_books: list[dict] = []
             for (mk, on, other_bm), other_row in current_lines.items():
-                if mk != market_key or on != row["outcome_name"] or other_bm == bm or other_bm not in US_BOOKS:
+                if mk != market_key or on != row["outcome_name"] or other_bm not in US_BOOKS:
+                    continue
+                # Always include the mover
+                if other_bm == bm:
+                    value_books.append({
+                        "bookmaker": other_bm,
+                        "price": other_row["price"],
+                        "point": other_row.get("point"),
+                    })
                     continue
                 if market_key == "h2h":
                     other_val = other_row["price"]
+                    old_val = prev["price"]
                 elif other_row["point"] is not None:
                     other_val = other_row["point"]
+                    old_val = prev.get("point", prev["price"])
                 else:
                     continue
                 # Book is "stale" if it's closer to the old line than the new one
-                if market_key == "h2h":
-                    old_val = prev["price"]
-                else:
-                    old_val = prev.get("point", prev["price"])
                 dist_to_old = abs(other_val - old_val)
                 dist_to_new = abs(other_val - new_val)
                 if dist_to_old < dist_to_new:
@@ -94,6 +100,19 @@ class RapidChangeDetector(BaseDetector):
                         "price": other_row["price"],
                         "point": other_row.get("point"),
                     })
+
+            # Sort by best value for bettor so recommendation picks the best line
+            def _sort_key(vb: dict) -> float:
+                if market_key == "h2h":
+                    return vb.get("price") or 0  # higher price = better
+                pt = vb.get("point")
+                if pt is None:
+                    return 0
+                if market_key == "totals" and row["outcome_name"].lower() == "over":
+                    return -pt  # lower point = easier over
+                return pt  # spreads/totals under: higher = better
+
+            value_books.sort(key=_sort_key, reverse=True)
 
             signals.append(
                 Signal(
