@@ -46,10 +46,13 @@ def _format_odds(market: str, price: float | None, point: float | None) -> str:
         if price is not None:
             return f"{price:+.0f}"
         return "?"
-    # spreads / totals: show point and price
+    # spreads: signed (+/-) point; totals: unsigned point
     parts = []
     if point is not None:
-        parts.append(f"{point:+.1f}" if point != int(point) else f"{point:+.0f}")
+        if market == "totals":
+            parts.append(f"{point:.1f}" if point != int(point) else f"{point:.0f}")
+        else:
+            parts.append(f"{point:+.1f}" if point != int(point) else f"{point:+.0f}")
     if price is not None:
         parts.append(f"({price:+.0f})")
     return " ".join(parts) if parts else "?"
