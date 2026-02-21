@@ -137,9 +137,17 @@ class DetectionPipeline:
                     dropped=[s.outcome_name for s in sigs if s is not best],
                 )
 
+        # Require actionable bet: every signal must have value books
+        actionable = [s for s in deduped_signals if s.details.get("value_books")]
+        log.info(
+            "value_filter",
+            before=len(deduped_signals),
+            after=len(actionable),
+        )
+
         # Deduplicate against recently sent alerts
         new_signals: list[Signal] = []
-        for sig in deduped_signals:
+        for sig in actionable:
             already_sent = await self._repo.was_alert_sent_recently(
                 event_id=sig.event_id,
                 alert_type=sig.signal_type.value,
@@ -156,6 +164,7 @@ class DetectionPipeline:
             total_signals=len(all_signals),
             after_strength=len(strong_signals),
             after_side_dedup=len(deduped_signals),
+            after_value_filter=len(actionable),
             new_signals=len(new_signals),
         )
         return new_signals
