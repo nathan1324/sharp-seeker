@@ -39,14 +39,16 @@ async def test_deduplication(settings, repo):
     t1 = "2025-01-15T12:00:00+00:00"
     t2 = "2025-01-15T12:20:00+00:00"
 
-    # Create data that would trigger a steam move
+    # Create data that would trigger a steam move (caesars stays on old line = value book)
     snapshots = [
         _snap(event, "draftkings", "spreads", "Lakers", -110, -3.5, t1),
         _snap(event, "fanduel", "spreads", "Lakers", -110, -3.5, t1),
         _snap(event, "betmgm", "spreads", "Lakers", -110, -3.5, t1),
+        _snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1),
         _snap(event, "draftkings", "spreads", "Lakers", -110, -4.0, t2),
         _snap(event, "fanduel", "spreads", "Lakers", -110, -4.0, t2),
         _snap(event, "betmgm", "spreads", "Lakers", -110, -4.0, t2),
+        _snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2),
     ]
     await repo.insert_snapshots(snapshots)
 
@@ -79,6 +81,7 @@ async def test_market_side_dedup(settings, repo):
 
     # Create data for BOTH sides of a spread that trigger a steam move.
     # Three books all move Lakers from -3.5 to -4.0 AND Celtics from +3.5 to +4.0.
+    # Caesars stays on old line = value book.
     snapshots = []
     for bm in ("draftkings", "fanduel", "betmgm"):
         # Lakers side
@@ -87,6 +90,11 @@ async def test_market_side_dedup(settings, repo):
         # Celtics side (mirror)
         snapshots.append(_snap(event, bm, "spreads", "Celtics", -110, 3.5, t1))
         snapshots.append(_snap(event, bm, "spreads", "Celtics", -110, 4.0, t2))
+    # Caesars doesn't move (stale line)
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    snapshots.append(_snap(event, "caesars", "spreads", "Celtics", -110, 3.5, t1))
+    snapshots.append(_snap(event, "caesars", "spreads", "Celtics", -110, 3.5, t2))
 
     await repo.insert_snapshots(snapshots)
 
@@ -110,13 +118,18 @@ async def test_mirror_side_suppressed_by_cooldown(settings, repo):
     t2 = "2025-01-15T12:20:00+00:00"
 
     # Create h2h data for both sides that would trigger a steam move.
-    # Three books all shorten Pacers and drift Wizards.
+    # Three books all shorten Pacers and drift Wizards. Caesars stays stale.
     snapshots = []
     for bm in ("draftkings", "fanduel", "betmgm"):
         snapshots.append(_snap(event, bm, "h2h", "Pacers", -150, None, t1))
         snapshots.append(_snap(event, bm, "h2h", "Pacers", -170, None, t2))
         snapshots.append(_snap(event, bm, "h2h", "Wizards", 130, None, t1))
         snapshots.append(_snap(event, bm, "h2h", "Wizards", 150, None, t2))
+    # Caesars doesn't move (stale line = value book)
+    snapshots.append(_snap(event, "caesars", "h2h", "Pacers", -150, None, t1))
+    snapshots.append(_snap(event, "caesars", "h2h", "Pacers", -150, None, t2))
+    snapshots.append(_snap(event, "caesars", "h2h", "Wizards", 130, None, t1))
+    snapshots.append(_snap(event, "caesars", "h2h", "Wizards", 130, None, t2))
     await repo.insert_snapshots(snapshots)
 
     pipeline = DetectionPipeline(settings, repo)
