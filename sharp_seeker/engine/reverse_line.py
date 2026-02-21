@@ -92,8 +92,8 @@ class ReverseLineDetector(BaseDetector):
             if (us_avg > 0 and pin_delta < 0) or (us_avg < 0 and pin_delta > 0):
                 us_dir = "up" if us_avg > 0 else "down"
                 pin_dir = "up" if pin_delta > 0 else "down"
-                # h2h deltas are in cents (5-50 typical), spreads/totals in points (0.5-3)
-                divisor = 40.0 if market_key == "h2h" else 4.0
+                # h2h deltas are in cents (10-100+ typical), spreads/totals in points (0.5-3)
+                divisor = 100.0 if market_key == "h2h" else 4.0
                 strength = min(1.0, (abs(us_avg) + abs(pin_delta)) / divisor)
 
                 # Pinnacle's current line for display and value comparison
