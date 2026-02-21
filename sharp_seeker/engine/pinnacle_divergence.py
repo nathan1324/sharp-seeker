@@ -102,6 +102,11 @@ class PinnacleDivergenceDetector(BaseDetector):
                     "us_value": us_val,
                     "pinnacle_value": pin_val,
                     "delta": round(delta, 4 if market_key == "h2h" else 2),
+                    "value_books": [{
+                        "bookmaker": bm_key,
+                        "price": row["price"],
+                        "point": row.get("point"),
+                    }],
                 }
                 if market_key == "h2h":
                     details["us_implied_prob"] = round(us_prob, 4)

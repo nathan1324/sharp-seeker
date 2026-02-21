@@ -58,12 +58,18 @@ def _format_odds(market: str, price: float | None, point: float | None) -> str:
 def _bet_recommendation(sig: Signal, market_name: str) -> str | None:
     """Build a prominent bet recommendation line from the best value book."""
     value_books = sig.details.get("value_books", [])
-    if not value_books:
-        return None
-    best = value_books[0]
-    bm = best["bookmaker"].title()
-    odds = _format_odds(sig.market_key, best.get("price"), best.get("point"))
-    return f"💰 **Bet {sig.outcome_name} {odds} @ {bm}**"
+    current_books = sig.details.get("current_books", [])
+    if value_books:
+        best = value_books[0]
+        bm = best["bookmaker"].title()
+        odds = _format_odds(sig.market_key, best.get("price"), best.get("point"))
+        return f"💰 **Bet {sig.outcome_name} {odds} @ {bm}**"
+    if current_books:
+        best = current_books[0]
+        bm = best["bookmaker"].title()
+        odds = _format_odds(sig.market_key, best.get("price"), best.get("point"))
+        return f"📊 **{sig.outcome_name} {odds}** — best available @ {bm}"
+    return None
 
 
 class DiscordAlerter:
@@ -212,9 +218,15 @@ class DiscordAlerter:
                     name="Book Movements", value="\n".join(lines), inline=False
                 )
 
-        # Additional value books (best one is already shown in description)
+        # Additional books (best one is already shown in description)
         value_books = d.get("value_books", [])
-        remaining = value_books[1:]
+        current_books = d.get("current_books", [])
+        if value_books:
+            remaining = value_books[1:]
+            label = "💰 More Value Bets"
+        else:
+            remaining = current_books[1:]
+            label = "📊 More Books"
         if remaining:
             lines = []
             for vb in remaining:
@@ -222,7 +234,7 @@ class DiscordAlerter:
                 odds = _format_odds(sig.market_key, vb.get("price"), vb.get("point"))
                 lines.append(f"**{bm}** — {sig.outcome_name} **{odds}**")
             embed.add_embed_field(
-                name="💰 More Value Bets",
+                name=label,
                 value="\n".join(lines),
                 inline=False,
             )
