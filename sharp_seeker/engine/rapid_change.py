@@ -93,15 +93,6 @@ class RapidChangeDetector(BaseDetector):
                         "point": other_row.get("point"),
                     })
 
-            # If no stale books, include triggering book's new line
-            current_books: list[dict] = []
-            if not value_books:
-                current_books.append({
-                    "bookmaker": bm,
-                    "price": row["price"],
-                    "point": row.get("point"),
-                })
-
             signals.append(
                 Signal(
                     signal_type=SignalType.RAPID_CHANGE,
@@ -124,7 +115,6 @@ class RapidChangeDetector(BaseDetector):
                         "new_point": row.get("point"),
                         "delta": round(delta, 2),
                         "value_books": value_books,
-                        "current_books": current_books,
                     },
                 )
             )
