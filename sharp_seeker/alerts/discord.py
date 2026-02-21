@@ -61,19 +61,12 @@ def _format_odds(market: str, price: float | None, point: float | None) -> str:
 def _bet_recommendation(sig: Signal, market_name: str) -> str | None:
     """Build a prominent bet recommendation line from the best value book."""
     value_books = sig.details.get("value_books", [])
-    if value_books:
-        best = value_books[0]
-        bm = best["bookmaker"].title()
-        odds = _format_odds(sig.market_key, best.get("price"), best.get("point"))
-        return f"💰 **Bet {sig.outcome_name} {odds} @ {bm}**"
-    # RLM: no value edge but still show best US book for the bet direction
-    context_books = sig.details.get("context_books", [])
-    if context_books:
-        best = context_books[0]
-        bm = best["bookmaker"].title()
-        odds = _format_odds(sig.market_key, best.get("price"), best.get("point"))
-        return f"📊 **Bet {sig.outcome_name} {odds} @ {bm}**"
-    return None
+    if not value_books:
+        return None
+    best = value_books[0]
+    bm = best["bookmaker"].title()
+    odds = _format_odds(sig.market_key, best.get("price"), best.get("point"))
+    return f"💰 **Bet {sig.outcome_name} {odds} @ {bm}**"
 
 
 class DiscordAlerter:
@@ -241,10 +234,7 @@ class DiscordAlerter:
             )
 
         # Context books (not beating Pinnacle, but useful for comparison)
-        # Skip first if it was used as the bet recommendation
         context_books = d.get("context_books", [])
-        if context_books and not value_books:
-            context_books = context_books[1:]
         if context_books:
             lines = []
             for cb in context_books:
