@@ -13,6 +13,8 @@ from sharp_seeker.engine.base import BaseDetector, Signal, SignalType
 
 log = structlog.get_logger()
 
+US_BOOKS = {"draftkings", "fanduel", "betmgm", "caesars", "williamhill_us"}
+
 
 class SteamMoveDetector(BaseDetector):
     def __init__(self, settings: Settings, repo: Repository) -> None:
@@ -105,7 +107,7 @@ class SteamMoveDetector(BaseDetector):
             moved_books = {bm for bm, _ in aligned}
             value_books: list[dict] = []
             for bm_key, entries in book_data.items():
-                if bm_key in moved_books:
+                if bm_key in moved_books or bm_key not in US_BOOKS:
                     continue
                 # This book didn't move — still on old line
                 current = current_lines.get((market_key, outcome_name, bm_key))
