@@ -10,6 +10,7 @@ import structlog
 from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
 from sharp_seeker.engine.base import BaseDetector, Signal, SignalType
+from sharp_seeker.engine.pinnacle_divergence import _us_has_better_value
 
 log = structlog.get_logger()
 
@@ -91,24 +92,43 @@ class ReverseLineDetector(BaseDetector):
             if (us_avg > 0 and pin_delta < 0) or (us_avg < 0 and pin_delta > 0):
                 us_dir = "up" if us_avg > 0 else "down"
                 pin_dir = "up" if pin_delta > 0 else "down"
-                strength = min(1.0, (abs(us_avg) + abs(pin_delta)) / 4.0)
+                # h2h deltas are in cents (5-50 typical), spreads/totals in points (0.5-3)
+                divisor = 40.0 if market_key == "h2h" else 4.0
+                strength = min(1.0, (abs(us_avg) + abs(pin_delta)) / divisor)
 
-                # Value: US books moved the WRONG way — bet in Pinnacle's direction
-                # at US books (they have the "wrong" line)
-                value_books: list[dict] = []
-                for bm_key in us_movers:
-                    current = current_lines.get((market_key, outcome_name, bm_key))
-                    if current is not None:
-                        value_books.append({
-                            "bookmaker": bm_key,
-                            "price": current["price"],
-                            "point": current.get("point"),
-                        })
-
-                # Pinnacle's current line for display
+                # Pinnacle's current line for display and value comparison
                 pin_current = current_lines.get(
                     (market_key, outcome_name, PINNACLE_KEY)
                 )
+
+                # Split US movers: value books (beating Pinnacle) vs context
+                value_books: list[dict] = []
+                context_books: list[dict] = []
+                for bm_key in us_movers:
+                    current = current_lines.get((market_key, outcome_name, bm_key))
+                    if current is None:
+                        continue
+                    entry = {
+                        "bookmaker": bm_key,
+                        "price": current["price"],
+                        "point": current.get("point"),
+                    }
+                    if pin_current is not None:
+                        if market_key == "h2h":
+                            us_val = current["price"]
+                            pin_val = pin_current["price"]
+                        elif current.get("point") is not None and pin_current.get("point") is not None:
+                            us_val = current["point"]
+                            pin_val = pin_current["point"]
+                        else:
+                            context_books.append(entry)
+                            continue
+                        if _us_has_better_value(market_key, outcome_name, us_val, pin_val):
+                            value_books.append(entry)
+                        else:
+                            context_books.append(entry)
+                    else:
+                        value_books.append(entry)
 
                 signals.append(
                     Signal(
@@ -135,6 +155,7 @@ class ReverseLineDetector(BaseDetector):
                             "pinnacle_point": pin_current.get("point") if pin_current else None,
                             "bet_direction": pin_dir,
                             "value_books": value_books,
+                            "context_books": context_books,
                         },
                     )
                 )
