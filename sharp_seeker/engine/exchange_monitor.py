@@ -111,18 +111,6 @@ class ExchangeMonitorDetector(BaseDetector):
                         "implied_prob": round(us_prob, 4),
                     })
 
-            # If all US books adjusted, include their current lines
-            current_books: list[dict] = []
-            if not value_books:
-                for (mk, on, bm_key), us_row in us_current.items():
-                    if mk != row["market_key"] or on != row["outcome_name"]:
-                        continue
-                    current_books.append({
-                        "bookmaker": bm_key,
-                        "price": us_row["price"],
-                        "point": us_row.get("point"),
-                    })
-
             signals.append(
                 Signal(
                     signal_type=SignalType.EXCHANGE_SHIFT,
@@ -145,7 +133,6 @@ class ExchangeMonitorDetector(BaseDetector):
                         "shift": round(shift, 4),
                         "direction": direction,
                         "value_books": value_books,
-                        "current_books": current_books,
                     },
                 )
             )

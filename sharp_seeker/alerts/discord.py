@@ -46,10 +46,13 @@ def _format_odds(market: str, price: float | None, point: float | None) -> str:
         if price is not None:
             return f"{price:+.0f}"
         return "?"
-    # spreads / totals: show point and price
+    # spreads: signed (+/-) point; totals: unsigned point
     parts = []
     if point is not None:
-        parts.append(f"{point:+.1f}" if point != int(point) else f"{point:+.0f}")
+        if market == "totals":
+            parts.append(f"{point:.1f}" if point != int(point) else f"{point:.0f}")
+        else:
+            parts.append(f"{point:+.1f}" if point != int(point) else f"{point:+.0f}")
     if price is not None:
         parts.append(f"({price:+.0f})")
     return " ".join(parts) if parts else "?"
@@ -58,18 +61,12 @@ def _format_odds(market: str, price: float | None, point: float | None) -> str:
 def _bet_recommendation(sig: Signal, market_name: str) -> str | None:
     """Build a prominent bet recommendation line from the best value book."""
     value_books = sig.details.get("value_books", [])
-    current_books = sig.details.get("current_books", [])
-    if value_books:
-        best = value_books[0]
-        bm = best["bookmaker"].title()
-        odds = _format_odds(sig.market_key, best.get("price"), best.get("point"))
-        return f"💰 **Bet {sig.outcome_name} {odds} @ {bm}**"
-    if current_books:
-        best = current_books[0]
-        bm = best["bookmaker"].title()
-        odds = _format_odds(sig.market_key, best.get("price"), best.get("point"))
-        return f"📊 **{sig.outcome_name} {odds}** — best available @ {bm}"
-    return None
+    if not value_books:
+        return None
+    best = value_books[0]
+    bm = best["bookmaker"].title()
+    odds = _format_odds(sig.market_key, best.get("price"), best.get("point"))
+    return f"💰 **Bet {sig.outcome_name} {odds} @ {bm}**"
 
 
 class DiscordAlerter:
@@ -213,20 +210,17 @@ class DiscordAlerter:
         if sig.signal_type == SignalType.STEAM_MOVE:
             book_details = d.get("book_details", [])
             if book_details:
-                lines = [f"`{b['bookmaker'].title():15s}` **{b['delta']:+.1f}**" for b in book_details]
+                lines = []
+                for b in book_details:
+                    odds = _format_odds(sig.market_key, b.get("price"), b.get("point"))
+                    lines.append(f"`{b['bookmaker'].title():15s}` **{odds}**")
                 embed.add_embed_field(
                     name="Book Movements", value="\n".join(lines), inline=False
                 )
 
-        # Additional books (best one is already shown in description)
+        # Additional value books (best one is already shown in description)
         value_books = d.get("value_books", [])
-        current_books = d.get("current_books", [])
-        if value_books:
-            remaining = value_books[1:]
-            label = "💰 More Value Bets"
-        else:
-            remaining = current_books[1:]
-            label = "📊 More Books"
+        remaining = value_books[1:]
         if remaining:
             lines = []
             for vb in remaining:
@@ -234,7 +228,7 @@ class DiscordAlerter:
                 odds = _format_odds(sig.market_key, vb.get("price"), vb.get("point"))
                 lines.append(f"**{bm}** — {sig.outcome_name} **{odds}**")
             embed.add_embed_field(
-                name=label,
+                name="💰 More Value Bets",
                 value="\n".join(lines),
                 inline=False,
             )
