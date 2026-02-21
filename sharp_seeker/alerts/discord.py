@@ -134,7 +134,7 @@ class DiscordAlerter:
 
         embed.set_timestamp(datetime.now(timezone.utc).isoformat())
         embed.set_footer(
-            text=f"Sandbox Sports • {sig.sport_key.replace('_', ' ').title()}",
+            text=f"Sandbox Sports • {sig.sport_key.split('_')[-1].upper()}",
             icon_url=LOGO_URL,
         )
 
