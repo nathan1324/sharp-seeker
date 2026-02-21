@@ -232,3 +232,17 @@ class DiscordAlerter:
                 value="\n".join(lines),
                 inline=False,
             )
+
+        # Context books (not beating Pinnacle, but useful for comparison)
+        context_books = d.get("context_books", [])
+        if context_books:
+            lines = []
+            for cb in context_books:
+                bm = cb["bookmaker"].title()
+                odds = _format_odds(sig.market_key, cb.get("price"), cb.get("point"))
+                lines.append(f"**{bm}** — {sig.outcome_name} **{odds}**")
+            embed.add_embed_field(
+                name="📋 Other Books",
+                value="\n".join(lines),
+                inline=False,
+            )
