@@ -177,6 +177,7 @@ class TestResolveAll:
             "outcome_name": "Los Angeles Lakers",
             "price": -150,
             "point": None,
+            "deep_link": None,
             "fetched_at": "2025-01-15T19:00:00",
         }])
 
@@ -214,6 +215,7 @@ class TestResolveAll:
             "outcome_name": "Los Angeles Lakers",
             "price": -110,
             "point": -3.5,
+            "deep_link": None,
             "fetched_at": "2025-01-15T19:00:00",
         }])
 
@@ -250,6 +252,7 @@ class TestResolveAll:
             "outcome_name": "Los Angeles Lakers",
             "price": -150,
             "point": None,
+            "deep_link": None,
             "fetched_at": "2025-01-15T19:00:00",
         }])
 

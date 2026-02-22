@@ -112,6 +112,7 @@ class ReverseLineDetector(BaseDetector):
                         "bookmaker": bm_key,
                         "price": current["price"],
                         "point": current.get("point"),
+                        "deep_link": current.get("deep_link"),
                     }
                     if pin_current is not None:
                         if market_key == "h2h":

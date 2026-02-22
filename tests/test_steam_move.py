@@ -28,6 +28,7 @@ def _snap(
         "outcome_name": outcome,
         "price": price,
         "point": point,
+        "deep_link": None,
         "fetched_at": fetched_at,
     }
 

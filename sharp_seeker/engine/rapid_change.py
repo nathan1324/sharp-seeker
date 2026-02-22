@@ -81,6 +81,7 @@ class RapidChangeDetector(BaseDetector):
                         "bookmaker": other_bm,
                         "price": other_row["price"],
                         "point": other_row.get("point"),
+                        "deep_link": other_row.get("deep_link"),
                     })
                     continue
                 if market_key == "h2h":
@@ -99,6 +100,7 @@ class RapidChangeDetector(BaseDetector):
                         "bookmaker": other_bm,
                         "price": other_row["price"],
                         "point": other_row.get("point"),
+                        "deep_link": other_row.get("deep_link"),
                     })
 
             # Sort by best value for bettor so recommendation picks the best line

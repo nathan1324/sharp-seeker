@@ -24,10 +24,10 @@ class Repository:
         sql = """
             INSERT OR IGNORE INTO odds_snapshots
                 (event_id, sport_key, home_team, away_team, commence_time,
-                 bookmaker_key, market_key, outcome_name, price, point, fetched_at)
+                 bookmaker_key, market_key, outcome_name, price, point, deep_link, fetched_at)
             VALUES
                 (:event_id, :sport_key, :home_team, :away_team, :commence_time,
-                 :bookmaker_key, :market_key, :outcome_name, :price, :point, :fetched_at)
+                 :bookmaker_key, :market_key, :outcome_name, :price, :point, :deep_link, :fetched_at)
         """
         cursor = await self._db.executemany(sql, rows)
         await self._db.commit()

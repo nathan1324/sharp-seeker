@@ -106,6 +106,7 @@ class PinnacleDivergenceDetector(BaseDetector):
                         "bookmaker": bm_key,
                         "price": row["price"],
                         "point": row.get("point"),
+                        "deep_link": row.get("deep_link"),
                     }],
                 }
                 if market_key == "h2h":

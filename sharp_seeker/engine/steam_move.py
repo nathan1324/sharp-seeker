@@ -101,6 +101,7 @@ class SteamMoveDetector(BaseDetector):
                 if current is not None:
                     entry["price"] = current["price"]
                     entry["point"] = current.get("point")
+                    entry["deep_link"] = current.get("deep_link")
                 book_details.append(entry)
 
             # Find books that haven't moved yet (stale lines = value bets)
@@ -116,6 +117,7 @@ class SteamMoveDetector(BaseDetector):
                         "bookmaker": bm_key,
                         "price": current["price"],
                         "point": current.get("point"),
+                        "deep_link": current.get("deep_link"),
                     })
 
             signals.append(
