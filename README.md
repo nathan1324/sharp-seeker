@@ -143,6 +143,7 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `DISCORD_WEBHOOK_PINNACLE_DIVERGENCE` | — | Channel for Pinnacle divergence alerts |
 | `DISCORD_WEBHOOK_REVERSE_LINE` | — | Channel for reverse line movement alerts |
 | `DISCORD_WEBHOOK_EXCHANGE_SHIFT` | — | Channel for exchange shift alerts |
+| `DISCORD_WEBHOOK_OVERRIDES` | `{}` | Per-sport+signal webhook routing (JSON, see below) |
 | `ODDS_API_MONTHLY_CREDITS` | `500` | Monthly API credit budget |
 | `SPORTS` | `["basketball_nba"]` | Sports to track (JSON array) |
 | `BOOKMAKERS` | `["draftkings","fanduel","betmgm","pinnacle"]` | Bookmakers to monitor (JSON array) |
@@ -159,6 +160,16 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `MIN_SIGNAL_STRENGTH` | `0.5` | Min strength to alert (0.0–1.0) |
 | `ALERT_COOLDOWN_MINUTES` | `60` | Dedup cooldown per signal |
 | `LOG_LEVEL` | `INFO` | Logging level |
+
+#### Per-Sport Webhook Overrides
+
+Route a specific signal type for a specific sport to its own Discord channel using `DISCORD_WEBHOOK_OVERRIDES`. Keys are `"signal_type:sport_key"`:
+
+```
+DISCORD_WEBHOOK_OVERRIDES={"pinnacle_divergence:basketball_ncaab": "https://discord.com/api/webhooks/..."}
+```
+
+Lookup priority: sport+signal override → signal-type webhook → default webhook.
 
 ### API Credit Usage
 

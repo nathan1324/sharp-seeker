@@ -91,6 +91,8 @@ class DiscordAlerter:
         for sig_type, url in _mapping.items():
             if url:
                 self._webhook_urls[sig_type] = url
+        # Per-sport+signal overrides: "signal_type:sport_key" → webhook URL
+        self._webhook_overrides: dict[str, str] = settings.discord_webhook_overrides
 
     async def send_signals(self, signals: list[Signal]) -> None:
         """Send each signal as a Discord embed and record it."""
@@ -113,7 +115,11 @@ class DiscordAlerter:
                 log.exception("alert_send_failed", event_id=signal.event_id)
 
     def _send_embed(self, sig: Signal) -> None:
-        url = self._webhook_urls.get(sig.signal_type, self._default_url)
+        override_key = f"{sig.signal_type.value}:{sig.sport_key}"
+        url = self._webhook_overrides.get(
+            override_key,
+            self._webhook_urls.get(sig.signal_type, self._default_url),
+        )
         webhook = DiscordWebhook(url=url)
 
         label = SIGNAL_LABELS.get(sig.signal_type, sig.signal_type.value)
