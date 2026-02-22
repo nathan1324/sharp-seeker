@@ -70,7 +70,7 @@ def _live_tag(commence_time: str) -> str:
         if ct.tzinfo is None:
             ct = ct.replace(tzinfo=timezone.utc)
         now = datetime.now(timezone.utc)
-        return "\U0001f534 LIVE" if now >= ct else "\U0001f7e2 PREGAME"
+        return "[LIVE]" if now >= ct else "[PREGAME]"
     except (ValueError, TypeError):
         return ""
 
