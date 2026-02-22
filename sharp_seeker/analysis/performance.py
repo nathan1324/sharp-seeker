@@ -28,6 +28,7 @@ class PerformanceTracker:
             signal_strength=signal.strength,
             signal_at=signal.details.get("fetched_at", ""),
             details_json=json.dumps(signal.details),
+            sport_key=signal.sport_key,
         )
 
     async def record_signals(self, signals: list[Signal], fetched_at: str) -> None:
@@ -43,6 +44,7 @@ class PerformanceTracker:
                 signal_strength=sig.strength,
                 signal_at=fetched_at,
                 details_json=json.dumps(sig.details),
+                sport_key=sig.sport_key,
             )
 
     async def get_stats(self, since: str | None = None) -> dict[str, dict[str, int]]:
