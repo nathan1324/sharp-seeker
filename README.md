@@ -26,7 +26,7 @@ Sharp Seeker automatically grades every signal against final game scores. Each m
 - **Spreads** — Did the team cover the spread at signal time?
 - **Totals** — Did the over/under hit against the line at signal time?
 
-Grading runs at 14:00 UTC (7 AM MT), followed by daily performance reports at 15:00 UTC (8 AM MT). Each signal type gets its own per-channel report with W/L/P record, individual outcomes, and a market-type breakdown (moneyline/spreads/totals), plus a combined summary goes to the default channel with overall stats by detector and by market.
+Grading runs at 13:30 UTC (6:30 AM MT), followed by daily performance reports at 14:00 UTC (7 AM MT). Each signal type gets its own per-channel report with W/L/P record, individual outcomes, and a market-type breakdown (moneyline/spreads/totals), plus a combined summary goes to the default channel with overall stats by detector and by market.
 
 ### Signal Pipeline
 
@@ -229,12 +229,12 @@ The daemon runs these jobs automatically via APScheduler:
 | Job | UTC | Mountain | Purpose |
 |-----|-----|----------|---------|
 | Odds polling | Every 20 min | — | Fetch odds, detect signals, send alerts |
-| **Resolve signals** | **14:00** | **7:00 AM** | Grade yesterday's games against final scores |
-| **Daily report** | **15:00** | **8:00 AM** | Per-type + combined performance report |
-| **Weekly report** | **Mon 15:30** | **Mon 8:30 AM** | Weekly summary |
+| **Resolve signals** | **13:30** | **6:30 AM** | Grade yesterday's games against final scores |
+| **Daily report** | **14:00** | **7:00 AM** | Per-type + combined performance report |
+| **Weekly report** | **Mon 14:00** | **Mon 7:00 AM** | Weekly summary |
 | Budget summary | 00:00 | 5:00 PM (prev day) | API credit usage |
 
-Grading runs before the daily report so that results are included. Quiet hours (default 05:00–14:00 UTC) only affect odds polling — reports and grading run regardless.
+Grading runs 30 minutes before the daily report so that results are included. Quiet hours (default 05:00–14:00 UTC) only affect odds polling — reports and grading run regardless.
 
 ## Server Management
 
