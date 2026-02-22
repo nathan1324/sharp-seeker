@@ -137,33 +137,33 @@ def create_scheduler(poller: Poller, settings: Settings) -> AsyncIOScheduler:
         name="Send daily budget summary",
     )
 
-    # Resolve signals at 14:00 UTC (7 AM MT) — grade yesterday's games
+    # Resolve signals at 13:30 UTC (6:30 AM MT) — grade yesterday's games
     scheduler.add_job(
         poller.resolve_signals,
         "cron",
-        hour=14,
-        minute=0,
+        hour=13,
+        minute=30,
         id="resolve_signals",
         name="Grade signals against final scores",
     )
 
-    # Daily signal performance report at 15:00 UTC (8 AM MT) — after grading
+    # Daily signal performance report at 14:00 UTC (7 AM MT) — after grading
     scheduler.add_job(
         poller.daily_report,
         "cron",
-        hour=15,
+        hour=14,
         minute=0,
         id="daily_report",
         name="Send daily signal report",
     )
 
-    # Weekly report every Monday at 15:30 UTC (8:30 AM MT)
+    # Weekly report every Monday at 14:00 UTC (7 AM MT)
     scheduler.add_job(
         poller.weekly_report,
         "cron",
         day_of_week="mon",
-        hour=15,
-        minute=30,
+        hour=14,
+        minute=0,
         id="weekly_report",
         name="Send weekly signal report",
     )
