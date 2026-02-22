@@ -189,6 +189,7 @@ class TestResolveAll:
             signal_direction="up",
             signal_strength=0.8,
             signal_at="2025-01-15T20:00:00",
+            sport_key="basketball_nba",
         )
 
         grader._odds_client.fetch_scores = AsyncMock(return_value=[GAME_LAKERS_WIN])
@@ -227,6 +228,7 @@ class TestResolveAll:
             signal_direction="up",
             signal_strength=0.8,
             signal_at="2025-01-15T20:00:00",
+            sport_key="basketball_nba",
         )
 
         grader._odds_client.fetch_scores = AsyncMock(return_value=[GAME_LAKERS_WIN])

@@ -48,6 +48,7 @@ CREATE INDEX IF NOT EXISTS idx_alerts_dedup
 CREATE TABLE IF NOT EXISTS signal_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id TEXT NOT NULL,
+    sport_key TEXT,
     signal_type TEXT NOT NULL,
     market_key TEXT NOT NULL,
     outcome_name TEXT NOT NULL,

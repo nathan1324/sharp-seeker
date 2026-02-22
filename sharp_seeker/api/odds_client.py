@@ -18,7 +18,7 @@ log = structlog.get_logger()
 
 # BetMGM uses state-specific subdomains (sports.co.betmgm.com).
 # Strip the state so the base domain geo-redirects automatically.
-_BETMGM_STATE_RE = re.compile(r"(https?://sports)\.[a-z]{2}(\.betmgm\.com)")
+_BETMGM_STATE_RE = re.compile(r"(https?://sports)\.\w+(\.betmgm\.com)")
 
 
 def _normalize_deep_link(url: str | None) -> str | None:

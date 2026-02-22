@@ -200,17 +200,18 @@ class Repository:
         signal_strength: float,
         signal_at: str,
         details_json: str | None = None,
+        sport_key: str | None = None,
     ) -> None:
         sql = """
             INSERT OR IGNORE INTO signal_results
-                (event_id, signal_type, market_key, outcome_name,
+                (event_id, sport_key, signal_type, market_key, outcome_name,
                  signal_direction, signal_strength, signal_at, details_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         await self._db.execute(
             sql,
             (
-                event_id, signal_type, market_key, outcome_name,
+                event_id, sport_key, signal_type, market_key, outcome_name,
                 signal_direction, signal_strength, signal_at, details_json,
             ),
         )
@@ -240,14 +241,17 @@ class Repository:
         return await cursor.fetchall()
 
     async def get_performance_stats(
-        self, since: str | None = None
+        self, since: str | None = None, sport_key: str | None = None,
     ) -> dict[str, dict[str, int]]:
         """Get win/loss/push counts grouped by signal type."""
         where = "WHERE result IS NOT NULL"
-        params: tuple = ()
+        params: list[str] = []
         if since:
             where += " AND signal_at >= ?"
-            params = (since,)
+            params.append(since)
+        if sport_key:
+            where += " AND sport_key = ?"
+            params.append(sport_key)
 
         sql = f"""
             SELECT signal_type, result, COUNT(*) AS cnt
@@ -255,7 +259,7 @@ class Repository:
             {where}
             GROUP BY signal_type, result
         """
-        cursor = await self._db.execute(sql, params)
+        cursor = await self._db.execute(sql, tuple(params))
         rows = await cursor.fetchall()
 
         stats: dict[str, dict[str, int]] = {}
@@ -270,6 +274,7 @@ class Repository:
         self,
         since: str | None = None,
         signal_type: str | None = None,
+        sport_key: str | None = None,
     ) -> dict[str, dict[str, int]]:
         """Get win/loss/push counts grouped by market_key."""
         where = "WHERE result IS NOT NULL"
@@ -280,6 +285,9 @@ class Repository:
         if signal_type:
             where += " AND signal_type = ?"
             params.append(signal_type)
+        if sport_key:
+            where += " AND sport_key = ?"
+            params.append(sport_key)
 
         sql = f"""
             SELECT market_key, result, COUNT(*) AS cnt
@@ -347,23 +355,24 @@ class Repository:
         return row["point"] if row else None
 
     async def get_resolved_signals_since(
-        self, since: str, signal_type: str | None = None
+        self, since: str, signal_type: str | None = None,
+        sport_key: str | None = None,
     ) -> list[aiosqlite.Row]:
-        """Get resolved signals since a timestamp, optionally filtered by type."""
+        """Get resolved signals since a timestamp, optionally filtered by type/sport."""
+        where = "WHERE result IS NOT NULL AND resolved_at >= ?"
+        params: list[str] = [since]
         if signal_type:
-            sql = """
-                SELECT * FROM signal_results
-                WHERE result IS NOT NULL AND resolved_at >= ? AND signal_type = ?
-                ORDER BY resolved_at DESC
-            """
-            cursor = await self._db.execute(sql, (since, signal_type))
-        else:
-            sql = """
-                SELECT * FROM signal_results
-                WHERE result IS NOT NULL AND resolved_at >= ?
-                ORDER BY resolved_at DESC
-            """
-            cursor = await self._db.execute(sql, (since,))
+            where += " AND signal_type = ?"
+            params.append(signal_type)
+        if sport_key:
+            where += " AND sport_key = ?"
+            params.append(sport_key)
+        sql = f"""
+            SELECT * FROM signal_results
+            {where}
+            ORDER BY resolved_at DESC
+        """
+        cursor = await self._db.execute(sql, tuple(params))
         return await cursor.fetchall()
 
     async def get_event_teams(self, event_id: str) -> tuple[str, str] | None:
