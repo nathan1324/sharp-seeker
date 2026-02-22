@@ -39,21 +39,29 @@ _MARKET_FRIENDLY: dict[str, str] = {
 }
 
 
+def _sport_friendly(sport_key: str) -> str:
+    """Convert a sport_key like 'basketball_ncaab' to 'NCAAB'."""
+    parts = sport_key.split("_", 1)
+    return parts[-1].upper() if len(parts) > 1 else sport_key.upper()
+
+
 class ReportGenerator:
     def __init__(self, settings: Settings, repo: Repository) -> None:
         self._settings = settings
         self._repo = repo
 
     async def send_daily_report(self) -> None:
-        """Send per-signal-type reports + combined summary."""
+        """Send per-signal-type reports + combined summary + override reports."""
         since = self._hours_ago(24)
         await self._send_per_type_reports("Daily", since)
+        await self._send_override_reports("Daily", since)
         await self._send_combined_report("Daily Signal Report", since)
 
     async def send_weekly_report(self) -> None:
-        """Send per-signal-type reports + combined summary."""
+        """Send per-signal-type reports + combined summary + override reports."""
         since = self._hours_ago(168)
         await self._send_per_type_reports("Weekly", since)
+        await self._send_override_reports("Weekly", since)
         await self._send_combined_report("Weekly Signal Report", since)
 
     # ── Per-signal-type reports ──────────────────────────────────
@@ -132,6 +140,94 @@ class ReportGenerator:
             embed.set_footer(text="Sandbox Sports", icon_url=LOGO_URL)
 
             self._send_webhook(webhook_url, embed, f"{period} {friendly}")
+
+    # ── Per-sport override reports ─────────────────────────────
+
+    async def _send_override_reports(self, period: str, since: str) -> None:
+        """Send sport-specific reports to each webhook override channel."""
+        overrides = self._settings.discord_webhook_overrides
+        if not overrides:
+            return
+
+        for key, webhook_url in overrides.items():
+            parts = key.split(":", 1)
+            if len(parts) != 2:
+                log.warning("invalid_override_key", key=key)
+                continue
+            signal_type_val, sport_key = parts
+
+            friendly_signal = _SIGNAL_FRIENDLY.get(signal_type_val, signal_type_val)
+            friendly_sport = _sport_friendly(sport_key)
+
+            stats = await self._repo.get_performance_stats(
+                since, sport_key=sport_key,
+            )
+            counts = stats.get(signal_type_val)
+            if not counts:
+                continue
+
+            won = counts.get("won", 0)
+            lost = counts.get("lost", 0)
+            push = counts.get("push", 0)
+            decided = won + lost
+            rate = f"{won / decided:.0%}" if decided else "N/A"
+
+            title = f"{period} {friendly_signal} Report — {friendly_sport}"
+            embed = DiscordEmbed(
+                title=title,
+                description=f"Period: since {since[:10]}",
+                color=0x9B59B6,
+            )
+
+            embed.add_embed_field(
+                name="Record",
+                value=f"**{rate}** ({won}W / {lost}L / {push}P)",
+                inline=True,
+            )
+
+            resolved = await self._repo.get_resolved_signals_since(
+                since, signal_type=signal_type_val, sport_key=sport_key,
+            )
+            if resolved:
+                lines = []
+                for sig in resolved[:15]:
+                    sig_dict = dict(sig)
+                    emoji = RESULT_EMOJI.get(sig_dict["result"], "?")
+                    teams = await self._repo.get_event_teams(sig_dict["event_id"])
+                    matchup = f"{teams[1]} vs {teams[0]}" if teams else sig_dict["event_id"]
+                    lines.append(
+                        f"{emoji} {matchup} — {sig_dict['market_key']} "
+                        f"{sig_dict['outcome_name']}"
+                    )
+                embed.add_embed_field(
+                    name="Results",
+                    value="\n".join(lines),
+                    inline=False,
+                )
+
+            market_stats = await self._repo.get_performance_stats_by_market(
+                since, signal_type=signal_type_val, sport_key=sport_key,
+            )
+            if market_stats:
+                mlines = []
+                for mk, mc in sorted(market_stats.items()):
+                    mname = _MARKET_FRIENDLY.get(mk, mk)
+                    mw = mc.get("won", 0)
+                    ml = mc.get("lost", 0)
+                    mp = mc.get("push", 0)
+                    md = mw + ml
+                    mr = f"{mw / md:.0%}" if md else "N/A"
+                    mlines.append(f"**{mname}**: {mr} ({mw}W/{ml}L/{mp}P)")
+                embed.add_embed_field(
+                    name="By Market",
+                    value="\n".join(mlines),
+                    inline=False,
+                )
+
+            embed.set_timestamp(datetime.now(timezone.utc).isoformat())
+            embed.set_footer(text="Sandbox Sports", icon_url=LOGO_URL)
+
+            self._send_webhook(webhook_url, embed, title)
 
     # ── Combined summary (default channel) ──────────────────────
 
