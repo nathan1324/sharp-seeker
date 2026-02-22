@@ -102,6 +102,7 @@ class ExchangeMonitorDetector(BaseDetector):
                         "price": us_row["price"],
                         "point": us_row.get("point"),
                         "implied_prob": round(us_prob, 4),
+                        "deep_link": us_row.get("deep_link"),
                     })
                 elif direction == "drifted" and us_prob > new_prob:
                     value_books.append({
@@ -109,6 +110,7 @@ class ExchangeMonitorDetector(BaseDetector):
                         "price": us_row["price"],
                         "point": us_row.get("point"),
                         "implied_prob": round(us_prob, 4),
+                        "deep_link": us_row.get("deep_link"),
                     })
 
             signals.append(

@@ -16,7 +16,7 @@ Sharp Seeker polls [The Odds API](https://the-odds-api.com) on an interval, stor
 
 Every detector also identifies **value bets** — sportsbooks that haven't adjusted to the detected movement yet, showing the outcome and current odds you can still bet at.
 
-When a signal is detected, a color-coded Discord embed is sent with the matchup, market, line movement, strength bar, book-level details, and actionable value bets.
+When a signal is detected, a color-coded Discord embed is sent with the matchup, market, line movement, strength bar, book-level details, and actionable value bets. Book names and bet recommendations include **clickable deep links** that open the sportsbook directly to the betslip (where supported by the book).
 
 ### Auto-Grading
 

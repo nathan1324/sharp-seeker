@@ -47,6 +47,7 @@ class OddsClient:
             "markets": self.MARKETS,
             "bookmakers": ",".join(self._settings.bookmakers),
             "oddsFormat": "american",
+            "includeLinks": "true",
         }
         resp = await self._client.get(f"/sports/{sport_key}/odds", params=params)
         resp.raise_for_status()
@@ -63,6 +64,7 @@ class OddsClient:
             for bm in event.bookmakers:
                 for market in bm.markets:
                     for outcome in market.outcomes:
+                        deep_link = outcome.link or market.link or bm.link
                         rows.append(
                             {
                                 "event_id": event.id,
@@ -75,6 +77,7 @@ class OddsClient:
                                 "outcome_name": outcome.name,
                                 "price": outcome.price,
                                 "point": outcome.point,
+                                "deep_link": deep_link,
                                 "fetched_at": now,
                             }
                         )

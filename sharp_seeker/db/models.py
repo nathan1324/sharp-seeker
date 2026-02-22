@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS odds_snapshots (
     outcome_name TEXT NOT NULL,
     price REAL NOT NULL,
     point REAL,
+    deep_link TEXT,
     fetched_at TEXT NOT NULL,
     UNIQUE(event_id, bookmaker_key, market_key, outcome_name, fetched_at)
 );

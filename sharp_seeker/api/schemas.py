@@ -9,17 +9,20 @@ class OutcomeSchema(BaseModel):
     name: str
     price: float
     point: float | None = None
+    link: str | None = None
 
 
 class MarketSchema(BaseModel):
     key: str
     outcomes: list[OutcomeSchema]
+    link: str | None = None
 
 
 class BookmakerSchema(BaseModel):
     key: str
     title: str
     markets: list[MarketSchema]
+    link: str | None = None
 
 
 class EventOddsSchema(BaseModel):

@@ -68,7 +68,11 @@ def _bet_recommendation(sig: Signal, market_name: str) -> str | None:
     best = value_books[0]
     bm = best["bookmaker"].title()
     odds = _format_odds(sig.market_key, best.get("price"), best.get("point"))
-    return f"💰 **Bet {sig.outcome_name} {odds} @ {bm}**"
+    text = f"Bet {sig.outcome_name} {odds} @ {bm}"
+    link = best.get("deep_link")
+    if link:
+        return f"💰 **[{text}]({link})**"
+    return f"💰 **{text}**"
 
 
 class DiscordAlerter:
@@ -217,8 +221,13 @@ class DiscordAlerter:
             if book_details:
                 lines = []
                 for b in book_details:
+                    bm = b["bookmaker"].title()
                     odds = _format_odds(sig.market_key, b.get("price"), b.get("point"))
-                    lines.append(f"`{b['bookmaker'].title():15s}` **{odds}**")
+                    link = b.get("deep_link")
+                    if link:
+                        lines.append(f"[**{bm}**]({link}) — **{odds}**")
+                    else:
+                        lines.append(f"`{bm:15s}` **{odds}**")
                 embed.add_embed_field(
                     name="Book Movements", value="\n".join(lines), inline=False
                 )
@@ -231,7 +240,11 @@ class DiscordAlerter:
             for vb in remaining:
                 bm = vb["bookmaker"].title()
                 odds = _format_odds(sig.market_key, vb.get("price"), vb.get("point"))
-                lines.append(f"**{bm}** — {sig.outcome_name} **{odds}**")
+                link = vb.get("deep_link")
+                if link:
+                    lines.append(f"[**{bm}**]({link}) — {sig.outcome_name} **{odds}**")
+                else:
+                    lines.append(f"**{bm}** — {sig.outcome_name} **{odds}**")
             embed.add_embed_field(
                 name="💰 More Value Bets",
                 value="\n".join(lines),
@@ -245,7 +258,11 @@ class DiscordAlerter:
             for cb in context_books:
                 bm = cb["bookmaker"].title()
                 odds = _format_odds(sig.market_key, cb.get("price"), cb.get("point"))
-                lines.append(f"**{bm}** — {sig.outcome_name} **{odds}**")
+                link = cb.get("deep_link")
+                if link:
+                    lines.append(f"[**{bm}**]({link}) — {sig.outcome_name} **{odds}**")
+                else:
+                    lines.append(f"**{bm}** — {sig.outcome_name} **{odds}**")
             embed.add_embed_field(
                 name="📋 Other Books",
                 value="\n".join(lines),
