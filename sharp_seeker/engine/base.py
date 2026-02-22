@@ -26,6 +26,7 @@ class Signal:
     outcome_name: str
     strength: float  # 0.0–1.0
     description: str
+    commence_time: str = ""
     details: dict = field(default_factory=dict)
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import structlog
 from discord_webhook import DiscordEmbed, DiscordWebhook
@@ -58,6 +59,20 @@ def _format_odds(market: str, price: float | None, point: float | None) -> str:
     if price is not None:
         parts.append(f"({price:+.0f})")
     return " ".join(parts) if parts else "?"
+
+
+def _live_tag(commence_time: str) -> str:
+    """Return a LIVE or PREGAME tag based on commence_time vs now."""
+    if not commence_time:
+        return ""
+    try:
+        ct = datetime.fromisoformat(commence_time)
+        if ct.tzinfo is None:
+            ct = ct.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        return "\U0001f534 LIVE" if now >= ct else "\U0001f7e2 PREGAME"
+    except (ValueError, TypeError):
+        return ""
 
 
 def _bet_recommendation(sig: Signal, market_name: str) -> str | None:
@@ -127,9 +142,9 @@ class DiscordAlerter:
         market_name = MARKET_NAMES.get(sig.market_key, sig.market_key)
         matchup = f"{sig.away_team} @ {sig.home_team}"
 
-        # Title: signal type
-        # Description: matchup + big line movement block
-        title = f"{label}"
+        # Title: signal type + live/pregame tag
+        live_tag = _live_tag(sig.commence_time)
+        title = f"{label}  {live_tag}" if live_tag else f"{label}"
         desc = self._build_description(sig, matchup, market_name)
 
         embed = DiscordEmbed(title=title, description=desc, color=color)

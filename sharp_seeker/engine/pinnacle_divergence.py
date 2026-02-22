@@ -49,14 +49,14 @@ class PinnacleDivergenceDetector(BaseDetector):
 
         # Index by (market, outcome) → {bookmaker: row}
         by_market: dict[tuple[str, str], dict[str, dict]] = {}
-        meta: tuple[str, str, str] | None = None
+        meta: tuple[str, str, str, str] | None = None
 
         for _row in latest:
             row = dict(_row)
             key = (row["market_key"], row["outcome_name"])
             by_market.setdefault(key, {})[row["bookmaker_key"]] = row
             if meta is None:
-                meta = (row["sport_key"], row["home_team"], row["away_team"])
+                meta = (row["sport_key"], row["home_team"], row["away_team"], row["commence_time"])
 
         if meta is None:
             return []
@@ -120,6 +120,7 @@ class PinnacleDivergenceDetector(BaseDetector):
                         sport_key=meta[0],
                         home_team=meta[1],
                         away_team=meta[2],
+                        commence_time=meta[3],
                         market_key=market_key,
                         outcome_name=outcome_name,
                         strength=round(strength, 2),

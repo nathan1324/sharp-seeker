@@ -37,7 +37,7 @@ class RapidChangeDetector(BaseDetector):
             row = dict(_row)
             current_lines[(row["market_key"], row["outcome_name"], row["bookmaker_key"])] = row
 
-        meta: tuple[str, str, str] | None = None
+        meta: tuple[str, str, str, str] | None = None
         signals: list[Signal] = []
 
         for _row in latest:
@@ -48,7 +48,7 @@ class RapidChangeDetector(BaseDetector):
                 continue
 
             if meta is None:
-                meta = (row["sport_key"], row["home_team"], row["away_team"])
+                meta = (row["sport_key"], row["home_team"], row["away_team"], row["commence_time"])
 
             market_key = row["market_key"]
             bm = row["bookmaker_key"]
@@ -123,6 +123,7 @@ class RapidChangeDetector(BaseDetector):
                     sport_key=meta[0],
                     home_team=meta[1],
                     away_team=meta[2],
+                    commence_time=meta[3],
                     market_key=market_key,
                     outcome_name=row["outcome_name"],
                     strength=round(strength, 2),
