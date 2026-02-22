@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime, timezone
 
 import structlog
 
@@ -114,11 +115,34 @@ class DetectionPipeline:
             min_strength=min_str,
         )
 
+        # Drop live totals — too volatile for our polling window
+        now = datetime.now(timezone.utc)
+        filtered_signals = []
+        live_totals_dropped = 0
+        for sig in strong_signals:
+            if sig.market_key == "totals" and sig.commence_time:
+                try:
+                    ct = datetime.fromisoformat(sig.commence_time)
+                    if ct.tzinfo is None:
+                        ct = ct.replace(tzinfo=timezone.utc)
+                    if now >= ct:
+                        live_totals_dropped += 1
+                        continue
+                except (ValueError, TypeError):
+                    pass
+            filtered_signals.append(sig)
+        if live_totals_dropped:
+            log.info(
+                "live_totals_filter",
+                dropped=live_totals_dropped,
+                remaining=len(filtered_signals),
+            )
+
         # Deduplicate opposite sides of the same market.
         # e.g. "Nuggets -7.5" and "Clippers +7.5" are mirror signals — keep only
         # the most actionable side (more value books, then higher strength).
         grouped: dict[tuple[str, str, str], list[Signal]] = defaultdict(list)
-        for sig in strong_signals:
+        for sig in filtered_signals:
             grouped[(sig.event_id, sig.signal_type.value, sig.market_key)].append(sig)
 
         deduped_signals: list[Signal] = []
@@ -163,6 +187,7 @@ class DetectionPipeline:
             "pipeline_complete",
             total_signals=len(all_signals),
             after_strength=len(strong_signals),
+            live_totals_dropped=live_totals_dropped,
             after_side_dedup=len(deduped_signals),
             after_value_filter=len(actionable),
             new_signals=len(new_signals),
