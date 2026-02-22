@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     discord_webhook_reverse_line: str | None = None
     discord_webhook_exchange_shift: str | None = None
 
+    # Per-sport+signal webhook overrides (JSON object in .env)
+    # Keys: "signal_type:sport_key", values: webhook URL
+    # Example: {"pinnacle_divergence:basketball_ncaab": "https://discord.com/api/webhooks/..."}
+    discord_webhook_overrides: dict[str, str] = Field(default_factory=dict)
+
     # Polling
     poll_interval_minutes: int = 20
 
