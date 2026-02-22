@@ -46,12 +46,12 @@ class ExchangeMonitorDetector(BaseDetector):
 
         # Index current US book lines by (market, outcome, bookmaker)
         us_current: dict[tuple[str, str, str], dict] = {}
-        meta: tuple[str, str, str] | None = None
+        meta: tuple[str, str, str, str] | None = None
 
         for _row in latest:
             row = dict(_row)
             if meta is None:
-                meta = (row["sport_key"], row["home_team"], row["away_team"])
+                meta = (row["sport_key"], row["home_team"], row["away_team"], row["commence_time"])
             if row["bookmaker_key"] in US_BOOKS:
                 us_current[(row["market_key"], row["outcome_name"], row["bookmaker_key"])] = row
 
@@ -66,7 +66,7 @@ class ExchangeMonitorDetector(BaseDetector):
                 continue
 
             if meta is None:
-                meta = (row["sport_key"], row["home_team"], row["away_team"])
+                meta = (row["sport_key"], row["home_team"], row["away_team"], row["commence_time"])
 
             key = (row["market_key"], row["outcome_name"])
             prev = prev_map.get(key)
@@ -120,6 +120,7 @@ class ExchangeMonitorDetector(BaseDetector):
                     sport_key=meta[0],
                     home_team=meta[1],
                     away_team=meta[2],
+                    commence_time=meta[3],
                     market_key=row["market_key"],
                     outcome_name=row["outcome_name"],
                     strength=round(strength, 2),

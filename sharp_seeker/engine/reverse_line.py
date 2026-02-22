@@ -37,7 +37,7 @@ class ReverseLineDetector(BaseDetector):
         grouped: dict[tuple[str, str], dict[str, list[tuple[str, float, float | None]]]] = (
             defaultdict(lambda: defaultdict(list))
         )
-        meta: tuple[str, str, str] | None = None
+        meta: tuple[str, str, str, str] | None = None
 
         for snap in snapshots:
             key = (snap["market_key"], snap["outcome_name"])
@@ -45,7 +45,7 @@ class ReverseLineDetector(BaseDetector):
                 (snap["fetched_at"], snap["price"], snap["point"])
             )
             if meta is None:
-                meta = (snap["sport_key"], snap["home_team"], snap["away_team"])
+                meta = (snap["sport_key"], snap["home_team"], snap["away_team"], snap["commence_time"])
 
         if meta is None:
             return []
@@ -138,6 +138,7 @@ class ReverseLineDetector(BaseDetector):
                         sport_key=meta[0],
                         home_team=meta[1],
                         away_team=meta[2],
+                        commence_time=meta[3],
                         market_key=market_key,
                         outcome_name=outcome_name,
                         strength=round(strength, 2),

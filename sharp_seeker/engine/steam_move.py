@@ -35,7 +35,7 @@ class SteamMoveDetector(BaseDetector):
         grouped: dict[tuple[str, str], dict[str, list[tuple[str, float, float | None]]]] = (
             defaultdict(lambda: defaultdict(list))
         )
-        meta: dict[str, tuple[str, str, str]] = {}
+        meta: dict[str, tuple[str, str, str, str]] = {}
 
         for snap in snapshots:
             key = (snap["market_key"], snap["outcome_name"])
@@ -43,9 +43,9 @@ class SteamMoveDetector(BaseDetector):
                 (snap["fetched_at"], snap["price"], snap["point"])
             )
             if event_id not in meta:
-                meta[event_id] = (snap["sport_key"], snap["home_team"], snap["away_team"])
+                meta[event_id] = (snap["sport_key"], snap["home_team"], snap["away_team"], snap["commence_time"])
 
-        sport_key, home, away = meta.get(event_id, ("", "", ""))
+        sport_key, home, away, commence_time = meta.get(event_id, ("", "", "", ""))
 
         # Build current lines for value book detection
         latest = await self._repo.get_latest_snapshots(event_id)
@@ -127,6 +127,7 @@ class SteamMoveDetector(BaseDetector):
                     sport_key=sport_key,
                     home_team=home,
                     away_team=away,
+                    commence_time=commence_time,
                     market_key=market_key,
                     outcome_name=outcome_name,
                     strength=round(strength, 2),
