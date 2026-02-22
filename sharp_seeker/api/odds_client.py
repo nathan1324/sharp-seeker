@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -14,6 +15,17 @@ from sharp_seeker.db.repository import Repository
 from sharp_seeker.polling.smart import filter_events_for_cycle
 
 log = structlog.get_logger()
+
+# BetMGM uses state-specific subdomains (sports.co.betmgm.com).
+# Strip the state so the base domain geo-redirects automatically.
+_BETMGM_STATE_RE = re.compile(r"(https?://sports)\.[a-z]{2}(\.betmgm\.com)")
+
+
+def _normalize_deep_link(url: str | None) -> str | None:
+    """Normalize sportsbook deep links for broad consumption."""
+    if url is None:
+        return None
+    return _BETMGM_STATE_RE.sub(r"\1\2", url)
 
 
 class OddsClient:
@@ -64,7 +76,9 @@ class OddsClient:
             for bm in event.bookmakers:
                 for market in bm.markets:
                     for outcome in market.outcomes:
-                        deep_link = outcome.link or market.link or bm.link
+                        deep_link = _normalize_deep_link(
+                            outcome.link or market.link or bm.link
+                        )
                         rows.append(
                             {
                                 "event_id": event.id,
