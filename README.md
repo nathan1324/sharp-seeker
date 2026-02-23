@@ -60,6 +60,7 @@ sharp_seeker/
 │   └── pipeline.py              # Orchestrator + deduplication
 ├── alerts/
 │   ├── discord.py               # Webhook formatting + sending
+│   ├── x_poster.py              # X (Twitter) teaser + free play tweets
 │   └── models.py                # Alert color/label mappings
 ├── polling/
 │   ├── scheduler.py             # APScheduler config + poll loop
@@ -159,6 +160,12 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `EXCHANGE_SHIFT_THRESHOLD` | `0.05` | Implied probability shift (5%) |
 | `MIN_SIGNAL_STRENGTH` | `0.5` | Min strength to alert (0.0–1.0) |
 | `ALERT_COOLDOWN_MINUTES` | `60` | Dedup cooldown per signal |
+| `X_CONSUMER_KEY` | — | X OAuth 1.0a consumer key (optional) |
+| `X_CONSUMER_SECRET` | — | X OAuth 1.0a consumer secret (optional) |
+| `X_ACCESS_TOKEN` | — | X OAuth 1.0a access token (optional) |
+| `X_ACCESS_TOKEN_SECRET` | — | X OAuth 1.0a access token secret (optional) |
+| `X_CTA_URL` | `""` | Link in tweet CTA (Discord invite / landing page) |
+| `X_FREE_PLAY_INTERVAL` | `10` | Every Nth Pinnacle Divergence = free play |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
 #### Per-Sport Webhook Overrides
@@ -252,6 +259,44 @@ docker compose down
 bash deploy/update.sh
 ```
 
+## X (Twitter) Integration
+
+Sharp Seeker can automatically post to X when signals fire. Most tweets are **teasers** — showing the matchup and signal type to create curiosity — with a CTA link to your Discord. Every Nth Pinnacle Divergence signal is posted as a **free play** with full pick details revealed publicly.
+
+**Teaser example:**
+```
+🔥 Sharp money detected — Lakers vs Celtics (Steam Move)
+
+Get real-time signals in Discord → https://discord.gg/your-link
+```
+
+**Free play example (every 10th Pinnacle Divergence):**
+```
+🎯 FREE PLAY — Lakers vs Celtics Spread
+
+💰 Bet Lakers -3.5 (-110) @ DraftKings
+Pinnacle Divergence • 85% strength
+
+Get real-time signals in Discord → https://discord.gg/your-link
+```
+
+### Setup
+
+1. Apply for a [free X developer account](https://developer.x.com) (1,500 tweets/month)
+2. Create an app and generate OAuth 1.0a credentials
+3. Add credentials to `.env`:
+
+```
+X_CONSUMER_KEY=your_consumer_key
+X_CONSUMER_SECRET=your_consumer_secret
+X_ACCESS_TOKEN=your_access_token
+X_ACCESS_TOKEN_SECRET=your_access_token_secret
+X_CTA_URL=https://discord.gg/your-invite-link
+X_FREE_PLAY_INTERVAL=10
+```
+
+X posting is **optional** — if credentials are not set, the poster disables itself with no errors.
+
 ## Running Tests
 
 ```bash
@@ -267,4 +312,5 @@ pytest
 - **httpx** for async HTTP
 - **discord-webhook** for Discord embeds
 - **pydantic-settings** for configuration
+- **tweepy** for X (Twitter) API v2
 - **structlog** for structured JSON logging

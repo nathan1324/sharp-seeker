@@ -137,6 +137,13 @@ class Repository:
         )
         await self._db.commit()
 
+    async def count_alerts_by_type(self, alert_type: str) -> int:
+        """Count total sent alerts of a given type."""
+        sql = "SELECT COUNT(*) AS cnt FROM sent_alerts WHERE alert_type = ?"
+        cursor = await self._db.execute(sql, (alert_type,))
+        row = await cursor.fetchone()
+        return row["cnt"] if row else 0
+
     # ── API usage ───────────────────────────────────────────────────
 
     async def record_api_usage(

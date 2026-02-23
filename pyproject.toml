@@ -15,6 +15,7 @@ dependencies = [
     "pydantic>=2.5",
     "pydantic-settings>=2.1",
     "structlog>=24.1",
+    "tweepy>=4.14",
 ]
 
 [project.optional-dependencies]
