@@ -8,6 +8,7 @@ import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from sharp_seeker.alerts.discord import DiscordAlerter
+from sharp_seeker.alerts.x_poster import XPoster
 from sharp_seeker.analysis.grader import ScoreGrader
 from sharp_seeker.analysis.performance import PerformanceTracker
 from sharp_seeker.analysis.reports import ReportGenerator
@@ -26,6 +27,7 @@ class Poller:
         odds_client: OddsClient,
         pipeline: DetectionPipeline,
         alerter: DiscordAlerter,
+        x_poster: XPoster,
         budget: BudgetTracker,
         perf_tracker: PerformanceTracker,
         report_gen: ReportGenerator,
@@ -35,6 +37,7 @@ class Poller:
         self._odds_client = odds_client
         self._pipeline = pipeline
         self._alerter = alerter
+        self._x_poster = x_poster
         self._budget = budget
         self._perf_tracker = perf_tracker
         self._report_gen = report_gen
@@ -79,6 +82,7 @@ class Poller:
 
         if signals:
             await self._alerter.send_signals(signals)
+            await self._x_poster.post_signals(signals)
             await self._perf_tracker.record_signals(signals, fetched_at)
             log.info("poll_cycle_alerts", count=len(signals))
         else:

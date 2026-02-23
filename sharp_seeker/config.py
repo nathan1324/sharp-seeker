@@ -72,5 +72,13 @@ class Settings(BaseSettings):
     # Database
     db_path: str = "sharp_seeker.db"
 
+    # X (Twitter) — optional, disabled if credentials not set
+    x_consumer_key: str | None = None
+    x_consumer_secret: str | None = None
+    x_access_token: str | None = None
+    x_access_token_secret: str | None = None
+    x_cta_url: str = ""  # Discord invite or landing page link
+    x_free_play_interval: int = 10  # every Nth pinnacle divergence = free play
+
     # Logging
     log_level: str = "INFO"
