@@ -136,16 +136,6 @@ class ReportGenerator:
                     inline=False,
                 )
 
-            # Live vs pregame breakdown
-            timing_stats = await self._repo.get_performance_stats_by_timing(
-                since, signal_type=signal_type_val
-            )
-            timing_text = self._format_timing_field(timing_stats)
-            if timing_text:
-                embed.add_embed_field(
-                    name="By Timing", value=timing_text, inline=False,
-                )
-
             embed.set_timestamp(datetime.now(timezone.utc).isoformat())
             embed.set_footer(text="Sandbox Sports", icon_url=LOGO_URL)
 
@@ -234,16 +224,6 @@ class ReportGenerator:
                     inline=False,
                 )
 
-            # Live vs pregame breakdown
-            timing_stats = await self._repo.get_performance_stats_by_timing(
-                since, signal_type=signal_type_val, sport_key=sport_key,
-            )
-            timing_text = self._format_timing_field(timing_stats)
-            if timing_text:
-                embed.add_embed_field(
-                    name="By Timing", value=timing_text, inline=False,
-                )
-
             embed.set_timestamp(datetime.now(timezone.utc).isoformat())
             embed.set_footer(text="Sandbox Sports", icon_url=LOGO_URL)
 
@@ -314,13 +294,6 @@ class ReportGenerator:
                     inline=False,
                 )
 
-            # Overall live vs pregame breakdown
-            timing_stats = await self._repo.get_performance_stats_by_timing(since)
-            timing_text = self._format_timing_field(timing_stats)
-            if timing_text:
-                embed.add_embed_field(
-                    name="By Timing", value=timing_text, inline=False,
-                )
         else:
             embed.add_embed_field(
                 name="Performance", value="No resolved signals yet", inline=False
@@ -343,24 +316,6 @@ class ReportGenerator:
             if url:
                 return url
         return self._settings.discord_webhook_url
-
-    @staticmethod
-    def _format_timing_field(timing_stats: dict[str, dict[str, int]]) -> str | None:
-        """Format live/pregame stats into a string for embed fields."""
-        if not timing_stats:
-            return None
-        lines = []
-        for label in ("pregame", "live"):
-            tc = timing_stats.get(label)
-            if not tc:
-                continue
-            tw = tc.get("won", 0)
-            tl = tc.get("lost", 0)
-            tp = tc.get("push", 0)
-            td = tw + tl
-            tr = f"{tw / td:.0%}" if td else "N/A"
-            lines.append(f"**{label.title()}**: {tr} ({tw}W/{tl}L/{tp}P)")
-        return "\n".join(lines) if lines else None
 
     @staticmethod
     def _send_webhook(url: str, embed: DiscordEmbed, label: str) -> None:

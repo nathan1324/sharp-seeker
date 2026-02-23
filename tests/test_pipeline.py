@@ -22,7 +22,7 @@ def _snap(
         "sport_key": "basketball_nba",
         "home_team": "Lakers",
         "away_team": "Celtics",
-        "commence_time": "2025-01-15T00:00:00Z",
+        "commence_time": "2099-01-15T00:00:00Z",
         "bookmaker_key": bookmaker,
         "market_key": market,
         "outcome_name": outcome,
