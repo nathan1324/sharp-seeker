@@ -19,6 +19,8 @@ class PerformanceTracker:
     async def record_signal(self, signal: Signal) -> None:
         """Record a signal for later performance evaluation."""
         direction = self._extract_direction(signal)
+        signal_at = signal.details.get("fetched_at", "")
+        is_live = self._compute_is_live(signal_at, signal.commence_time)
         await self._repo.record_signal_result(
             event_id=signal.event_id,
             signal_type=signal.signal_type.value,
@@ -26,15 +28,17 @@ class PerformanceTracker:
             outcome_name=signal.outcome_name,
             signal_direction=direction,
             signal_strength=signal.strength,
-            signal_at=signal.details.get("fetched_at", ""),
+            signal_at=signal_at,
             details_json=json.dumps(signal.details),
             sport_key=signal.sport_key,
+            is_live=is_live,
         )
 
     async def record_signals(self, signals: list[Signal], fetched_at: str) -> None:
         """Record multiple signals with a shared fetched_at timestamp."""
         for sig in signals:
             direction = self._extract_direction(sig)
+            is_live = self._compute_is_live(fetched_at, sig.commence_time)
             await self._repo.record_signal_result(
                 event_id=sig.event_id,
                 signal_type=sig.signal_type.value,
@@ -45,6 +49,7 @@ class PerformanceTracker:
                 signal_at=fetched_at,
                 details_json=json.dumps(sig.details),
                 sport_key=sig.sport_key,
+                is_live=is_live,
             )
 
     async def get_stats(self, since: str | None = None) -> dict[str, dict[str, int]]:
@@ -62,6 +67,13 @@ class PerformanceTracker:
             else:
                 rates[st] = 0.0
         return rates
+
+    @staticmethod
+    def _compute_is_live(signal_at: str, commence_time: str) -> bool | None:
+        """Return True if signal fired after game start, False if before, None if unknown."""
+        if not signal_at or not commence_time:
+            return None
+        return signal_at >= commence_time
 
     @staticmethod
     def _extract_direction(signal: Signal) -> str:

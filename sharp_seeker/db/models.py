@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS signal_results (
     signal_direction TEXT NOT NULL,
     signal_strength REAL NOT NULL,
     signal_at TEXT NOT NULL,
+    is_live INTEGER,
     result TEXT,
     resolved_at TEXT,
     details_json TEXT,
