@@ -201,18 +201,21 @@ class Repository:
         signal_at: str,
         details_json: str | None = None,
         sport_key: str | None = None,
+        is_live: bool | None = None,
     ) -> None:
+        is_live_int = None if is_live is None else int(is_live)
         sql = """
             INSERT OR IGNORE INTO signal_results
                 (event_id, sport_key, signal_type, market_key, outcome_name,
-                 signal_direction, signal_strength, signal_at, details_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 signal_direction, signal_strength, signal_at, is_live, details_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         await self._db.execute(
             sql,
             (
                 event_id, sport_key, signal_type, market_key, outcome_name,
-                signal_direction, signal_strength, signal_at, details_json,
+                signal_direction, signal_strength, signal_at, is_live_int,
+                details_json,
             ),
         )
         await self._db.commit()
@@ -304,6 +307,42 @@ class Repository:
             stats.setdefault(mk, {"won": 0, "lost": 0, "push": 0, "total": 0})
             stats[mk][row["result"]] = row["cnt"]
             stats[mk]["total"] += row["cnt"]
+        return stats
+
+    async def get_performance_stats_by_timing(
+        self,
+        since: str | None = None,
+        signal_type: str | None = None,
+        sport_key: str | None = None,
+    ) -> dict[str, dict[str, int]]:
+        """Get win/loss/push counts grouped by timing (live vs pregame)."""
+        where = "WHERE result IS NOT NULL AND is_live IS NOT NULL"
+        params: list[str] = []
+        if since:
+            where += " AND signal_at >= ?"
+            params.append(since)
+        if signal_type:
+            where += " AND signal_type = ?"
+            params.append(signal_type)
+        if sport_key:
+            where += " AND sport_key = ?"
+            params.append(sport_key)
+
+        sql = f"""
+            SELECT is_live, result, COUNT(*) AS cnt
+            FROM signal_results
+            {where}
+            GROUP BY is_live, result
+        """
+        cursor = await self._db.execute(sql, tuple(params))
+        rows = await cursor.fetchall()
+
+        stats: dict[str, dict[str, int]] = {}
+        for row in rows:
+            label = "live" if row["is_live"] else "pregame"
+            stats.setdefault(label, {"won": 0, "lost": 0, "push": 0, "total": 0})
+            stats[label][row["result"]] = row["cnt"]
+            stats[label]["total"] += row["cnt"]
         return stats
 
     async def get_signal_count_since(self, since: str) -> int:
