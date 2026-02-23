@@ -26,7 +26,7 @@ Sharp Seeker automatically grades every signal against final game scores. Each m
 - **Spreads** — Did the team cover the spread at signal time?
 - **Totals** — Did the over/under hit against the line at signal time?
 
-Grading runs at 14:00 UTC (7 AM MT), followed by daily performance reports at 15:00 UTC (8 AM MT). Each signal type gets its own per-channel report with W/L/P record, individual outcomes, a market-type breakdown (moneyline/spreads/totals), and a **live vs pregame timing breakdown** showing win rates for signals fired before vs during games. A combined summary goes to the default channel with overall stats by detector, market, and timing. When `DISCORD_WEBHOOK_OVERRIDES` are configured, each override channel also receives its own sport-specific performance report (e.g. "Daily Pinnacle Divergence Report — NCAAB").
+Grading runs at 14:00 UTC (7 AM MT), followed by daily performance reports at 15:00 UTC (8 AM MT). Each signal type gets its own per-channel report with W/L/P record, individual outcomes, and a market-type breakdown (moneyline/spreads/totals). A combined summary goes to the default channel with overall stats by detector and market. When `DISCORD_WEBHOOK_OVERRIDES` are configured, each override channel also receives its own sport-specific performance report (e.g. "Daily Pinnacle Divergence Report — NCAAB").
 
 ### Signal Pipeline
 

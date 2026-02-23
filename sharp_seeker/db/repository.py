@@ -309,42 +309,6 @@ class Repository:
             stats[mk]["total"] += row["cnt"]
         return stats
 
-    async def get_performance_stats_by_timing(
-        self,
-        since: str | None = None,
-        signal_type: str | None = None,
-        sport_key: str | None = None,
-    ) -> dict[str, dict[str, int]]:
-        """Get win/loss/push counts grouped by timing (live vs pregame)."""
-        where = "WHERE result IS NOT NULL AND is_live IS NOT NULL"
-        params: list[str] = []
-        if since:
-            where += " AND signal_at >= ?"
-            params.append(since)
-        if signal_type:
-            where += " AND signal_type = ?"
-            params.append(signal_type)
-        if sport_key:
-            where += " AND sport_key = ?"
-            params.append(sport_key)
-
-        sql = f"""
-            SELECT is_live, result, COUNT(*) AS cnt
-            FROM signal_results
-            {where}
-            GROUP BY is_live, result
-        """
-        cursor = await self._db.execute(sql, tuple(params))
-        rows = await cursor.fetchall()
-
-        stats: dict[str, dict[str, int]] = {}
-        for row in rows:
-            label = "live" if row["is_live"] else "pregame"
-            stats.setdefault(label, {"won": 0, "lost": 0, "push": 0, "total": 0})
-            stats[label][row["result"]] = row["cnt"]
-            stats[label]["total"] += row["cnt"]
-        return stats
-
     async def get_signal_count_since(self, since: str) -> int:
         """Count signals recorded since the given timestamp."""
         sql = "SELECT COUNT(*) AS cnt FROM signal_results WHERE signal_at >= ?"

@@ -115,26 +115,26 @@ class DetectionPipeline:
             min_strength=min_str,
         )
 
-        # Drop live totals — too volatile for our polling window
+        # Drop all live signals — in-game line moves are noisy
         now = datetime.now(timezone.utc)
         filtered_signals = []
-        live_totals_dropped = 0
+        live_dropped = 0
         for sig in strong_signals:
-            if sig.market_key == "totals" and sig.commence_time:
+            if sig.commence_time:
                 try:
                     ct = datetime.fromisoformat(sig.commence_time)
                     if ct.tzinfo is None:
                         ct = ct.replace(tzinfo=timezone.utc)
                     if now >= ct:
-                        live_totals_dropped += 1
+                        live_dropped += 1
                         continue
                 except (ValueError, TypeError):
                     pass
             filtered_signals.append(sig)
-        if live_totals_dropped:
+        if live_dropped:
             log.info(
-                "live_totals_filter",
-                dropped=live_totals_dropped,
+                "live_signal_filter",
+                dropped=live_dropped,
                 remaining=len(filtered_signals),
             )
 
@@ -187,7 +187,7 @@ class DetectionPipeline:
             "pipeline_complete",
             total_signals=len(all_signals),
             after_strength=len(strong_signals),
-            live_totals_dropped=live_totals_dropped,
+            live_dropped=live_dropped,
             after_side_dedup=len(deduped_signals),
             after_value_filter=len(actionable),
             new_signals=len(new_signals),
