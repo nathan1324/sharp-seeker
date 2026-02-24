@@ -67,11 +67,21 @@ class XPoster:
         """Post a tweet for each signal. Skips gracefully if disabled."""
         if not self._enabled:
             return
-        for signal in signals:
-            if signal.signal_type != SignalType.PINNACLE_DIVERGENCE:
-                continue
+
+        pd_signals = [s for s in signals if s.signal_type == SignalType.PINNACLE_DIVERGENCE]
+        if not pd_signals:
+            return
+
+        # Discord alerter already recorded all signals before we run,
+        # so total_pd includes the entire current batch. Assign each
+        # signal its own sequence number to avoid skipping a multiple.
+        total_pd = await self._repo.count_alerts_by_type("pinnacle_divergence")
+        batch_size = len(pd_signals)
+
+        for i, signal in enumerate(pd_signals):
+            seq = total_pd - batch_size + i + 1
+            free_play = seq > 0 and seq % self._free_play_interval == 0
             try:
-                free_play = await self._is_free_play(signal)
                 if free_play:
                     text = self._format_free_play(signal)
                 else:
@@ -82,6 +92,7 @@ class XPoster:
                     signal_type=signal.signal_type.value,
                     event_id=signal.event_id,
                     free_play=free_play,
+                    seq=seq,
                 )
             except Exception:
                 log.exception(
@@ -89,16 +100,9 @@ class XPoster:
                     event_id=signal.event_id,
                 )
 
-    async def _is_free_play(self, signal: Signal) -> bool:
-        """Check if this Pinnacle Divergence signal should be a free play.
-
-        Uses the count of existing pinnacle_divergence rows in sent_alerts
-        (which Discord alerter already recorded before we run).
-        """
-        if signal.signal_type != SignalType.PINNACLE_DIVERGENCE:
-            return False
-        count = await self._repo.count_alerts_by_type("pinnacle_divergence")
-        return count > 0 and count % self._free_play_interval == 0
+    def _is_free_play_seq(self, seq: int) -> bool:
+        """Check if a given sequence number should be a free play."""
+        return seq > 0 and seq % self._free_play_interval == 0
 
     def _format_teaser(self, signal: Signal) -> str:
         matchup = f"{signal.away_team} vs {signal.home_team}"
