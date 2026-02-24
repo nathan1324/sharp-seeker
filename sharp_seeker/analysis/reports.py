@@ -67,17 +67,38 @@ class ReportGenerator:
     # ── Per-signal-type reports ──────────────────────────────────
 
     async def _send_per_type_reports(self, period: str, since: str) -> None:
-        """Send a report for each signal type to its dedicated channel."""
-        stats = await self._repo.get_performance_stats(since)
-        if not stats:
+        """Send a report for each signal type to its dedicated channel.
+
+        Sports that have webhook overrides for a signal type get their own
+        reports via _send_override_reports, so they are excluded here to
+        avoid double-counting.
+        """
+        # Build a map: signal_type -> list of sports that have overrides
+        override_sports: dict[str, list[str]] = {}
+        for key in self._settings.discord_webhook_overrides:
+            parts = key.split(":", 1)
+            if len(parts) == 2:
+                override_sports.setdefault(parts[0], []).append(parts[1])
+
+        all_types_stats = await self._repo.get_performance_stats(since)
+        if not all_types_stats:
             return
 
-        for signal_type_val, counts in sorted(stats.items()):
+        for signal_type_val, _ in sorted(all_types_stats.items()):
             webhook_url = self._get_webhook_for_type(signal_type_val)
             friendly = _SIGNAL_FRIENDLY.get(signal_type_val, signal_type_val)
+            exclude = override_sports.get(signal_type_val)
+
+            # Re-query stats excluding overridden sports for this signal type
+            type_stats = await self._repo.get_performance_stats(
+                since, exclude_sports=exclude,
+            )
+            counts = type_stats.get(signal_type_val)
+            if not counts:
+                continue
 
             resolved = await self._repo.get_resolved_signals_since(
-                since, signal_type=signal_type_val
+                since, signal_type=signal_type_val, exclude_sports=exclude,
             )
 
             won = counts.get("won", 0)
@@ -118,7 +139,7 @@ class ReportGenerator:
 
             # Per-market breakdown for this signal type
             market_stats = await self._repo.get_performance_stats_by_market(
-                since, signal_type=signal_type_val
+                since, signal_type=signal_type_val, exclude_sports=exclude,
             )
             if market_stats:
                 mlines = []
