@@ -72,6 +72,27 @@ class RapidChangeDetector(BaseDetector):
             if bm != "pinnacle":
                 continue
 
+            # Only fire when Pinnacle steepens the line (outcome becomes MORE
+            # favored). When Pinnacle shortens a line, sharp money is on the
+            # other side — skip to avoid backwards recommendations.
+            if market_key == "h2h":
+                # Price moving more negative = more favored (keep)
+                # Price moving toward positive = less favored (skip)
+                if row["price"] > prev["price"]:
+                    continue
+            elif market_key == "totals":
+                # Over: line dropping = easier over (keep), line rising = skip
+                # Under: line rising = easier under (keep), line dropping = skip
+                if row["outcome_name"].lower() == "over" and row["point"] > prev["point"]:
+                    continue
+                if row["outcome_name"].lower() == "under" and row["point"] < prev["point"]:
+                    continue
+            else:
+                # Spreads: point moving further from zero = more favored (keep)
+                # Point moving toward zero = less favored (skip)
+                if abs(row["point"]) < abs(prev["point"]):
+                    continue
+
             strength = min(1.0, delta / (threshold * 3))
 
             # Find stale books (closer to old line than new) + the mover itself

@@ -93,3 +93,44 @@ async def test_rapid_moneyline_change(settings, repo):
 
     assert len(signals) == 1
     assert signals[0].details["delta"] == 25.0
+
+
+@pytest.mark.asyncio
+async def test_rapid_ml_shortening_suppressed(settings, repo):
+    """Pinnacle shortening a favorite (less negative) should NOT trigger.
+
+    Sharp money is on the other side when Pinnacle moves toward positive.
+    """
+    event = "evt_rapid4"
+    t1 = "2025-01-20T12:00:00+00:00"
+    t2 = "2025-01-20T12:20:00+00:00"
+
+    snapshots = [
+        _snap(event, "pinnacle", "h2h", "Chiefs", -775, None, t1),
+        _snap(event, "pinnacle", "h2h", "Chiefs", -727, None, t2),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = RapidChangeDetector(settings, repo)
+    signals = await detector.detect(event, t2)
+
+    assert len(signals) == 0
+
+
+@pytest.mark.asyncio
+async def test_rapid_spread_tightening_suppressed(settings, repo):
+    """Pinnacle tightening a spread (toward zero) should NOT trigger."""
+    event = "evt_rapid5"
+    t1 = "2025-01-20T12:00:00+00:00"
+    t2 = "2025-01-20T12:20:00+00:00"
+
+    snapshots = [
+        _snap(event, "pinnacle", "spreads", "Chiefs", -110, -4.0, t1),
+        _snap(event, "pinnacle", "spreads", "Chiefs", -110, -3.0, t2),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = RapidChangeDetector(settings, repo)
+    signals = await detector.detect(event, t2)
+
+    assert len(signals) == 0
