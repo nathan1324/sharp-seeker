@@ -126,15 +126,31 @@ class Repository:
         market_key: str,
         outcome_name: str,
         details_json: str | None = None,
+        is_free_play: bool = False,
     ) -> None:
         now = datetime.now(timezone.utc).isoformat()
         sql = """
-            INSERT INTO sent_alerts (event_id, alert_type, market_key, outcome_name, sent_at, details_json)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO sent_alerts (event_id, alert_type, market_key, outcome_name, sent_at, details_json, is_free_play)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """
         await self._db.execute(
-            sql, (event_id, alert_type, market_key, outcome_name, now, details_json)
+            sql, (event_id, alert_type, market_key, outcome_name, now, details_json, int(is_free_play))
         )
+        await self._db.commit()
+
+    async def mark_alert_free_play(
+        self, event_id: str, market_key: str, outcome_name: str,
+    ) -> None:
+        """Set is_free_play=1 on the most recent matching sent_alerts row."""
+        sql = """
+            UPDATE sent_alerts SET is_free_play = 1
+            WHERE id = (
+                SELECT id FROM sent_alerts
+                WHERE event_id = ? AND market_key = ? AND outcome_name = ?
+                ORDER BY sent_at DESC LIMIT 1
+            )
+        """
+        await self._db.execute(sql, (event_id, market_key, outcome_name))
         await self._db.commit()
 
     async def count_alerts_by_type(self, alert_type: str) -> int:
@@ -412,3 +428,24 @@ class Repository:
         if row:
             return row["home_team"], row["away_team"]
         return None
+
+    # ── Free play recap ─────────────────────────────────────────────
+
+    async def get_free_play_results_since(self, since: str) -> list[aiosqlite.Row]:
+        """Get free play alerts from the last N hours with their graded results."""
+        sql = """
+            SELECT sa.event_id, sa.market_key, sa.outcome_name, sa.sent_at,
+                   sa.details_json,
+                   sr.result, sr.signal_strength
+            FROM sent_alerts sa
+            LEFT JOIN signal_results sr
+              ON sa.event_id = sr.event_id
+             AND sa.alert_type = sr.signal_type
+             AND sa.market_key = sr.market_key
+             AND sa.outcome_name = sr.outcome_name
+            WHERE sa.is_free_play = 1
+              AND sa.sent_at >= ?
+            ORDER BY sa.sent_at ASC
+        """
+        cursor = await self._db.execute(sql, (since,))
+        return await cursor.fetchall()

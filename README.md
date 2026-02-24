@@ -237,6 +237,7 @@ The daemon runs these jobs automatically via APScheduler:
 |-----|-----|----------|---------|
 | Odds polling | Every 20 min | — | Fetch odds, detect signals, send alerts |
 | **Resolve signals** | **13:30** | **6:30 AM** | Grade yesterday's games against final scores |
+| **Free play recap** | **13:45** | **6:45 AM** | Tweet yesterday's free play results |
 | **Daily report** | **14:00** | **7:00 AM** | Per-type + combined performance report |
 | **Weekly report** | **Mon 14:00** | **Mon 7:00 AM** | Weekly summary |
 | Budget summary | 00:00 | 5:00 PM (prev day) | API credit usage |
@@ -294,6 +295,8 @@ X_ACCESS_TOKEN_SECRET=your_access_token_secret
 X_CTA_URL=https://discord.gg/your-invite-link
 X_FREE_PLAY_INTERVAL=10
 ```
+
+**Daily recap tweet (13:45 UTC):** Each morning after grading, a recap of the previous day's free plays is posted to X with results (won/lost/pending) and a running record.
 
 X posting is **optional** — if credentials are not set, the poster disables itself with no errors.
 
