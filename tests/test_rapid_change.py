@@ -96,11 +96,8 @@ async def test_rapid_moneyline_change(settings, repo):
 
 
 @pytest.mark.asyncio
-async def test_rapid_ml_shortening_suppressed(settings, repo):
-    """Pinnacle shortening a favorite (less negative) should NOT trigger.
-
-    Sharp money is on the other side when Pinnacle moves toward positive.
-    """
+async def test_rapid_ml_shortening_no_us_books(settings, repo):
+    """Pinnacle shortening with no US books should NOT trigger (no value)."""
     event = "evt_rapid4"
     t1 = "2025-01-20T12:00:00+00:00"
     t2 = "2025-01-20T12:20:00+00:00"
@@ -108,6 +105,59 @@ async def test_rapid_ml_shortening_suppressed(settings, repo):
     snapshots = [
         _snap(event, "pinnacle", "h2h", "Chiefs", -775, None, t1),
         _snap(event, "pinnacle", "h2h", "Chiefs", -727, None, t2),
+        # Need both outcomes at t2 so the other side can be found
+        _snap(event, "pinnacle", "h2h", "Bills", 550, None, t2),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = RapidChangeDetector(settings, repo)
+    signals = await detector.detect(event, t2)
+
+    assert len(signals) == 0
+
+
+@pytest.mark.asyncio
+async def test_rapid_ml_shortening_flips_to_other_side(settings, repo):
+    """Pinnacle shortening Chiefs (-775 -> -727) should signal Bills
+    if a US book offers better odds than Pinnacle on Bills."""
+    event = "evt_rapid4b"
+    t1 = "2025-01-20T12:00:00+00:00"
+    t2 = "2025-01-20T12:20:00+00:00"
+
+    snapshots = [
+        # Pinnacle moves Chiefs from -775 to -727 (shortening = less favored)
+        _snap(event, "pinnacle", "h2h", "Chiefs", -775, None, t1),
+        _snap(event, "pinnacle", "h2h", "Chiefs", -727, None, t2),
+        # Pinnacle's Bills line at t2
+        _snap(event, "pinnacle", "h2h", "Bills", 500, None, t2),
+        # FanDuel offers Bills at +550 (better than Pinnacle's +500)
+        _snap(event, "fanduel", "h2h", "Bills", 550, None, t2),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = RapidChangeDetector(settings, repo)
+    signals = await detector.detect(event, t2)
+
+    assert len(signals) == 1
+    sig = signals[0]
+    assert sig.outcome_name == "Bills"  # flipped to other side
+    assert sig.details["value_books"][0]["bookmaker"] == "fanduel"
+    assert sig.details["value_books"][0]["price"] == 550
+
+
+@pytest.mark.asyncio
+async def test_rapid_ml_shortening_no_better_us_book(settings, repo):
+    """Pinnacle shortening but US books don't beat Pinnacle on other side — no signal."""
+    event = "evt_rapid4c"
+    t1 = "2025-01-20T12:00:00+00:00"
+    t2 = "2025-01-20T12:20:00+00:00"
+
+    snapshots = [
+        _snap(event, "pinnacle", "h2h", "Chiefs", -775, None, t1),
+        _snap(event, "pinnacle", "h2h", "Chiefs", -727, None, t2),
+        _snap(event, "pinnacle", "h2h", "Bills", 500, None, t2),
+        # FanDuel offers Bills at +450 (WORSE than Pinnacle's +500)
+        _snap(event, "fanduel", "h2h", "Bills", 450, None, t2),
     ]
     await repo.insert_snapshots(snapshots)
 
@@ -119,7 +169,7 @@ async def test_rapid_ml_shortening_suppressed(settings, repo):
 
 @pytest.mark.asyncio
 async def test_rapid_spread_tightening_suppressed(settings, repo):
-    """Pinnacle tightening a spread (toward zero) should NOT trigger."""
+    """Pinnacle tightening a spread (toward zero) with no US books — no signal."""
     event = "evt_rapid5"
     t1 = "2025-01-20T12:00:00+00:00"
     t2 = "2025-01-20T12:20:00+00:00"
@@ -127,6 +177,7 @@ async def test_rapid_spread_tightening_suppressed(settings, repo):
     snapshots = [
         _snap(event, "pinnacle", "spreads", "Chiefs", -110, -4.0, t1),
         _snap(event, "pinnacle", "spreads", "Chiefs", -110, -3.0, t2),
+        _snap(event, "pinnacle", "spreads", "Bills", -110, 3.0, t2),
     ]
     await repo.insert_snapshots(snapshots)
 
@@ -134,3 +185,58 @@ async def test_rapid_spread_tightening_suppressed(settings, repo):
     signals = await detector.detect(event, t2)
 
     assert len(signals) == 0
+
+
+@pytest.mark.asyncio
+async def test_rapid_spread_tightening_flips_with_value(settings, repo):
+    """Pinnacle tightening Chiefs spread (-4 -> -3) should signal Bills
+    if a US book offers a better spread than Pinnacle on Bills."""
+    event = "evt_rapid5b"
+    t1 = "2025-01-20T12:00:00+00:00"
+    t2 = "2025-01-20T12:20:00+00:00"
+
+    snapshots = [
+        # Pinnacle moves Chiefs from -4.0 to -3.0 (tightening = less favored)
+        _snap(event, "pinnacle", "spreads", "Chiefs", -110, -4.0, t1),
+        _snap(event, "pinnacle", "spreads", "Chiefs", -110, -3.0, t2),
+        # Pinnacle's Bills spread at t2
+        _snap(event, "pinnacle", "spreads", "Bills", -110, 3.0, t2),
+        # DraftKings offers Bills at +4.0 (better than Pinnacle's +3.0)
+        _snap(event, "draftkings", "spreads", "Bills", -110, 4.0, t2),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = RapidChangeDetector(settings, repo)
+    signals = await detector.detect(event, t2)
+
+    assert len(signals) == 1
+    sig = signals[0]
+    assert sig.outcome_name == "Bills"  # flipped to other side
+    assert sig.details["value_books"][0]["bookmaker"] == "draftkings"
+    assert sig.details["value_books"][0]["point"] == 4.0
+
+
+@pytest.mark.asyncio
+async def test_rapid_steepening_finds_stale_books(settings, repo):
+    """Pinnacle steepening should signal same side with stale US books."""
+    event = "evt_rapid6"
+    t1 = "2025-01-20T12:00:00+00:00"
+    t2 = "2025-01-20T12:20:00+00:00"
+
+    snapshots = [
+        # Pinnacle steepens Chiefs from -3.0 to -4.0 (more favored)
+        _snap(event, "pinnacle", "spreads", "Chiefs", -110, -3.0, t1),
+        _snap(event, "pinnacle", "spreads", "Chiefs", -110, -4.0, t2),
+        # FanDuel still at -3.0 (stale — closer to old line)
+        _snap(event, "fanduel", "spreads", "Chiefs", -110, -3.0, t2),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = RapidChangeDetector(settings, repo)
+    signals = await detector.detect(event, t2)
+
+    assert len(signals) == 1
+    sig = signals[0]
+    assert sig.outcome_name == "Chiefs"  # same side
+    assert sig.details["value_books"][0]["bookmaker"] == "fanduel"
+    assert sig.details["value_books"][0]["point"] == -3.0
