@@ -70,24 +70,27 @@ async def test_non_pinnacle_signals_skipped(settings, repo):
 # ── Free play logic ─────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
-async def test_is_free_play_non_pinnacle(settings, repo):
-    """Non-Pinnacle signals are never free plays."""
+def test_is_free_play_seq(settings, repo):
+    """Sequence number divisible by interval should be a free play."""
     poster = XPoster(settings, repo)
-    sig = _make_signal(signal_type=SignalType.STEAM_MOVE)
-    assert await poster._is_free_play(sig) is False
+    poster._free_play_interval = 5
+    assert poster._is_free_play_seq(5) is True
+    assert poster._is_free_play_seq(10) is True
+    assert poster._is_free_play_seq(3) is False
+    assert poster._is_free_play_seq(0) is False
 
 
 @pytest.mark.asyncio
-async def test_is_free_play_at_interval(settings, repo):
-    """Pinnacle signal is a free play when count is divisible by interval."""
+async def test_free_play_batch_sequencing(settings, repo):
+    """When a batch of PD signals fires, the one landing on the interval gets free play."""
     poster = XPoster(settings, repo)
-    poster._free_play_interval = 10
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._free_play_interval = 5
 
-    sig = _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)
-
-    # Insert 10 pinnacle_divergence rows into sent_alerts
-    for i in range(10):
+    # Pre-insert 3 PD alerts (count = 3 before this batch)
+    for i in range(3):
         await repo.record_alert(
             event_id=f"evt_{i}",
             alert_type="pinnacle_divergence",
@@ -95,35 +98,23 @@ async def test_is_free_play_at_interval(settings, repo):
             outcome_name="Lakers",
         )
 
-    assert await poster._is_free_play(sig) is True
-
-
-@pytest.mark.asyncio
-async def test_is_free_play_not_at_interval(settings, repo):
-    """Pinnacle signal is NOT a free play when count isn't divisible."""
-    poster = XPoster(settings, repo)
-    poster._free_play_interval = 10
-
-    sig = _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)
-
-    # Insert 7 rows
-    for i in range(7):
+    # Batch of 4 PD signals: seq 4, 5, 6, 7 — only seq 5 is free play
+    batch = [_make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE) for _ in range(4)]
+    # Record them in sent_alerts (as Discord alerter would)
+    for i in range(4):
         await repo.record_alert(
-            event_id=f"evt_{i}",
+            event_id=f"evt_batch_{i}",
             alert_type="pinnacle_divergence",
             market_key="spreads",
             outcome_name="Lakers",
         )
 
-    assert await poster._is_free_play(sig) is False
+    await poster.post_signals(batch)
 
-
-@pytest.mark.asyncio
-async def test_is_free_play_zero_count(settings, repo):
-    """Zero pinnacle_divergence alerts means not a free play."""
-    poster = XPoster(settings, repo)
-    sig = _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)
-    assert await poster._is_free_play(sig) is False
+    assert poster._client.create_tweet.call_count == 4
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    free_play_count = sum(1 for t in calls if "FREE PLAY" in t)
+    assert free_play_count == 1  # only seq 5
 
 
 # ── Tweet formatting ─────────────────────────────────────────────
@@ -252,11 +243,16 @@ def test_format_odds_totals():
 async def test_post_signals_calls_tweepy(settings, repo):
     """When enabled, post_signals should call create_tweet for each signal."""
     poster = XPoster(settings, repo)
-    # Force-enable with a mock client
     poster._enabled = True
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
     poster._cta_url = "https://discord.gg/test"
+
+    # Record 1 alert in sent_alerts (as Discord alerter would)
+    await repo.record_alert(
+        event_id="evt_123", alert_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+    )
 
     sig = _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)
     await poster.post_signals([sig])
@@ -280,7 +276,7 @@ async def test_post_signals_free_play_tweet(settings, repo):
         details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
     )
 
-    # Insert exactly 5 pinnacle_divergence alerts
+    # Insert exactly 5 alerts (batch of 1 signal, total=5, seq=5, 5%5==0)
     for i in range(5):
         await repo.record_alert(
             event_id=f"evt_{i}",
