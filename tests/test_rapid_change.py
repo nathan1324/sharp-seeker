@@ -41,8 +41,8 @@ async def test_rapid_spread_change(settings, repo):
     t2 = "2025-01-20T12:20:00+00:00"
 
     snapshots = [
-        _snap(event, "draftkings", "spreads", "Chiefs", -110, -3.0, t1),
-        _snap(event, "draftkings", "spreads", "Chiefs", -110, -4.0, t2),
+        _snap(event, "pinnacle", "spreads", "Chiefs", -110, -3.0, t1),
+        _snap(event, "pinnacle", "spreads", "Chiefs", -110, -4.0, t2),
     ]
     await repo.insert_snapshots(snapshots)
 
@@ -53,7 +53,7 @@ async def test_rapid_spread_change(settings, repo):
     sig = signals[0]
     assert sig.signal_type == SignalType.RAPID_CHANGE
     assert sig.details["delta"] == 1.0
-    assert sig.details["bookmaker"] == "draftkings"
+    assert sig.details["bookmaker"] == "pinnacle"
 
 
 @pytest.mark.asyncio
@@ -83,8 +83,8 @@ async def test_rapid_moneyline_change(settings, repo):
     t2 = "2025-01-20T12:20:00+00:00"
 
     snapshots = [
-        _snap(event, "betmgm", "h2h", "Chiefs", -150, None, t1),
-        _snap(event, "betmgm", "h2h", "Chiefs", -175, None, t2),
+        _snap(event, "pinnacle", "h2h", "Chiefs", -150, None, t1),
+        _snap(event, "pinnacle", "h2h", "Chiefs", -175, None, t2),
     ]
     await repo.insert_snapshots(snapshots)
 

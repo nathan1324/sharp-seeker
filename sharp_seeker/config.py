@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     x_access_token: str | None = None
     x_access_token_secret: str | None = None
     x_cta_url: str = ""  # Discord invite or landing page link
-    x_free_play_interval: int = 10  # every Nth pinnacle divergence = free play
+    x_free_play_interval: int = 5  # every Nth pinnacle divergence = free play
 
     # Logging
     log_level: str = "INFO"

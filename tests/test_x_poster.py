@@ -50,6 +50,23 @@ async def test_post_signals_skips_when_disabled(settings, repo):
     await poster.post_signals([sig])
 
 
+# ── Only Pinnacle Divergence signals are tweeted ─────────────────
+
+
+@pytest.mark.asyncio
+async def test_non_pinnacle_signals_skipped(settings, repo):
+    """Non-Pinnacle Divergence signals should not be tweeted."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    for st in (SignalType.STEAM_MOVE, SignalType.RAPID_CHANGE, SignalType.REVERSE_LINE, SignalType.EXCHANGE_SHIFT):
+        await poster.post_signals([_make_signal(signal_type=st)])
+
+    poster._client.create_tweet.assert_not_called()
+
+
 # ── Free play logic ─────────────────────────────────────────────
 
 
@@ -241,7 +258,7 @@ async def test_post_signals_calls_tweepy(settings, repo):
     poster._client.create_tweet = MagicMock()
     poster._cta_url = "https://discord.gg/test"
 
-    sig = _make_signal()
+    sig = _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)
     await poster.post_signals([sig])
 
     poster._client.create_tweet.assert_called_once()
@@ -287,6 +304,6 @@ async def test_post_signals_handles_tweepy_error(settings, repo):
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock(side_effect=Exception("API error"))
 
-    sig = _make_signal()
+    sig = _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)
     # Should not raise
     await poster.post_signals([sig])

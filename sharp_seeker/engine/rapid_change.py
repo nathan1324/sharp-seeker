@@ -68,6 +68,10 @@ class RapidChangeDetector(BaseDetector):
             if delta < threshold:
                 continue
 
+            # Only signal when Pinnacle moves — the sharpest book
+            if bm != "pinnacle":
+                continue
+
             strength = min(1.0, delta / (threshold * 3))
 
             # Find stale books (closer to old line than new) + the mover itself
