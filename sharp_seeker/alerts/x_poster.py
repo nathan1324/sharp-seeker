@@ -68,6 +68,8 @@ class XPoster:
         if not self._enabled:
             return
         for signal in signals:
+            if signal.signal_type != SignalType.PINNACLE_DIVERGENCE:
+                continue
             try:
                 free_play = await self._is_free_play(signal)
                 if free_play:
