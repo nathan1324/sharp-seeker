@@ -369,7 +369,7 @@ class Repository:
         sport_key: str | None = None,
     ) -> list[aiosqlite.Row]:
         """Get resolved signals since a timestamp, optionally filtered by type/sport."""
-        where = "WHERE result IS NOT NULL AND resolved_at >= ?"
+        where = "WHERE result IS NOT NULL AND signal_at >= ?"
         params: list[str] = [since]
         if signal_type:
             where += " AND signal_type = ?"
