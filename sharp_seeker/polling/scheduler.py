@@ -109,6 +109,13 @@ class Poller:
         except Exception:
             log.exception("weekly_report_error")
 
+    async def daily_recap(self) -> None:
+        """Post daily free play recap to X."""
+        try:
+            await self._x_poster.post_daily_recap()
+        except Exception:
+            log.exception("daily_recap_error")
+
     async def resolve_signals(self) -> None:
         """Grade unresolved signals against final game scores."""
         try:
@@ -149,6 +156,16 @@ def create_scheduler(poller: Poller, settings: Settings) -> AsyncIOScheduler:
         minute=30,
         id="resolve_signals",
         name="Grade signals against final scores",
+    )
+
+    # Daily free play recap tweet at 13:45 UTC — after grading, before reports
+    scheduler.add_job(
+        poller.daily_recap,
+        "cron",
+        hour=13,
+        minute=45,
+        id="daily_recap",
+        name="Post daily free play recap to X",
     )
 
     # Daily signal performance report at 14:00 UTC (7 AM MT) — after grading

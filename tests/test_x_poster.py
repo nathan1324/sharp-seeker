@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -303,3 +304,149 @@ async def test_post_signals_handles_tweepy_error(settings, repo):
     sig = _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)
     # Should not raise
     await poster.post_signals([sig])
+
+
+# ── Daily recap ──────────────────────────────────────────────────
+
+
+def test_format_recap_with_results(settings, repo):
+    """Won/lost/push signals format correctly in the recap."""
+    poster = XPoster(settings, repo)
+    poster._cta_url = "https://discord.gg/test"
+
+    results = [
+        {"outcome_name": "Lakers", "market_key": "spreads", "result": "won",
+         "signal_strength": 0.85, "event_id": "e1", "sent_at": "2099-01-15",
+         "details_json": json.dumps({"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]})},
+        {"outcome_name": "Chiefs", "market_key": "h2h", "result": "lost",
+         "signal_strength": 0.70, "event_id": "e2", "sent_at": "2099-01-15",
+         "details_json": json.dumps({"value_books": [{"bookmaker": "fanduel", "price": 150}]})},
+        {"outcome_name": "Over", "market_key": "totals", "result": "push",
+         "signal_strength": 0.60, "event_id": "e3", "sent_at": "2099-01-15",
+         "details_json": json.dumps({"value_books": [{"bookmaker": "betmgm", "price": -110, "point": 220.5}]})},
+    ]
+
+    text = poster._format_recap(results)
+    assert "Yesterday's Free Plays" in text
+    assert "\u2705" in text  # won
+    assert "\u274c" in text  # lost
+    assert "\u21a9\ufe0f" in text  # push
+    assert "Lakers" in text
+    assert "Chiefs" in text
+    assert "Record: 1-1" in text  # push doesn't count
+    assert "discord.gg/test" in text
+
+
+def test_format_recap_pending(settings, repo):
+    """Unresolved signals show as pending."""
+    poster = XPoster(settings, repo)
+    poster._cta_url = ""
+
+    results = [
+        {"outcome_name": "Cowboys", "market_key": "spreads", "result": None,
+         "signal_strength": 0.80, "event_id": "e1", "sent_at": "2099-01-15",
+         "details_json": None},
+    ]
+
+    text = poster._format_recap(results)
+    assert "\u23f3" in text  # hourglass
+    assert "PENDING" in text
+    assert "Cowboys" in text
+    assert "Record:" not in text  # no decided games
+
+
+@pytest.mark.asyncio
+async def test_post_daily_recap_empty(settings, repo):
+    """No free plays in window → no tweet posted."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    await poster.post_daily_recap()
+
+    poster._client.create_tweet.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_post_daily_recap_calls_tweepy(settings, repo):
+    """When free plays exist, recap tweet is posted via tweepy."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._cta_url = "https://discord.gg/test"
+
+    # Insert a free play alert
+    await repo.record_alert(
+        event_id="evt_recap",
+        alert_type="pinnacle_divergence",
+        market_key="spreads",
+        outcome_name="Lakers",
+        is_free_play=True,
+    )
+
+    await poster.post_daily_recap()
+
+    poster._client.create_tweet.assert_called_once()
+    call_text = poster._client.create_tweet.call_args.kwargs["text"]
+    assert "Yesterday's Free Plays" in call_text
+    assert "Lakers" in call_text
+
+
+@pytest.mark.asyncio
+async def test_mark_alert_free_play(settings, repo):
+    """mark_alert_free_play should update is_free_play on the correct row."""
+    # Insert two alerts for same event (different times)
+    await repo.record_alert(
+        event_id="evt_fp", alert_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+    )
+    await repo.record_alert(
+        event_id="evt_fp", alert_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+    )
+
+    await repo.mark_alert_free_play("evt_fp", "spreads", "Lakers")
+
+    # Verify only the most recent row is marked
+    cursor = await repo._db.execute(
+        "SELECT is_free_play FROM sent_alerts WHERE event_id = 'evt_fp' ORDER BY sent_at ASC"
+    )
+    rows = await cursor.fetchall()
+    assert len(rows) == 2
+    assert rows[0]["is_free_play"] == 0
+    assert rows[1]["is_free_play"] == 1
+
+
+@pytest.mark.asyncio
+async def test_post_signals_marks_free_play(settings, repo):
+    """post_signals should mark the alert as a free play in the DB when it posts one."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._free_play_interval = 5
+
+    sig = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
+    )
+
+    # Insert exactly 5 alerts (batch of 1 signal, total=5, seq=5, 5%5==0)
+    for i in range(5):
+        await repo.record_alert(
+            event_id="evt_123" if i == 4 else f"evt_{i}",
+            alert_type="pinnacle_divergence",
+            market_key="spreads",
+            outcome_name="Lakers",
+        )
+
+    await poster.post_signals([sig])
+
+    # The alert for evt_123 should now be marked as free play
+    cursor = await repo._db.execute(
+        "SELECT is_free_play FROM sent_alerts WHERE event_id = 'evt_123'"
+    )
+    row = await cursor.fetchone()
+    assert row["is_free_play"] == 1

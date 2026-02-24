@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS sent_alerts (
     market_key TEXT NOT NULL,
     outcome_name TEXT NOT NULL,
     sent_at TEXT NOT NULL,
-    details_json TEXT
+    details_json TEXT,
+    is_free_play INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS api_usage (
