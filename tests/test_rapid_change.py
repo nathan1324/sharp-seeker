@@ -217,6 +217,62 @@ async def test_rapid_spread_tightening_flips_with_value(settings, repo):
 
 
 @pytest.mark.asyncio
+async def test_rapid_total_down_signals_under(settings, repo):
+    """Pinnacle lowering total (147.5 -> 146.5) = sharps on Under.
+    Should signal Under if a US book still has the higher total."""
+    event = "evt_rapid_totals1"
+    t1 = "2025-01-20T12:00:00+00:00"
+    t2 = "2025-01-20T12:20:00+00:00"
+
+    snapshots = [
+        # Pinnacle lowers Over total from 147.5 to 146.5
+        _snap(event, "pinnacle", "totals", "Over", -110, 147.5, t1),
+        _snap(event, "pinnacle", "totals", "Over", -110, 146.5, t2),
+        # Pinnacle Under at t2
+        _snap(event, "pinnacle", "totals", "Under", -110, 146.5, t2),
+        # DraftKings still at 147.5 (stale — Under 147.5 is easier)
+        _snap(event, "draftkings", "totals", "Under", -105, 147.5, t2),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = RapidChangeDetector(settings, repo)
+    signals = await detector.detect(event, t2)
+
+    assert len(signals) == 1
+    sig = signals[0]
+    assert sig.outcome_name == "Under"  # sharps on Under
+    assert sig.details["value_books"][0]["bookmaker"] == "draftkings"
+    assert sig.details["value_books"][0]["point"] == 147.5
+
+
+@pytest.mark.asyncio
+async def test_rapid_total_up_signals_over(settings, repo):
+    """Pinnacle raising total (147.5 -> 148.5) = sharps on Over.
+    Should signal Over (steepening) with stale US books at old lower total."""
+    event = "evt_rapid_totals2"
+    t1 = "2025-01-20T12:00:00+00:00"
+    t2 = "2025-01-20T12:20:00+00:00"
+
+    snapshots = [
+        # Pinnacle raises Over total from 147.5 to 148.5
+        _snap(event, "pinnacle", "totals", "Over", -110, 147.5, t1),
+        _snap(event, "pinnacle", "totals", "Over", -110, 148.5, t2),
+        # FanDuel still at 147.5 (stale — Over 147.5 is easier to clear)
+        _snap(event, "fanduel", "totals", "Over", -110, 147.5, t2),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = RapidChangeDetector(settings, repo)
+    signals = await detector.detect(event, t2)
+
+    assert len(signals) == 1
+    sig = signals[0]
+    assert sig.outcome_name == "Over"  # sharps on Over
+    assert sig.details["value_books"][0]["bookmaker"] == "fanduel"
+    assert sig.details["value_books"][0]["point"] == 147.5
+
+
+@pytest.mark.asyncio
 async def test_rapid_steepening_finds_stale_books(settings, repo):
     """Pinnacle steepening should signal same side with stale US books."""
     event = "evt_rapid6"
