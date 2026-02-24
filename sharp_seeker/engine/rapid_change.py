@@ -20,8 +20,8 @@ def _is_steepening(market_key: str, outcome_name: str, old: dict, new: dict) -> 
         return new["price"] < old["price"]
     if market_key == "totals":
         if outcome_name.lower() == "over":
-            return new["point"] < old["point"]  # lower line = easier over
-        return new["point"] > old["point"]  # higher line = easier under
+            return new["point"] > old["point"]  # total went up = sharps on over
+        return new["point"] < old["point"]  # total went down = sharps on under
     # Spreads: further from zero = more favored
     return abs(new["point"]) > abs(old["point"])
 
