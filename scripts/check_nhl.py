@@ -4,15 +4,20 @@ import asyncio
 
 from sharp_seeker.config import Settings
 from sharp_seeker.api.odds_client import OddsClient
+from sharp_seeker.db.migrations import init_db
+from sharp_seeker.db.repository import Repository
 
 
 async def main():
     s = Settings()
-    async with OddsClient(s) as c:
+    db = await init_db(s.db_path)
+    repo = Repository(db)
+    async with OddsClient(s, repo) as c:
         data = await c._fetch_odds("icehockey_nhl")
         for evt in data:
             print(f"{evt['commence_time']}  {evt['away_team']} vs {evt['home_team']}")
         print(f"\nTotal: {len(data)} events")
+    await db.close()
 
 
 if __name__ == "__main__":
