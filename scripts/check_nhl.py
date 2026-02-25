@@ -14,7 +14,7 @@ async def main():
     repo = Repository(db)
     c = OddsClient(s, repo)
     try:
-        data = await c._fetch_odds("icehockey_nhl")
+        data = await c.fetch_odds("icehockey_nhl")
         for evt in data:
             print(f"{evt['commence_time']}  {evt['away_team']} vs {evt['home_team']}")
         print(f"\nTotal: {len(data)} events")
