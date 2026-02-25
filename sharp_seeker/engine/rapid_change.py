@@ -86,7 +86,7 @@ class RapidChangeDetector(BaseDetector):
                 else:
                     continue
 
-            if delta < threshold:
+            if delta <= threshold:
                 continue
 
             # Only signal when Pinnacle moves — the sharpest book
