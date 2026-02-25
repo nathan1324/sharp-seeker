@@ -12,12 +12,15 @@ async def main():
     s = Settings()
     db = await init_db(s.db_path)
     repo = Repository(db)
-    async with OddsClient(s, repo) as c:
+    c = OddsClient(s, repo)
+    try:
         data = await c._fetch_odds("icehockey_nhl")
         for evt in data:
             print(f"{evt['commence_time']}  {evt['away_team']} vs {evt['home_team']}")
         print(f"\nTotal: {len(data)} events")
-    await db.close()
+    finally:
+        await c.close()
+        await db.close()
 
 
 if __name__ == "__main__":
