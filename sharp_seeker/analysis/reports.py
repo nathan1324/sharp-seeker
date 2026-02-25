@@ -162,6 +162,11 @@ class ReportGenerator:
 
             self._send_webhook(webhook_url, embed, f"{period} {friendly}")
 
+            # Also send to default channel for centralized recap
+            default_url = self._settings.discord_webhook_url
+            if webhook_url != default_url:
+                self._send_webhook(default_url, embed, f"{period} {friendly} (misc)")
+
     # ── Per-sport override reports ─────────────────────────────
 
     async def _send_override_reports(self, period: str, since: str) -> None:
@@ -249,6 +254,11 @@ class ReportGenerator:
             embed.set_footer(text="Sandbox Sports", icon_url=LOGO_URL)
 
             self._send_webhook(webhook_url, embed, title)
+
+            # Also send to default channel for centralized recap
+            default_url = self._settings.discord_webhook_url
+            if webhook_url != default_url:
+                self._send_webhook(default_url, embed, f"{title} (misc)")
 
     # ── Combined summary (default channel) ──────────────────────
 
