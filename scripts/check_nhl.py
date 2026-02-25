@@ -16,7 +16,7 @@ async def main():
     try:
         data = await c.fetch_odds("icehockey_nhl")
         for evt in data:
-            print(f"{evt['commence_time']}  {evt['away_team']} vs {evt['home_team']}")
+            print(f"{evt.commence_time}  {evt.away_team} vs {evt.home_team}")
         print(f"\nTotal: {len(data)} events")
     finally:
         await c.close()
