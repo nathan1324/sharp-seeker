@@ -148,7 +148,7 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `ODDS_API_MONTHLY_CREDITS` | `500` | Monthly API credit budget |
 | `SPORTS` | `["basketball_nba"]` | Sports to track (JSON array) |
 | `BOOKMAKERS` | `["draftkings","fanduel","betmgm","pinnacle"]` | Bookmakers to monitor (JSON array) |
-| `POLL_INTERVAL_MINUTES` | `20` | Minutes between polls |
+| `POLL_INTERVAL_MINUTES` | `12` | Minutes between polls |
 | `QUIET_HOURS_START` | `5` | UTC hour to stop polling |
 | `QUIET_HOURS_END` | `14` | UTC hour to resume polling |
 | `STEAM_MIN_BOOKS` | `3` | Min books for steam move detection |
@@ -235,14 +235,14 @@ The daemon runs these jobs automatically via APScheduler:
 
 | Job | UTC | Mountain | Purpose |
 |-----|-----|----------|---------|
-| Odds polling | Every 20 min | — | Fetch odds, detect signals, send alerts |
-| **Resolve signals** | **13:30** | **6:30 AM** | Grade yesterday's games against final scores |
-| **Free play recap** | **13:45** | **6:45 AM** | Tweet yesterday's free play results |
-| **Daily report** | **14:00** | **7:00 AM** | Per-type + combined performance report |
-| **Weekly report** | **Mon 14:00** | **Mon 7:00 AM** | Weekly summary |
+| Odds polling | Every 12 min | — | Fetch odds, detect signals, send alerts |
+| **Resolve signals** | **12:30** | **5:30 AM** | Grade yesterday's games against final scores |
+| **Free play recap** | **12:45** | **5:45 AM** | Tweet yesterday's free play results |
+| **Daily report** | **12:45** | **5:45 AM** | Per-type + combined performance report |
+| **Weekly report** | **Mon 12:45** | **Mon 5:45 AM** | Weekly summary |
 | Budget summary | 00:00 | 5:00 PM (prev day) | API credit usage |
 
-Grading runs 30 minutes before the daily report so that results are included. Quiet hours (default 05:00–14:00 UTC) only affect odds polling — reports and grading run regardless.
+Grading runs 15 minutes before the reports so that results are included. Quiet hours (default 01:00–13:00 UTC) only affect odds polling — reports and grading run regardless.
 
 ## Server Management
 
