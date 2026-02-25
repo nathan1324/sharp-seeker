@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     steam_window_minutes: int = 30
 
     # Detection — rapid changes
-    rapid_spread_threshold: float = 0.5
+    rapid_spread_threshold: float = 1.0
     rapid_ml_threshold: float = 20.0
 
     # Detection — Pinnacle divergence
