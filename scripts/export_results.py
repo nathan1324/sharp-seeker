@@ -1,11 +1,39 @@
 """Export yesterday's signal results."""
 
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 
 from sharp_seeker.config import Settings
 from sharp_seeker.db.migrations import init_db
 from sharp_seeker.db.repository import Repository
+
+
+def _format_odds(d):
+    """Extract best odds string from details_json."""
+    details_raw = d.get("details_json")
+    if not details_raw:
+        return ""
+    try:
+        details = json.loads(details_raw) if isinstance(details_raw, str) else details_raw
+        vb = details.get("value_books", [])
+        if not vb:
+            return ""
+        best = vb[0]
+        parts = []
+        if best.get("point") is not None:
+            parts.append(f"{best['point']:+g}")
+        if best.get("price") is not None:
+            parts.append(f"({best['price']:+g})")
+        bm = best.get("bookmaker", "").title()
+        return f"{' '.join(parts)} @ {bm}" if parts else ""
+    except (json.JSONDecodeError, TypeError):
+        return ""
+
+
+def _sport_label(sport_key):
+    parts = sport_key.split("_", 1)
+    return parts[-1].upper() if len(parts) > 1 else sport_key.upper()
 
 
 async def main():
@@ -23,8 +51,10 @@ async def main():
             d = dict(row)
             teams = await repo.get_event_teams(d["event_id"])
             matchup = f"{teams[1]} vs {teams[0]}" if teams else d["event_id"]
-            print(f"  {d['result'].upper():5s}  {matchup}  |  {d['signal_type']}  "
-                  f"{d['market_key']} {d['outcome_name']}  |  strength={d['signal_strength']}")
+            sport = _sport_label(d.get("sport_key", ""))
+            odds = _format_odds(d)
+            print(f"  {d['result'].upper():5s}  {sport:6s}  {matchup}  |  {d['signal_type']}  "
+                  f"{d['market_key']} {d['outcome_name']}  |  {odds}  |  strength={d['signal_strength']}")
     else:
         print("No resolved signals in the last 24h.")
 
@@ -36,8 +66,10 @@ async def main():
             d = dict(row)
             teams = await repo.get_event_teams(d["event_id"])
             matchup = f"{teams[1]} vs {teams[0]}" if teams else d["event_id"]
-            print(f"  PENDING  {matchup}  |  {d['signal_type']}  "
-                  f"{d['market_key']} {d['outcome_name']}  |  strength={d['signal_strength']}")
+            sport = _sport_label(d.get("sport_key", ""))
+            odds = _format_odds(d)
+            print(f"  PENDING  {sport:6s}  {matchup}  |  {d['signal_type']}  "
+                  f"{d['market_key']} {d['outcome_name']}  |  {odds}  |  strength={d['signal_strength']}")
 
     # Summary stats
     stats = await repo.get_performance_stats(since)
