@@ -107,7 +107,7 @@ class DetectionPipeline:
 
         # Filter by minimum strength
         min_str = self._settings.min_signal_strength
-        strong_signals = [s for s in all_signals if s.strength >= min_str]
+        strong_signals = [s for s in all_signals if s.strength > min_str]
         log.info(
             "strength_filter",
             before=len(all_signals),
