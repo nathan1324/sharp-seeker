@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import csv
+import io
+import json
 from datetime import datetime, timedelta, timezone
 
 import structlog
@@ -43,6 +46,25 @@ def _sport_friendly(sport_key: str) -> str:
     """Convert a sport_key like 'basketball_ncaab' to 'NCAAB'."""
     parts = sport_key.split("_", 1)
     return parts[-1].upper() if len(parts) > 1 else sport_key.upper()
+
+
+def _parse_best_book(details_json_str: str | None) -> tuple[str, str, str]:
+    """Extract best book's bookmaker, point, and price from details_json."""
+    if not details_json_str:
+        return "", "", ""
+    try:
+        details = json.loads(details_json_str) if isinstance(details_json_str, str) else details_json_str
+        vb = details.get("value_books", [])
+        if not vb:
+            return "", "", ""
+        best = vb[0]
+        return (
+            best.get("bookmaker", ""),
+            best.get("point", ""),
+            best.get("price", ""),
+        )
+    except (json.JSONDecodeError, TypeError):
+        return "", "", ""
 
 
 class ReportGenerator:
@@ -160,12 +182,24 @@ class ReportGenerator:
             embed.set_timestamp(datetime.now(timezone.utc).isoformat())
             embed.set_footer(text="Sandbox Sports", icon_url=LOGO_URL)
 
-            self._send_webhook(webhook_url, embed, f"{period} {friendly}")
+            csv_bytes = await self._build_results_csv(
+                since, signal_type=signal_type_val, exclude_sports=exclude,
+            )
+            date_str = since[:10]
+            csv_name = f"{signal_type_val}_results_{date_str}.csv"
+
+            self._send_webhook(
+                webhook_url, embed, f"{period} {friendly}",
+                file_content=csv_bytes, filename=csv_name,
+            )
 
             # Also send to default channel for centralized recap
             default_url = self._settings.discord_webhook_url
             if webhook_url != default_url:
-                self._send_webhook(default_url, embed, f"{period} {friendly} (misc)")
+                self._send_webhook(
+                    default_url, embed, f"{period} {friendly} (misc)",
+                    file_content=csv_bytes, filename=csv_name,
+                )
 
     # ── Per-sport override reports ─────────────────────────────
 
@@ -253,12 +287,25 @@ class ReportGenerator:
             embed.set_timestamp(datetime.now(timezone.utc).isoformat())
             embed.set_footer(text="Sandbox Sports", icon_url=LOGO_URL)
 
-            self._send_webhook(webhook_url, embed, title)
+            csv_bytes = await self._build_results_csv(
+                since, signal_type=signal_type_val, sport_key=sport_key,
+            )
+            date_str = since[:10]
+            sport_slug = sport_key.replace(":", "_")
+            csv_name = f"{signal_type_val}_{sport_slug}_results_{date_str}.csv"
+
+            self._send_webhook(
+                webhook_url, embed, title,
+                file_content=csv_bytes, filename=csv_name,
+            )
 
             # Also send to default channel for centralized recap
             default_url = self._settings.discord_webhook_url
             if webhook_url != default_url:
-                self._send_webhook(default_url, embed, f"{title} (misc)")
+                self._send_webhook(
+                    default_url, embed, f"{title} (misc)",
+                    file_content=csv_bytes, filename=csv_name,
+                )
 
     # ── Combined summary (default channel) ──────────────────────
 
@@ -333,9 +380,59 @@ class ReportGenerator:
         embed.set_timestamp(datetime.now(timezone.utc).isoformat())
         embed.set_footer(text="Sandbox Sports", icon_url=LOGO_URL)
 
+        csv_bytes = await self._build_results_csv(since)
+        date_str = since[:10]
+        csv_name = f"all_results_{date_str}.csv"
+
         self._send_webhook(
-            self._settings.discord_webhook_url, embed, title
+            self._settings.discord_webhook_url, embed, title,
+            file_content=csv_bytes, filename=csv_name,
         )
+
+    # ── CSV builder ──────────────────────────────────────────────
+
+    async def _build_results_csv(
+        self,
+        since: str,
+        signal_type: str | None = None,
+        sport_key: str | None = None,
+        exclude_sports: list[str] | None = None,
+    ) -> bytes | None:
+        """Build an in-memory CSV of resolved signals, returning UTF-8 bytes."""
+        rows = await self._repo.get_resolved_signals_since(
+            since, signal_type=signal_type, sport_key=sport_key,
+            exclude_sports=exclude_sports,
+        )
+        if not rows:
+            return None
+
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow([
+            "result", "sport", "matchup", "signal_type", "market",
+            "outcome", "book", "point", "price", "strength", "signal_at",
+        ])
+
+        for row in rows:
+            d = dict(row)
+            teams = await self._repo.get_event_teams(d["event_id"])
+            matchup = f"{teams[1]} vs {teams[0]}" if teams else d["event_id"]
+            book, point, price = _parse_best_book(d.get("details_json"))
+            writer.writerow([
+                d["result"].upper(),
+                _sport_friendly(d.get("sport_key", "")),
+                matchup,
+                d["signal_type"],
+                d["market_key"],
+                d["outcome_name"],
+                book,
+                point,
+                price,
+                d["signal_strength"],
+                d.get("signal_at", ""),
+            ])
+
+        return buf.getvalue().encode("utf-8")
 
     # ── Helpers ──────────────────────────────────────────────────
 
@@ -349,9 +446,14 @@ class ReportGenerator:
         return self._settings.discord_webhook_url
 
     @staticmethod
-    def _send_webhook(url: str, embed: DiscordEmbed, label: str) -> None:
+    def _send_webhook(
+        url: str, embed: DiscordEmbed, label: str,
+        file_content: bytes | None = None, filename: str | None = None,
+    ) -> None:
         webhook = DiscordWebhook(url=url)
         webhook.add_embed(embed)
+        if file_content and filename:
+            webhook.add_file(file=file_content, filename=filename)
         resp = webhook.execute()
 
         if resp and hasattr(resp, "status_code") and resp.status_code < 400:
