@@ -28,6 +28,8 @@ Sharp Seeker automatically grades every signal against final game scores. Each m
 
 Grading runs at 14:00 UTC (7 AM MT), followed by daily performance reports at 15:00 UTC (8 AM MT). Each signal type gets its own per-channel report with W/L/P record, individual outcomes, and a market-type breakdown (moneyline/spreads/totals). A combined summary goes to the default channel with overall stats by detector and market. When `DISCORD_WEBHOOK_OVERRIDES` are configured, each override channel also receives its own sport-specific performance report (e.g. "Daily Pinnacle Divergence Report — NCAAB").
 
+Every report embed includes a **downloadable CSV attachment** with the full results for that period. Per-signal-type reports attach a CSV filtered to that signal type; override reports filter by signal type and sport; the combined summary includes all results. This lets you open the data in a spreadsheet for deeper analysis beyond the 15-line embed preview.
+
 ### Signal Pipeline
 
 Raw signals pass through a 3-stage filter before alerting:
