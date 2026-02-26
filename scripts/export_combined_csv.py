@@ -32,16 +32,15 @@ def _sport_label(sport_key):
 
 
 async def main():
-    since = "2025-02-24T00:00:00+00:00"
-    until = "2025-02-25T00:00:00+00:00"
+    # Same window as the daily report that ran 2/25 at 12:45 UTC:
+    # 24 hours back = 2/24 12:45 UTC
+    since = "2025-02-24T12:45:00+00:00"
 
     s = Settings()
     db = await init_db(s.db_path)
     repo = Repository(db)
 
-    rows = await repo.get_resolved_signals_since(since)
-    # Filter to only signals from 2/24
-    filtered = [r for r in rows if dict(r).get("signal_at", "") < until]
+    filtered = await repo.get_resolved_signals_since(since)
 
     writer = csv.writer(sys.stdout)
     writer.writerow([
