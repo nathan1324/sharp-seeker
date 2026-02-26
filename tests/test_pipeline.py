@@ -9,6 +9,7 @@ import pytest
 from sharp_seeker.config import Settings
 from sharp_seeker.engine.base import Signal, SignalType
 from sharp_seeker.engine.pipeline import DetectionPipeline, _pick_best_signal
+from unittest.mock import AsyncMock, MagicMock
 
 
 def _snap(
@@ -167,11 +168,12 @@ def _make_signal(
     market: str = "spreads",
     strength: float = 0.7,
     details: dict | None = None,
+    sport_key: str = "basketball_nba",
 ) -> Signal:
     return Signal(
         signal_type=signal_type,
         event_id="evt1",
-        sport_key="basketball_nba",
+        sport_key=sport_key,
         home_team="Team A",
         away_team="Team B",
         market_key=market,
@@ -450,3 +452,160 @@ async def test_signal_quiet_hours_no_config(repo):
     signals = await pipeline.run(t2)
     steam_signals = [s for s in signals if s.signal_type == SignalType.STEAM_MOVE]
     assert len(steam_signals) > 0, "Signals should pass when no quiet hours configured"
+
+
+# ── Tiered min strength lookup tests ─────────────────────────────────
+
+
+def test_get_min_strength_market_override():
+    """Market-level override takes priority over type-level and global."""
+    settings = Settings(
+        odds_api_key="test_key",
+        discord_webhook_url="https://discord.com/api/webhooks/test/test",
+        db_path=":memory:",
+        min_signal_strength=0.5,
+        signal_strength_overrides={"pinnacle_divergence": 0.55},
+        signal_market_strength_overrides={"pinnacle_divergence:spreads": 0.60},
+        signal_sport_strength_overrides={"pinnacle_divergence:basketball_ncaab": 0.58},
+    )
+    pipeline = DetectionPipeline(settings, MagicMock())
+    # Market override wins over sport and type
+    assert pipeline._get_min_strength("pinnacle_divergence", "spreads", "basketball_ncaab") == 0.60
+
+
+def test_get_min_strength_sport_override():
+    """Sport-level override takes priority over type-level, but not market."""
+    settings = Settings(
+        odds_api_key="test_key",
+        discord_webhook_url="https://discord.com/api/webhooks/test/test",
+        db_path=":memory:",
+        min_signal_strength=0.5,
+        signal_strength_overrides={"pinnacle_divergence": 0.55},
+        signal_sport_strength_overrides={"pinnacle_divergence:basketball_ncaab": 0.58},
+    )
+    pipeline = DetectionPipeline(settings, MagicMock())
+    # Sport override wins over type (no market override configured)
+    assert pipeline._get_min_strength("pinnacle_divergence", "h2h", "basketball_ncaab") == 0.58
+
+
+def test_get_min_strength_all_defaults():
+    """No overrides configured → falls back to global min."""
+    settings = Settings(
+        odds_api_key="test_key",
+        discord_webhook_url="https://discord.com/api/webhooks/test/test",
+        db_path=":memory:",
+        min_signal_strength=0.5,
+    )
+    pipeline = DetectionPipeline(settings, MagicMock())
+    assert pipeline._get_min_strength("pinnacle_divergence", "spreads", "basketball_nba") == 0.5
+
+
+# ── Max strength cap tests ───────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_max_strength_cap_drops_trap_signal(repo):
+    """A signal above the max cap should be filtered out."""
+    event = "evt_cap"
+    t1 = "2025-01-15T12:00:00+00:00"
+    t2 = "2025-01-15T12:20:00+00:00"
+
+    # Create data that triggers a steam move
+    snapshots = []
+    for bm in ("draftkings", "fanduel", "betmgm"):
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    await repo.insert_snapshots(snapshots)
+
+    # First run without cap — find the signal's strength
+    settings_no_cap = Settings(
+        odds_api_key="test_key",
+        discord_webhook_url="https://discord.com/api/webhooks/test/test",
+        db_path=":memory:",
+    )
+    pipeline = DetectionPipeline(settings_no_cap, repo)
+    signals = await pipeline.run(t2)
+    steam = [s for s in signals if s.signal_type == SignalType.STEAM_MOVE]
+    assert len(steam) > 0, "Steam move should fire without cap"
+    strength = steam[0].strength
+
+    # Now set a cap below the signal's strength — should be dropped
+    settings_cap = Settings(
+        odds_api_key="test_key",
+        discord_webhook_url="https://discord.com/api/webhooks/test/test",
+        db_path=":memory:",
+        max_signal_strength_overrides={"steam_move": strength - 0.01},
+    )
+    pipeline_cap = DetectionPipeline(settings_cap, repo)
+    signals_cap = await pipeline_cap.run(t2)
+    steam_cap = [s for s in signals_cap if s.signal_type == SignalType.STEAM_MOVE]
+    assert len(steam_cap) == 0, "Steam move should be dropped by max cap"
+
+
+@pytest.mark.asyncio
+async def test_max_strength_cap_no_config_passthrough(repo):
+    """Empty max cap dict → all signals pass through (backwards compat)."""
+    event = "evt_nocap"
+    t1 = "2025-01-15T12:00:00+00:00"
+    t2 = "2025-01-15T12:20:00+00:00"
+
+    snapshots = []
+    for bm in ("draftkings", "fanduel", "betmgm"):
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    await repo.insert_snapshots(snapshots)
+
+    settings_empty = Settings(
+        odds_api_key="test_key",
+        discord_webhook_url="https://discord.com/api/webhooks/test/test",
+        db_path=":memory:",
+        max_signal_strength_overrides={},
+    )
+    pipeline = DetectionPipeline(settings_empty, repo)
+    signals = await pipeline.run(t2)
+    steam = [s for s in signals if s.signal_type == SignalType.STEAM_MOVE]
+    assert len(steam) > 0, "Signals should pass with empty max cap config"
+
+
+@pytest.mark.asyncio
+async def test_max_strength_cap_boundary(repo):
+    """Signal at exactly the cap threshold should be filtered (strict <)."""
+    event = "evt_boundary"
+    t1 = "2025-01-15T12:00:00+00:00"
+    t2 = "2025-01-15T12:20:00+00:00"
+
+    snapshots = []
+    for bm in ("draftkings", "fanduel", "betmgm"):
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    await repo.insert_snapshots(snapshots)
+
+    # Find the signal's exact strength
+    settings_no_cap = Settings(
+        odds_api_key="test_key",
+        discord_webhook_url="https://discord.com/api/webhooks/test/test",
+        db_path=":memory:",
+    )
+    pipeline = DetectionPipeline(settings_no_cap, repo)
+    signals = await pipeline.run(t2)
+    steam = [s for s in signals if s.signal_type == SignalType.STEAM_MOVE]
+    assert len(steam) > 0
+    strength = steam[0].strength
+
+    # Set cap at exactly the signal's strength — should be filtered (strict <)
+    settings_exact = Settings(
+        odds_api_key="test_key",
+        discord_webhook_url="https://discord.com/api/webhooks/test/test",
+        db_path=":memory:",
+        max_signal_strength_overrides={"steam_move": strength},
+    )
+    pipeline_exact = DetectionPipeline(settings_exact, repo)
+    signals_exact = await pipeline_exact.run(t2)
+    steam_exact = [s for s in signals_exact if s.signal_type == SignalType.STEAM_MOVE]
+    assert len(steam_exact) == 0, "Signal at exactly cap should be filtered (strict <)"
