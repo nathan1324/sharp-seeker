@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -280,3 +281,83 @@ class TestResolveAll:
         # Signal should still be unresolved
         unresolved = await repo.get_unresolved_signals()
         assert len(unresolved) == 1
+
+    @pytest.mark.asyncio
+    async def test_resolve_spread_uses_details_point(self, grader, repo):
+        """Grader should use the details_json point (US book) over Pinnacle's.
+
+        Reproduces the NHL bug: Pinnacle has Buffalo Sabres at -1.5, but the
+        signal recommends betting at FanDuel +1.5.  Buffalo wins outright,
+        so the +1.5 bet should grade as "won" (not "lost" from Pinnacle's -1.5).
+        """
+        game_nhl = {
+            "id": "nhl_game1",
+            "home_team": "New Jersey Devils",
+            "away_team": "Buffalo Sabres",
+            "completed": True,
+            "scores": [
+                {"name": "New Jersey Devils", "score": "3"},
+                {"name": "Buffalo Sabres", "score": "4"},
+            ],
+        }
+
+        # Insert Pinnacle snapshot with -1.5 (wrong line for the recommended bet)
+        await repo.insert_snapshots([{
+            "event_id": "nhl_game1",
+            "sport_key": "icehockey_nhl",
+            "home_team": "New Jersey Devils",
+            "away_team": "Buffalo Sabres",
+            "commence_time": "2025-02-25T00:00:00Z",
+            "bookmaker_key": "pinnacle",
+            "market_key": "spreads",
+            "outcome_name": "Buffalo Sabres",
+            "price": 229,
+            "point": -1.5,
+            "deep_link": None,
+            "fetched_at": "2025-02-25T13:00:00",
+        }])
+
+        # Signal with details_json containing the US book's +1.5 line
+        details = {
+            "us_book": "fanduel",
+            "us_value": 1.5,
+            "pinnacle_value": -1.5,
+            "delta": 3.0,
+            "value_books": [
+                {
+                    "bookmaker": "fanduel",
+                    "price": -280.0,
+                    "point": 1.5,
+                    "deep_link": "https://example.com",
+                }
+            ],
+        }
+        await repo.record_signal_result(
+            event_id="nhl_game1",
+            signal_type="pinnacle_divergence",
+            market_key="spreads",
+            outcome_name="Buffalo Sabres",
+            signal_direction="up",
+            signal_strength=1.0,
+            signal_at="2025-02-25T13:11:49",
+            details_json=json.dumps(details),
+            sport_key="icehockey_nhl",
+            is_live=True,
+        )
+
+        grader._odds_client.fetch_scores = AsyncMock(return_value=[game_nhl])
+
+        counts = await grader.resolve_all()
+        assert counts["resolved"] == 1
+
+        # Verify graded as "won" — uses FanDuel +1.5, not Pinnacle -1.5
+        unresolved = await repo.get_unresolved_signals()
+        assert len(unresolved) == 0
+
+        # Double-check: directly verify the result stored in DB
+        cursor = await repo._db.execute(
+            "SELECT result FROM signal_results WHERE event_id = ?",
+            ("nhl_game1",),
+        )
+        row = await cursor.fetchone()
+        assert row["result"] == "won"
