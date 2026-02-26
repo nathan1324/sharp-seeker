@@ -189,9 +189,10 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `X_ACCESS_TOKEN` | — | X OAuth 1.0a access token (optional) |
 | `X_ACCESS_TOKEN_SECRET` | — | X OAuth 1.0a access token secret (optional) |
 | `X_CTA_URL` | `""` | Link in tweet CTA (Discord invite / landing page) |
-| `X_FREE_PLAY_INTERVAL` | `10` | Every Nth Pinnacle Divergence = free play |
+| `X_FREE_PLAY_INTERVAL` | `10` | Every Nth eligible signal = free play |
 | `X_TEASER_HOURS` | `[]` | UTC hours to allow teaser tweets (JSON array, empty = always) |
 | `X_MAX_STRENGTH` | `1.0` | Skip PD signals >= this strength for X tweets (0.0–1.0) |
+| `X_TWEET_SIGNAL_TYPES` | `["pinnacle_divergence", "rapid_change"]` | Signal types eligible for X tweets (JSON array) |
 | `X_FREE_PLAY_SPORTS` | `[]` | Preferred sports for free play selection (JSON array) |
 | `X_FREE_PLAY_MARKETS` | `[]` | Preferred markets for free play selection (JSON array) |
 | `LOG_LEVEL` | `INFO` | Logging level |
@@ -290,7 +291,7 @@ bash deploy/update.sh
 
 ## X (Twitter) Integration
 
-Sharp Seeker can automatically post to X when signals fire. Most tweets are **teasers** — showing the matchup and signal type to create curiosity — with a CTA link to your Discord. Every Nth Pinnacle Divergence signal is posted as a **free play** with full pick details revealed publicly.
+Sharp Seeker can automatically post to X when signals fire. By default, **Pinnacle Divergence** and **Rapid Change** signals are eligible (configurable via `X_TWEET_SIGNAL_TYPES`). Most tweets are **teasers** — showing the matchup and signal type to create curiosity — with a CTA link to your Discord. Every Nth eligible signal is posted as a **free play** with full pick details revealed publicly.
 
 **Teaser example:**
 ```

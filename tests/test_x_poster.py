@@ -53,18 +53,18 @@ async def test_post_signals_skips_when_disabled(settings, repo):
     await poster.post_signals([sig])
 
 
-# ── Only Pinnacle Divergence signals are tweeted ─────────────────
+# ── Only tweetable signal types are tweeted ──────────────────────
 
 
 @pytest.mark.asyncio
-async def test_non_pinnacle_signals_skipped(settings, repo):
-    """Non-Pinnacle Divergence signals should not be tweeted."""
+async def test_non_tweetable_signals_skipped(settings, repo):
+    """Signal types not in x_tweet_signal_types should not be tweeted."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
 
-    for st in (SignalType.STEAM_MOVE, SignalType.RAPID_CHANGE, SignalType.REVERSE_LINE, SignalType.EXCHANGE_SHIFT):
+    for st in (SignalType.STEAM_MOVE, SignalType.REVERSE_LINE, SignalType.EXCHANGE_SHIFT):
         await poster.post_signals([_make_signal(signal_type=st)])
 
     poster._client.create_tweet.assert_not_called()
@@ -713,7 +713,7 @@ async def test_smart_free_play_falls_back_to_strength(settings, repo):
 
 @pytest.mark.asyncio
 async def test_free_play_counter_uses_unfiltered_count(settings, repo):
-    """Seq should be computed from all PD signals, not just eligible (below cap)."""
+    """Seq should be computed from all tweetable signals, not just eligible (below cap)."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._client = MagicMock()
@@ -782,3 +782,125 @@ def test_pick_best_free_play_scoring(settings, repo):
     poster._free_play_markets = []
     # s2: (0, 0, 0.50)  vs  s3: (0, 0, 0.40)  vs  s1: (0, 0, 0.25)
     assert poster._pick_best_free_play([s1, s2, s3]) is s2
+
+
+# ── Rapid change tweeting ──────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_rapid_change_gets_teaser(settings, repo):
+    """Rapid change signal should produce a teaser tweet."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    # Record 1 alert (as Discord alerter would)
+    await repo.record_alert(
+        event_id="evt_123", alert_type="rapid_change",
+        market_key="spreads", outcome_name="Lakers",
+    )
+
+    sig = _make_signal(signal_type=SignalType.RAPID_CHANGE)
+    await poster.post_signals([sig])
+
+    poster._client.create_tweet.assert_called_once()
+    call_text = poster._client.create_tweet.call_args.kwargs["text"]
+    assert "Sharp money detected" in call_text
+    assert "Rapid Change" in call_text
+
+
+@pytest.mark.asyncio
+async def test_rapid_change_eligible_for_free_play(settings, repo):
+    """Rapid change signal can become a free play pick."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._free_play_interval = 5
+
+    sig = _make_signal(
+        signal_type=SignalType.RAPID_CHANGE,
+        details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
+    )
+
+    # Insert exactly 5 alerts of rapid_change type
+    for i in range(5):
+        await repo.record_alert(
+            event_id=f"evt_{i}",
+            alert_type="rapid_change",
+            market_key="spreads",
+            outcome_name="Lakers",
+        )
+
+    await poster.post_signals([sig])
+
+    poster._client.create_tweet.assert_called_once()
+    call_text = poster._client.create_tweet.call_args.kwargs["text"]
+    assert "FREE PLAY" in call_text
+    assert "Rapid Change" in call_text
+
+
+@pytest.mark.asyncio
+async def test_mixed_batch_counter(settings, repo):
+    """Batch with PD + rapid changes counts both for seq numbering."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._free_play_interval = 5
+
+    # Pre-insert 3 alerts (2 PD + 1 rapid)
+    for i in range(2):
+        await repo.record_alert(
+            event_id=f"evt_pd_{i}", alert_type="pinnacle_divergence",
+            market_key="spreads", outcome_name="Lakers",
+        )
+    await repo.record_alert(
+        event_id="evt_rc_0", alert_type="rapid_change",
+        market_key="spreads", outcome_name="Lakers",
+    )
+
+    # Batch of 3: 1 PD + 2 rapid (total = 3 prior + 3 batch = 6, seq 4,5,6)
+    batch = [
+        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE),
+        _make_signal(signal_type=SignalType.RAPID_CHANGE),
+        _make_signal(signal_type=SignalType.RAPID_CHANGE),
+    ]
+    for i, sig in enumerate(batch):
+        await repo.record_alert(
+            event_id=f"evt_batch_{i}",
+            alert_type=sig.signal_type.value,
+            market_key="spreads",
+            outcome_name="Lakers",
+        )
+
+    await poster.post_signals(batch)
+
+    # seq 5 hits interval → 1 free play + 2 teasers = 3 tweets
+    assert poster._client.create_tweet.call_count == 3
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    free_play_count = sum(1 for t in calls if "FREE PLAY" in t)
+    assert free_play_count == 1
+
+
+@pytest.mark.asyncio
+async def test_custom_tweet_types_config(settings, repo):
+    """Setting x_tweet_signal_types to PD-only excludes rapid changes."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    # Override to PD only
+    poster._tweet_types = {"pinnacle_divergence"}
+
+    await poster.post_signals([_make_signal(signal_type=SignalType.RAPID_CHANGE)])
+    poster._client.create_tweet.assert_not_called()
+
+    # PD should still work
+    await repo.record_alert(
+        event_id="evt_123", alert_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+    )
+    await poster.post_signals([_make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)])
+    poster._client.create_tweet.assert_called_once()
