@@ -46,6 +46,7 @@ class XPoster:
         self._repo = repo
         self._cta_url = settings.x_cta_url
         self._free_play_interval = settings.x_free_play_interval
+        self._teaser_hours: list[int] = settings.x_teaser_hours
         self._enabled = False
 
         if all([
@@ -81,6 +82,8 @@ class XPoster:
         total_pd = await self._repo.count_alerts_by_type("pinnacle_divergence")
         batch_size = len(pd_signals)
 
+        now_hour = datetime.now(timezone.utc).hour
+
         for i, signal in enumerate(pd_signals):
             seq = total_pd - batch_size + i + 1
             free_play = seq > 0 and seq % self._free_play_interval == 0
@@ -88,6 +91,9 @@ class XPoster:
                 if free_play:
                     text = self._format_free_play(signal)
                 else:
+                    if self._teaser_hours and now_hour not in self._teaser_hours:
+                        log.debug("x_teaser_skipped", reason="outside_teaser_hours", hour_utc=now_hour)
+                        continue
                     text = self._format_teaser(signal)
                 self._post_tweet(text)
                 if free_play:
