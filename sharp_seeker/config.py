@@ -66,6 +66,16 @@ class Settings(BaseSettings):
     # Minimum signal strength to alert (0.0–1.0)
     min_signal_strength: float = 0.5
 
+    # Per-signal-type minimum strength overrides (JSON object in .env)
+    # Overrides global MIN_SIGNAL_STRENGTH for specific signal types
+    # Example: {"rapid_change": 0.65, "reverse_line": 0.65}
+    signal_strength_overrides: dict[str, float] = Field(default_factory=dict)
+
+    # Per-signal-type quiet hours (JSON object in .env)
+    # Suppresses specific signal types during certain UTC hours
+    # Example: {"pinnacle_divergence": [14], "reverse_line": [3, 20, 21]}
+    signal_quiet_hours: dict[str, list[int]] = Field(default_factory=dict)
+
     # Alert dedup
     alert_cooldown_minutes: int = 60
 
@@ -78,7 +88,7 @@ class Settings(BaseSettings):
     x_access_token: str | None = None
     x_access_token_secret: str | None = None
     x_cta_url: str = ""  # Discord invite or landing page link
-    x_free_play_interval: int = 5  # every Nth pinnacle divergence = free play
+    x_free_play_interval: int = 7  # every Nth pinnacle divergence = free play
 
     # Logging
     log_level: str = "INFO"

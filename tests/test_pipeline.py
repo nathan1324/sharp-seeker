@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
+from sharp_seeker.config import Settings
 from sharp_seeker.engine.base import Signal, SignalType
 from sharp_seeker.engine.pipeline import DetectionPipeline, _pick_best_signal
 
@@ -331,3 +334,119 @@ def test_pick_best_fallback_uses_value_books():
     ]
     best = _pick_best_signal(sigs)
     assert best.outcome_name == "Team B"
+
+
+# ── Per-signal-type filtering tests ──────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_strength_override_filters_weak_signal(repo):
+    """A signal type with a strength override should be filtered at the higher threshold,
+    while other types at the same strength pass through."""
+    event = "evt_override"
+    t1 = "2025-01-15T12:00:00+00:00"
+    t2 = "2025-01-15T12:20:00+00:00"
+
+    # Create data that triggers a steam move (caesars stays on old line = value book)
+    snapshots = []
+    for bm in ("draftkings", "fanduel", "betmgm"):
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    await repo.insert_snapshots(snapshots)
+
+    # Without override — signals should pass (global min is 0.5)
+    settings_normal = Settings(
+        odds_api_key="test_key",
+        discord_webhook_url="https://discord.com/api/webhooks/test/test",
+        db_path=":memory:",
+        min_signal_strength=0.5,
+    )
+    pipeline = DetectionPipeline(settings_normal, repo)
+    signals = await pipeline.run(t2)
+    steam_signals = [s for s in signals if s.signal_type == SignalType.STEAM_MOVE]
+    assert len(steam_signals) > 0, "Steam move should pass with default threshold"
+
+    # Record the strength so we can set the override above it
+    strength = steam_signals[0].strength
+
+    # With override set above the signal's strength — should be filtered out
+    settings_override = Settings(
+        odds_api_key="test_key",
+        discord_webhook_url="https://discord.com/api/webhooks/test/test",
+        db_path=":memory:",
+        min_signal_strength=0.5,
+        signal_strength_overrides={"steam_move": strength + 0.01},
+    )
+    pipeline_override = DetectionPipeline(settings_override, repo)
+    signals_override = await pipeline_override.run(t2)
+    steam_override = [s for s in signals_override if s.signal_type == SignalType.STEAM_MOVE]
+    assert len(steam_override) == 0, "Steam move should be filtered by strength override"
+
+
+@pytest.mark.asyncio
+async def test_signal_quiet_hours_suppresses(repo):
+    """A signal type configured as quiet at the current hour should be suppressed,
+    while other signal types at the same hour pass through."""
+    from datetime import datetime, timezone
+
+    event = "evt_quiet"
+    t1 = "2025-01-15T12:00:00+00:00"
+    t2 = "2025-01-15T12:20:00+00:00"
+
+    # Create data that triggers a steam move
+    snapshots = []
+    for bm in ("draftkings", "fanduel", "betmgm"):
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    await repo.insert_snapshots(snapshots)
+
+    # Configure quiet hours for steam_move at hour 14
+    settings_quiet = Settings(
+        odds_api_key="test_key",
+        discord_webhook_url="https://discord.com/api/webhooks/test/test",
+        db_path=":memory:",
+        signal_quiet_hours={"steam_move": [14]},
+    )
+    pipeline = DetectionPipeline(settings_quiet, repo)
+
+    # Mock datetime.now to return hour 14 UTC
+    fake_now = datetime(2025, 1, 15, 14, 30, 0, tzinfo=timezone.utc)
+    with patch("sharp_seeker.engine.pipeline.datetime") as mock_dt:
+        mock_dt.now.return_value = fake_now
+        mock_dt.fromisoformat = datetime.fromisoformat
+        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+        signals = await pipeline.run(t2)
+
+    steam_signals = [s for s in signals if s.signal_type == SignalType.STEAM_MOVE]
+    assert len(steam_signals) == 0, "Steam move should be suppressed during quiet hour"
+
+
+@pytest.mark.asyncio
+async def test_signal_quiet_hours_no_config(repo):
+    """When signal_quiet_hours is empty, all signals pass through (no regression)."""
+    event = "evt_noq"
+    t1 = "2025-01-15T12:00:00+00:00"
+    t2 = "2025-01-15T12:20:00+00:00"
+
+    snapshots = []
+    for bm in ("draftkings", "fanduel", "betmgm"):
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    await repo.insert_snapshots(snapshots)
+
+    settings_empty = Settings(
+        odds_api_key="test_key",
+        discord_webhook_url="https://discord.com/api/webhooks/test/test",
+        db_path=":memory:",
+        signal_quiet_hours={},
+    )
+    pipeline = DetectionPipeline(settings_empty, repo)
+    signals = await pipeline.run(t2)
+    steam_signals = [s for s in signals if s.signal_type == SignalType.STEAM_MOVE]
+    assert len(steam_signals) > 0, "Signals should pass when no quiet hours configured"
