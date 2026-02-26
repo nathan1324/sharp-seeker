@@ -160,6 +160,14 @@ class Repository:
         row = await cursor.fetchone()
         return row["cnt"] if row else 0
 
+    async def count_alerts_by_types(self, alert_types: list[str]) -> int:
+        """Count total sent alerts across multiple types."""
+        placeholders = ",".join("?" for _ in alert_types)
+        sql = f"SELECT COUNT(*) AS cnt FROM sent_alerts WHERE alert_type IN ({placeholders})"
+        cursor = await self._db.execute(sql, alert_types)
+        row = await cursor.fetchone()
+        return row["cnt"] if row else 0
+
     # ── API usage ───────────────────────────────────────────────────
 
     async def record_api_usage(

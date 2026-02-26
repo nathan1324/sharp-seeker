@@ -50,6 +50,7 @@ class XPoster:
         self._max_strength = settings.x_max_strength
         self._free_play_sports: list[str] = settings.x_free_play_sports
         self._free_play_markets: list[str] = settings.x_free_play_markets
+        self._tweet_types: set[str] = set(settings.x_tweet_signal_types)
         self._enabled = False
 
         if all([
@@ -75,23 +76,23 @@ class XPoster:
         if not self._enabled:
             return
 
-        pd_signals = [s for s in signals if s.signal_type == SignalType.PINNACLE_DIVERGENCE]
-        if not pd_signals:
+        tweetable = [s for s in signals if s.signal_type.value in self._tweet_types]
+        if not tweetable:
             return
 
         # Filter by strength cap — eligible signals are below the max
-        eligible = [s for s in pd_signals if s.strength < self._max_strength]
+        eligible = [s for s in tweetable if s.strength < self._max_strength]
         if not eligible:
             log.info("x_batch_skipped", reason="all_above_strength_cap", cap=self._max_strength)
             return
 
         # Discord alerter already recorded all signals before we run,
-        # so total_pd includes the entire current batch.  Compute seq
+        # so total includes the entire current batch.  Compute seq
         # range from *unfiltered* batch size to keep counter predictable.
-        total_pd = await self._repo.count_alerts_by_type("pinnacle_divergence")
-        batch_size = len(pd_signals)
-        seq_start = total_pd - batch_size + 1
-        seq_end = total_pd  # inclusive
+        total = await self._repo.count_alerts_by_types(list(self._tweet_types))
+        batch_size = len(tweetable)
+        seq_start = total - batch_size + 1
+        seq_end = total  # inclusive
 
         # Check if any seq in this batch hits the free play interval
         free_play_due = any(
@@ -181,7 +182,7 @@ class XPoster:
             f"\U0001f3af FREE PLAY \u2014 {matchup} {market_name}",
             "",
             bet_line,
-            f"Pinnacle Divergence \u2022 {signal.strength:.0%} strength",
+            f"{_SIGNAL_LABELS.get(signal.signal_type, signal.signal_type.value)} \u2022 {signal.strength:.0%} strength",
         ]
         if self._cta_url:
             lines.append("")
