@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import structlog
 
 from sharp_seeker.api.odds_client import OddsClient
@@ -78,9 +80,11 @@ class ScoreGrader:
                 if market_key == "h2h":
                     result = self._grade_h2h(outcome_name, game)
                 elif market_key == "spreads":
-                    point = await self._repo.get_reference_line(
-                        event_id, market_key, outcome_name, signal_at
-                    )
+                    point = self._extract_bet_point(sig_dict)
+                    if point is None:
+                        point = await self._repo.get_reference_line(
+                            event_id, market_key, outcome_name, signal_at
+                        )
                     if point is None:
                         log.warning(
                             "grader_no_reference_line",
@@ -91,9 +95,11 @@ class ScoreGrader:
                         continue
                     result = self._grade_spread(outcome_name, game, point)
                 elif market_key == "totals":
-                    point = await self._repo.get_reference_line(
-                        event_id, market_key, outcome_name, signal_at
-                    )
+                    point = self._extract_bet_point(sig_dict)
+                    if point is None:
+                        point = await self._repo.get_reference_line(
+                            event_id, market_key, outcome_name, signal_at
+                        )
                     if point is None:
                         log.warning(
                             "grader_no_reference_line",
@@ -135,6 +141,26 @@ class ScoreGrader:
             errors=errors,
         )
         return {"resolved": resolved, "skipped": skipped, "errors": errors}
+
+    @staticmethod
+    def _extract_bet_point(sig_dict: dict) -> float | None:
+        """Extract the recommended bet's point from signal details.
+
+        For signals like Pinnacle Divergence, the recommended bet is at a US
+        book whose line may differ from Pinnacle's.  The grader must use this
+        line — not Pinnacle's — when evaluating the result.
+        """
+        raw = sig_dict.get("details_json")
+        if not raw:
+            return None
+        try:
+            details = json.loads(raw) if isinstance(raw, str) else raw
+            value_books = details.get("value_books", [])
+            if value_books and value_books[0].get("point") is not None:
+                return float(value_books[0]["point"])
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+        return None
 
     @staticmethod
     def _grade_h2h(outcome_name: str, game: dict) -> str:
