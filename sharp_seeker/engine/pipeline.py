@@ -105,15 +105,36 @@ class DetectionPipeline:
                         event_id=event_id,
                     )
 
-        # Filter by minimum strength
-        min_str = self._settings.min_signal_strength
-        strong_signals = [s for s in all_signals if s.strength > min_str]
+        # Filter by minimum strength (per-type overrides supported)
+        overrides = self._settings.signal_strength_overrides
+        global_min = self._settings.min_signal_strength
+        strong_signals = [
+            s for s in all_signals
+            if s.strength > overrides.get(s.signal_type.value, global_min)
+        ]
         log.info(
             "strength_filter",
             before=len(all_signals),
             after=len(strong_signals),
-            min_strength=min_str,
+            min_strength=global_min,
+            overrides=overrides or None,
         )
+
+        # Suppress signal types during their configured quiet hours
+        quiet_map = self._settings.signal_quiet_hours
+        if quiet_map:
+            now_hour = datetime.now(timezone.utc).hour
+            before_quiet = len(strong_signals)
+            strong_signals = [
+                s for s in strong_signals
+                if now_hour not in quiet_map.get(s.signal_type.value, [])
+            ]
+            if len(strong_signals) < before_quiet:
+                log.info(
+                    "signal_quiet_hours_filter",
+                    hour_utc=now_hour,
+                    dropped=before_quiet - len(strong_signals),
+                )
 
         # Drop all live signals — in-game line moves are noisy
         now = datetime.now(timezone.utc)

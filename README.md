@@ -32,11 +32,12 @@ Every report embed includes a **downloadable CSV attachment** with the full resu
 
 ### Signal Pipeline
 
-Raw signals pass through a 3-stage filter before alerting:
+Raw signals pass through a 4-stage filter before alerting:
 
-1. **Strength filter** — drops signals below a configurable threshold (default 0.5)
-2. **Market-side dedup** — when both sides of a spread/total fire (e.g., Team A -7.5 and Team B +7.5), keeps only the actionable side using signal-type-aware logic (follows Pinnacle direction for RLM, sharp money direction for steam moves, etc.)
-3. **Cooldown dedup** — suppresses repeat alerts for the same (event, signal, market, outcome) within 60 minutes
+1. **Strength filter** — drops signals below a configurable threshold (default 0.5), with per-signal-type overrides via `SIGNAL_STRENGTH_OVERRIDES`
+2. **Quiet hours filter** — suppresses specific signal types during configured UTC hours via `SIGNAL_QUIET_HOURS` (e.g., suppress Pinnacle Divergence at 14:00 UTC)
+3. **Market-side dedup** — when both sides of a spread/total fire (e.g., Team A -7.5 and Team B +7.5), keeps only the actionable side using signal-type-aware logic (follows Pinnacle direction for RLM, sharp money direction for steam moves, etc.)
+4. **Cooldown dedup** — suppresses repeat alerts for the same (event, signal, market, outcome) within 60 minutes
 
 ## Project Structure
 
@@ -161,6 +162,8 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `PINNACLE_ML_PROB_THRESHOLD` | `0.03` | ML divergence threshold (implied prob, 3%) |
 | `EXCHANGE_SHIFT_THRESHOLD` | `0.05` | Implied probability shift (5%) |
 | `MIN_SIGNAL_STRENGTH` | `0.5` | Min strength to alert (0.0–1.0) |
+| `SIGNAL_STRENGTH_OVERRIDES` | `{}` | Per-signal-type min strength (JSON, overrides global) |
+| `SIGNAL_QUIET_HOURS` | `{}` | Suppress signal types at specific UTC hours (JSON) |
 | `ALERT_COOLDOWN_MINUTES` | `60` | Dedup cooldown per signal |
 | `X_CONSUMER_KEY` | — | X OAuth 1.0a consumer key (optional) |
 | `X_CONSUMER_SECRET` | — | X OAuth 1.0a consumer secret (optional) |
