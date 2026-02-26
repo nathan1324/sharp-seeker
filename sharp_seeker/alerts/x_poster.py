@@ -47,6 +47,9 @@ class XPoster:
         self._cta_url = settings.x_cta_url
         self._free_play_interval = settings.x_free_play_interval
         self._teaser_hours: list[int] = settings.x_teaser_hours
+        self._max_strength = settings.x_max_strength
+        self._free_play_sports: list[str] = settings.x_free_play_sports
+        self._free_play_markets: list[str] = settings.x_free_play_markets
         self._enabled = False
 
         if all([
@@ -76,46 +79,76 @@ class XPoster:
         if not pd_signals:
             return
 
+        # Filter by strength cap — eligible signals are below the max
+        eligible = [s for s in pd_signals if s.strength < self._max_strength]
+        if not eligible:
+            log.info("x_batch_skipped", reason="all_above_strength_cap", cap=self._max_strength)
+            return
+
         # Discord alerter already recorded all signals before we run,
-        # so total_pd includes the entire current batch. Assign each
-        # signal its own sequence number to avoid skipping a multiple.
+        # so total_pd includes the entire current batch.  Compute seq
+        # range from *unfiltered* batch size to keep counter predictable.
         total_pd = await self._repo.count_alerts_by_type("pinnacle_divergence")
         batch_size = len(pd_signals)
+        seq_start = total_pd - batch_size + 1
+        seq_end = total_pd  # inclusive
+
+        # Check if any seq in this batch hits the free play interval
+        free_play_due = any(
+            seq > 0 and seq % self._free_play_interval == 0
+            for seq in range(seq_start, seq_end + 1)
+        )
 
         now_hour = datetime.now(timezone.utc).hour
 
-        for i, signal in enumerate(pd_signals):
-            seq = total_pd - batch_size + i + 1
-            free_play = seq > 0 and seq % self._free_play_interval == 0
+        # Post free play (always, regardless of teaser hours)
+        free_play_pick: Signal | None = None
+        if free_play_due:
+            free_play_pick = self._pick_best_free_play(eligible)
             try:
-                if free_play:
-                    text = self._format_free_play(signal)
-                else:
-                    if self._teaser_hours and now_hour not in self._teaser_hours:
-                        log.debug("x_teaser_skipped", reason="outside_teaser_hours", hour_utc=now_hour)
-                        continue
-                    text = self._format_teaser(signal)
+                text = self._format_free_play(free_play_pick)
                 self._post_tweet(text)
-                if free_play:
-                    await self._repo.mark_alert_free_play(
-                        signal.event_id, signal.market_key, signal.outcome_name,
-                    )
+                await self._repo.mark_alert_free_play(
+                    free_play_pick.event_id, free_play_pick.market_key,
+                    free_play_pick.outcome_name,
+                )
+                log.info(
+                    "x_tweet_posted",
+                    signal_type=free_play_pick.signal_type.value,
+                    event_id=free_play_pick.event_id,
+                    free_play=True,
+                )
+            except Exception:
+                log.exception("x_tweet_failed", event_id=free_play_pick.event_id)
+
+        # Post teasers (subject to teaser hours)
+        if self._teaser_hours and now_hour not in self._teaser_hours:
+            log.debug("x_teaser_skipped", reason="outside_teaser_hours", hour_utc=now_hour)
+            return
+
+        for signal in eligible:
+            if signal is free_play_pick:
+                continue  # already posted as free play
+            try:
+                text = self._format_teaser(signal)
+                self._post_tweet(text)
                 log.info(
                     "x_tweet_posted",
                     signal_type=signal.signal_type.value,
                     event_id=signal.event_id,
-                    free_play=free_play,
-                    seq=seq,
+                    free_play=False,
                 )
             except Exception:
-                log.exception(
-                    "x_tweet_failed",
-                    event_id=signal.event_id,
-                )
+                log.exception("x_tweet_failed", event_id=signal.event_id)
 
-    def _is_free_play_seq(self, seq: int) -> bool:
-        """Check if a given sequence number should be a free play."""
-        return seq > 0 and seq % self._free_play_interval == 0
+    def _pick_best_free_play(self, eligible: list[Signal]) -> Signal:
+        """Score eligible signals and pick the best candidate for free play."""
+        def score(s: Signal) -> tuple[int, int, float]:
+            sport_bonus = 1 if self._free_play_sports and s.sport_key in self._free_play_sports else 0
+            market_bonus = 1 if self._free_play_markets and s.market_key in self._free_play_markets else 0
+            strength_score = 1.0 - s.strength  # lower strength → higher score
+            return (sport_bonus, market_bonus, strength_score)
+        return max(eligible, key=score)
 
     def _format_teaser(self, signal: Signal) -> str:
         matchup = f"{signal.away_team} vs {signal.home_team}"

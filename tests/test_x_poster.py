@@ -18,11 +18,12 @@ def _make_signal(
     outcome_name: str = "Lakers",
     strength: float = 0.75,
     details: dict | None = None,
+    sport_key: str = "basketball_nba",
 ) -> Signal:
     return Signal(
         signal_type=signal_type,
         event_id="evt_123",
-        sport_key="basketball_nba",
+        sport_key=sport_key,
         home_team="Lakers",
         away_team="Celtics",
         market_key=market_key,
@@ -70,16 +71,6 @@ async def test_non_pinnacle_signals_skipped(settings, repo):
 
 
 # ── Free play logic ─────────────────────────────────────────────
-
-
-def test_is_free_play_seq(settings, repo):
-    """Sequence number divisible by interval should be a free play."""
-    poster = XPoster(settings, repo)
-    poster._free_play_interval = 5
-    assert poster._is_free_play_seq(5) is True
-    assert poster._is_free_play_seq(10) is True
-    assert poster._is_free_play_seq(3) is False
-    assert poster._is_free_play_seq(0) is False
 
 
 @pytest.mark.asyncio
@@ -510,3 +501,284 @@ async def test_teaser_posted_within_hours(settings, repo):
     poster._client.create_tweet.assert_called_once()
     call_text = poster._client.create_tweet.call_args.kwargs["text"]
     assert "Sharp money detected" in call_text
+
+
+# ── Strength cap ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_strength_cap_filters_signals(settings, repo):
+    """Signals at or above the cap should be filtered out of X tweets."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._max_strength = 0.80
+
+    # Record 3 alerts (batch of 3)
+    for i in range(3):
+        await repo.record_alert(
+            event_id=f"evt_{i}", alert_type="pinnacle_divergence",
+            market_key="spreads", outcome_name="Lakers",
+        )
+
+    batch = [
+        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.60),
+        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.85),
+        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.92),
+    ]
+    await poster.post_signals(batch)
+
+    # Only the 0.60 signal should produce a tweet
+    assert poster._client.create_tweet.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_strength_cap_all_filtered(settings, repo):
+    """When all signals are above the cap, no tweets and log batch skipped."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._max_strength = 0.80
+
+    await repo.record_alert(
+        event_id="evt_0", alert_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+    )
+
+    batch = [
+        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.85),
+        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.92),
+    ]
+    await poster.post_signals(batch)
+
+    poster._client.create_tweet.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_strength_cap_default_no_filter(settings, repo):
+    """Default cap of 1.0 should let all signals through."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    # default _max_strength is 1.0
+
+    for i in range(2):
+        await repo.record_alert(
+            event_id=f"evt_{i}", alert_type="pinnacle_divergence",
+            market_key="spreads", outcome_name="Lakers",
+        )
+
+    batch = [
+        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.60),
+        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.95),
+    ]
+    await poster.post_signals(batch)
+
+    assert poster._client.create_tweet.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_strength_cap_boundary(settings, repo):
+    """A signal at exactly the cap value should be filtered (strict <)."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._max_strength = 0.80
+
+    await repo.record_alert(
+        event_id="evt_0", alert_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+    )
+
+    batch = [_make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.80)]
+    await poster.post_signals(batch)
+
+    poster._client.create_tweet.assert_not_called()
+
+
+# ── Smart free play selection ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_smart_free_play_prefers_sport(settings, repo):
+    """NBA should be picked over NCAAB when NBA is in preferred sports, even with higher strength."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._free_play_interval = 1  # every signal is a free play
+    poster._free_play_sports = ["basketball_nba"]
+    poster._free_play_markets = []
+    poster._max_strength = 1.0
+
+    # Record 2 alerts for the batch
+    for i in range(2):
+        await repo.record_alert(
+            event_id=f"evt_{i}", alert_type="pinnacle_divergence",
+            market_key="spreads", outcome_name="Lakers",
+        )
+
+    nba = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.70,
+        sport_key="basketball_nba",
+        details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
+    )
+    ncaab = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.55,
+        sport_key="basketball_ncaab",
+        details={"value_books": [{"bookmaker": "fanduel", "price": -105, "point": -2.5}]},
+    )
+
+    await poster.post_signals([ncaab, nba])
+
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    free_plays = [t for t in calls if "FREE PLAY" in t]
+    assert len(free_plays) == 1
+    assert "70%" in free_plays[0]  # NBA signal strength
+
+
+@pytest.mark.asyncio
+async def test_smart_free_play_prefers_market(settings, repo):
+    """Moneyline should be picked over spreads when h2h is preferred market."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._free_play_interval = 1
+    poster._free_play_sports = []
+    poster._free_play_markets = ["h2h"]
+    poster._max_strength = 1.0
+
+    for i in range(2):
+        await repo.record_alert(
+            event_id=f"evt_{i}", alert_type="pinnacle_divergence",
+            market_key="spreads", outcome_name="Lakers",
+        )
+
+    ml = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.70, market_key="h2h",
+        details={"value_books": [{"bookmaker": "draftkings", "price": 150}]},
+    )
+    spread = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.55, market_key="spreads",
+        details={"value_books": [{"bookmaker": "fanduel", "price": -110, "point": -3.5}]},
+    )
+
+    await poster.post_signals([spread, ml])
+
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    free_plays = [t for t in calls if "FREE PLAY" in t]
+    assert len(free_plays) == 1
+    assert "Moneyline" in free_plays[0]
+
+
+@pytest.mark.asyncio
+async def test_smart_free_play_falls_back_to_strength(settings, repo):
+    """With no preferences, the lower-strength signal should win."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._free_play_interval = 1
+    poster._free_play_sports = []
+    poster._free_play_markets = []
+    poster._max_strength = 1.0
+
+    for i in range(2):
+        await repo.record_alert(
+            event_id=f"evt_{i}", alert_type="pinnacle_divergence",
+            market_key="spreads", outcome_name="Lakers",
+        )
+
+    low = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.55,
+        details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
+    )
+    high = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.75,
+        details={"value_books": [{"bookmaker": "fanduel", "price": -105, "point": -2.5}]},
+    )
+
+    await poster.post_signals([high, low])
+
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    free_plays = [t for t in calls if "FREE PLAY" in t]
+    assert len(free_plays) == 1
+    assert "55%" in free_plays[0]
+
+
+@pytest.mark.asyncio
+async def test_free_play_counter_uses_unfiltered_count(settings, repo):
+    """Seq should be computed from all PD signals, not just eligible (below cap)."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._free_play_interval = 5
+    poster._max_strength = 0.80
+
+    # 3 prior alerts + batch of 3 (unfiltered) = seq 4,5,6 → free play due at 5
+    for i in range(3):
+        await repo.record_alert(
+            event_id=f"evt_{i}", alert_type="pinnacle_divergence",
+            market_key="spreads", outcome_name="Lakers",
+        )
+
+    batch = [
+        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.60),  # eligible
+        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.90),  # filtered
+        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.92),  # filtered
+    ]
+    # Record them as Discord alerter would
+    for i in range(3):
+        await repo.record_alert(
+            event_id=f"evt_batch_{i}", alert_type="pinnacle_divergence",
+            market_key="spreads", outcome_name="Lakers",
+        )
+
+    await poster.post_signals(batch)
+
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    # Should have 1 tweet: the free play (only 1 eligible signal, and it becomes the free play)
+    assert len(calls) == 1
+    assert "FREE PLAY" in calls[0]
+
+
+def test_pick_best_free_play_scoring(settings, repo):
+    """Unit test for _pick_best_free_play scoring logic directly."""
+    poster = XPoster(settings, repo)
+    poster._free_play_sports = ["basketball_nba"]
+    poster._free_play_markets = ["h2h"]
+
+    # NBA + h2h + high strength (worst on strength, best on sport+market)
+    s1 = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.75,
+        sport_key="basketball_nba", market_key="h2h",
+    )
+    # NCAAB + spreads + low strength (best on strength, worst on sport+market)
+    s2 = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.50,
+        sport_key="basketball_ncaab", market_key="spreads",
+    )
+    # NBA + spreads + medium strength
+    s3 = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.60,
+        sport_key="basketball_nba", market_key="spreads",
+    )
+
+    # s1 wins: sport(1) + market(1) beats s2's sport(0) + market(0)
+    assert poster._pick_best_free_play([s1, s2, s3]) is s1
+
+    # Without sport preference, market preference still wins
+    poster._free_play_sports = []
+    # s1: sport(0), market(1), 0.25  vs  s3: sport(0), market(0), 0.40
+    assert poster._pick_best_free_play([s1, s2, s3]) is s1
+
+    # Without any preferences, lowest strength wins
+    poster._free_play_markets = []
+    # s2: (0, 0, 0.50)  vs  s3: (0, 0, 0.40)  vs  s1: (0, 0, 0.25)
+    assert poster._pick_best_free_play([s1, s2, s3]) is s2
