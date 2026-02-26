@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -450,3 +451,62 @@ async def test_post_signals_marks_free_play(settings, repo):
     )
     row = await cursor.fetchone()
     assert row["is_free_play"] == 1
+
+
+# ── Teaser time-window gating ──────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_teaser_skipped_outside_hours(settings, repo):
+    """Teaser should NOT post when current UTC hour is outside x_teaser_hours."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._teaser_hours = [14]
+
+    # Record 1 alert so seq=1 (not a free play)
+    await repo.record_alert(
+        event_id="evt_123", alert_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+    )
+
+    sig = _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)
+
+    # Mock UTC hour to 18 — outside the allowed [14]
+    fake_now = datetime(2026, 2, 26, 18, 30, 0, tzinfo=timezone.utc)
+    with patch("sharp_seeker.alerts.x_poster.datetime") as mock_dt:
+        mock_dt.now.return_value = fake_now
+        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+        await poster.post_signals([sig])
+
+    poster._client.create_tweet.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_teaser_posted_within_hours(settings, repo):
+    """Teaser SHOULD post when current UTC hour is inside x_teaser_hours."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._teaser_hours = [14]
+
+    # Record 1 alert so seq=1 (not a free play)
+    await repo.record_alert(
+        event_id="evt_123", alert_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+    )
+
+    sig = _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)
+
+    # Mock UTC hour to 14 — inside the allowed [14]
+    fake_now = datetime(2026, 2, 26, 14, 15, 0, tzinfo=timezone.utc)
+    with patch("sharp_seeker.alerts.x_poster.datetime") as mock_dt:
+        mock_dt.now.return_value = fake_now
+        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+        await poster.post_signals([sig])
+
+    poster._client.create_tweet.assert_called_once()
+    call_text = poster._client.create_tweet.call_args.kwargs["text"]
+    assert "Sharp money detected" in call_text

@@ -171,6 +171,7 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `X_ACCESS_TOKEN_SECRET` | — | X OAuth 1.0a access token secret (optional) |
 | `X_CTA_URL` | `""` | Link in tweet CTA (Discord invite / landing page) |
 | `X_FREE_PLAY_INTERVAL` | `10` | Every Nth Pinnacle Divergence = free play |
+| `X_TEASER_HOURS` | `[]` | UTC hours to allow teaser tweets (JSON array, empty = always) |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
 #### Per-Sport Webhook Overrides

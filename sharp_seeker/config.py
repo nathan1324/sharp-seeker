@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     x_access_token_secret: str | None = None
     x_cta_url: str = ""  # Discord invite or landing page link
     x_free_play_interval: int = 7  # every Nth pinnacle divergence = free play
+    # UTC hours when teaser tweets are allowed (JSON array in .env)
+    # Free play tweets are always sent regardless of this setting.
+    x_teaser_hours: list[int] = Field(default_factory=list)
 
     # Logging
     log_level: str = "INFO"
