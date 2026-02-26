@@ -32,12 +32,28 @@ Every report embed includes a **downloadable CSV attachment** with the full resu
 
 ### Signal Pipeline
 
-Raw signals pass through a 4-stage filter before alerting:
+Raw signals pass through a 7-stage filter before alerting:
 
-1. **Strength filter** — drops signals below a configurable threshold (default 0.5), with per-signal-type overrides via `SIGNAL_STRENGTH_OVERRIDES`
-2. **Quiet hours filter** — suppresses specific signal types during configured UTC hours via `SIGNAL_QUIET_HOURS` (e.g., suppress Pinnacle Divergence at 14:00 UTC)
-3. **Market-side dedup** — when both sides of a spread/total fire (e.g., Team A -7.5 and Team B +7.5), keeps only the actionable side using signal-type-aware logic (follows Pinnacle direction for RLM, sharp money direction for steam moves, etc.)
-4. **Cooldown dedup** — suppresses repeat alerts for the same (event, signal, market, outcome) within 60 minutes
+1. **Min strength filter** — tiered lookup: market override > sport override > type override > global `MIN_SIGNAL_STRENGTH`
+2. **Max strength cap** — per-type ceiling via `MAX_SIGNAL_STRENGTH_OVERRIDES` (drops trap signals with suspiciously high strength)
+3. **Quiet hours filter** — suppresses specific signal types during configured UTC hours via `SIGNAL_QUIET_HOURS`
+4. **Live signal filter** — drops signals for games that have already started
+5. **Market-side dedup** — when both sides of a spread/total fire, keeps only the actionable side using signal-type-aware logic
+6. **Value books filter** — requires at least one actionable value bet
+7. **Cooldown dedup** — suppresses repeat alerts for the same (event, signal, market, outcome) within 60 minutes
+
+#### Tiered Strength Lookup
+
+The min strength filter resolves the threshold for each signal via a priority chain:
+
+| Priority | Config Key | Example Key | Description |
+|----------|-----------|-------------|-------------|
+| 1 (highest) | `SIGNAL_MARKET_STRENGTH_OVERRIDES` | `pinnacle_divergence:spreads` | Per signal+market floor |
+| 2 | `SIGNAL_SPORT_STRENGTH_OVERRIDES` | `pinnacle_divergence:basketball_ncaab` | Per signal+sport floor |
+| 3 | `SIGNAL_STRENGTH_OVERRIDES` | `pinnacle_divergence` | Per signal type floor |
+| 4 (lowest) | `MIN_SIGNAL_STRENGTH` | — | Global floor (default 0.5) |
+
+The first match wins. This lets you require higher strength for noisy combinations (e.g., PD spreads at 0.60) while keeping the global floor low.
 
 ## Project Structure
 
@@ -163,6 +179,9 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `EXCHANGE_SHIFT_THRESHOLD` | `0.05` | Implied probability shift (5%) |
 | `MIN_SIGNAL_STRENGTH` | `0.5` | Min strength to alert (0.0–1.0) |
 | `SIGNAL_STRENGTH_OVERRIDES` | `{}` | Per-signal-type min strength (JSON, overrides global) |
+| `MAX_SIGNAL_STRENGTH_OVERRIDES` | `{}` | Per-signal-type max strength cap — drops trap signals (JSON) |
+| `SIGNAL_MARKET_STRENGTH_OVERRIDES` | `{}` | Per-signal-type + market min strength (JSON, compound keys) |
+| `SIGNAL_SPORT_STRENGTH_OVERRIDES` | `{}` | Per-signal-type + sport min strength (JSON, compound keys) |
 | `SIGNAL_QUIET_HOURS` | `{}` | Suppress signal types at specific UTC hours (JSON) |
 | `ALERT_COOLDOWN_MINUTES` | `60` | Dedup cooldown per signal |
 | `X_CONSUMER_KEY` | — | X OAuth 1.0a consumer key (optional) |

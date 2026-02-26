@@ -87,6 +87,20 @@ class DetectionPipeline:
             ExchangeMonitorDetector(settings, repo),
         ]
 
+    def _get_min_strength(self, signal_type: str, market_key: str, sport_key: str) -> float:
+        """Resolve min strength via tiered lookup: market > sport > type > global."""
+        s = self._settings
+        # 1. Market-level (most specific)
+        market_override = s.signal_market_strength_overrides.get(f"{signal_type}:{market_key}")
+        if market_override is not None:
+            return market_override
+        # 2. Sport-level
+        sport_override = s.signal_sport_strength_overrides.get(f"{signal_type}:{sport_key}")
+        if sport_override is not None:
+            return sport_override
+        # 3. Type-level
+        return s.signal_strength_overrides.get(signal_type, s.min_signal_strength)
+
     async def run(self, fetched_at: str) -> list[Signal]:
         """Run all detectors on all events from a fetch cycle, return deduplicated signals."""
         event_ids = await self._repo.get_distinct_event_ids_at(fetched_at)
@@ -105,12 +119,14 @@ class DetectionPipeline:
                         event_id=event_id,
                     )
 
-        # Filter by minimum strength (per-type overrides supported)
+        # Filter by minimum strength (tiered: market > sport > type > global)
         overrides = self._settings.signal_strength_overrides
         global_min = self._settings.min_signal_strength
         strong_signals = [
             s for s in all_signals
-            if s.strength > overrides.get(s.signal_type.value, global_min)
+            if s.strength > self._get_min_strength(
+                s.signal_type.value, s.market_key, s.sport_key
+            )
         ]
         log.info(
             "strength_filter",
@@ -119,6 +135,22 @@ class DetectionPipeline:
             min_strength=global_min,
             overrides=overrides or None,
         )
+
+        # Filter by maximum strength cap (drop trap signals)
+        max_caps = self._settings.max_signal_strength_overrides
+        if max_caps:
+            before_cap = len(strong_signals)
+            strong_signals = [
+                s for s in strong_signals
+                if s.signal_type.value not in max_caps
+                or s.strength < max_caps[s.signal_type.value]
+            ]
+            if len(strong_signals) < before_cap:
+                log.info(
+                    "max_strength_filter",
+                    dropped=before_cap - len(strong_signals),
+                    remaining=len(strong_signals),
+                )
 
         # Suppress signal types during their configured quiet hours
         quiet_map = self._settings.signal_quiet_hours

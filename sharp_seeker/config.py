@@ -71,6 +71,19 @@ class Settings(BaseSettings):
     # Example: {"rapid_change": 0.65, "reverse_line": 0.65}
     signal_strength_overrides: dict[str, float] = Field(default_factory=dict)
 
+    # Per-signal-type MAXIMUM strength cap (JSON object in .env)
+    # Signals at or above this strength are dropped (e.g., trap signals).
+    # Only applies to listed types; unlisted types have no cap.
+    max_signal_strength_overrides: dict[str, float] = Field(default_factory=dict)
+
+    # Per-signal-type + market minimum strength overrides (JSON object in .env)
+    # Compound keys: "signal_type:market_key". Overrides type-level and global min.
+    signal_market_strength_overrides: dict[str, float] = Field(default_factory=dict)
+
+    # Per-signal-type + sport minimum strength overrides (JSON object in .env)
+    # Compound keys: "signal_type:sport_key". Overrides type-level and global min.
+    signal_sport_strength_overrides: dict[str, float] = Field(default_factory=dict)
+
     # Per-signal-type quiet hours (JSON object in .env)
     # Suppresses specific signal types during certain UTC hours
     # Example: {"pinnacle_divergence": [14], "reverse_line": [3, 20, 21]}
