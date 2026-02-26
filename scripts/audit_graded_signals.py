@@ -1,14 +1,67 @@
 """Audit all resolved spread/total signals for grading errors.
 
-Checks whether any resolved signal was graded against Pinnacle's line
-instead of the recommended bet's line from details_json.  Reports any
-signals where the correct line would have produced a different result.
+Uses math to determine which grades could have flipped without needing
+game scores.  For spreads, game margins are integers and lines are
+typically x.5, so we can reason about whether the grade could change.
+
+Categories:
+  - SAFE:  the correct line is equal or more favorable → grade can't change
+  - AT RISK: the correct line is less favorable → grade MIGHT have flipped
+  - PUSH: graded as push with mismatched lines → definitely needs review
+
+For "lost" signals: if the correct (details_json) point is MORE favorable
+than the Pinnacle point used, the grade might flip to "won".
+
+For "won" signals: if the correct point is LESS favorable, the grade
+might flip to "lost".
 """
 
 import asyncio
 import json
+from collections import defaultdict
 
 import aiosqlite
+
+
+def could_flip(market_key: str, outcome_name: str, current_result: str,
+               pinnacle_point: float, details_point: float) -> bool:
+    """Determine if using details_point instead of pinnacle_point could
+    change the grade, without knowing the actual game score.
+
+    Returns True if the grade MIGHT change, False if it definitely can't.
+    """
+    if current_result == "push":
+        # Push means margin + pinnacle_point == 0 exactly.
+        # With details_point: margin + details_point = details_point - pinnacle_point
+        # This is nonzero when the points differ, so the grade WILL change.
+        return True
+
+    if market_key == "spreads":
+        # For spreads: higher point is more favorable for the bettor.
+        # "won" means margin + point > 0.  A lower correct point makes it
+        # harder to win → could flip.
+        # "lost" means margin + point < 0.  A higher correct point makes it
+        # easier to win → could flip.
+        if current_result == "won":
+            return details_point < pinnacle_point
+        elif current_result == "lost":
+            return details_point > pinnacle_point
+
+    elif market_key == "totals":
+        # For totals: "Over" wins when combined > point (lower point = easier).
+        # "Under" wins when combined < point (higher point = easier).
+        if outcome_name == "Over":
+            if current_result == "won":
+                return details_point > pinnacle_point  # higher line, harder to go over
+            elif current_result == "lost":
+                return details_point < pinnacle_point  # lower line, easier to go over
+        elif outcome_name == "Under":
+            if current_result == "won":
+                return details_point < pinnacle_point  # lower line, harder to stay under
+            elif current_result == "lost":
+                return details_point > pinnacle_point  # higher line, easier to stay under
+
+    return True  # unknown — flag for review
 
 
 async def main() -> None:
@@ -26,7 +79,9 @@ async def main() -> None:
 
     print(f"Checking {len(rows)} resolved spread/total signals with details_json...\n")
 
-    misgraded = []
+    safe = 0
+    at_risk = []
+    stats = defaultdict(int)  # "lost→won?", "won→lost?", "push→?"
 
     for row in rows:
         sig = dict(row)
@@ -36,17 +91,17 @@ async def main() -> None:
         signal_at = sig["signal_at"]
         current_result = sig["result"]
 
-        # Extract the recommended bet's point from details_json
         try:
             details = json.loads(sig["details_json"])
             value_books = details.get("value_books", [])
             if not value_books or value_books[0].get("point") is None:
+                safe += 1
                 continue
             details_point = float(value_books[0]["point"])
         except (json.JSONDecodeError, TypeError, ValueError):
+            safe += 1
             continue
 
-        # Get the Pinnacle reference line that get_reference_line() would have used
         ref_cursor = await db.execute("""
             SELECT point FROM odds_snapshots
             WHERE event_id = ? AND market_key = ? AND outcome_name = ?
@@ -58,44 +113,92 @@ async def main() -> None:
         ref_row = await ref_cursor.fetchone()
 
         if not ref_row:
+            safe += 1
             continue
 
         pinnacle_point = float(ref_row["point"])
 
-        # If points match, grading was correct regardless
         if details_point == pinnacle_point:
+            safe += 1
             continue
 
-        # Points differ — check if the result would change with the correct line
-        # We need the game scores to re-grade
-        # Look up teams from snapshots
-        teams_cursor = await db.execute("""
-            SELECT DISTINCT home_team, away_team FROM odds_snapshots
-            WHERE event_id = ?
-        """, (event_id,))
-        teams_row = await teams_cursor.fetchone()
-        if not teams_row:
+        if not could_flip(market_key, outcome_name, current_result,
+                          pinnacle_point, details_point):
+            safe += 1
             continue
-        teams = dict(teams_row)
 
-        # We don't have scores stored locally, so flag any where lines differ
-        print(f"MISMATCH: {sig['signal_type']} | {sig['sport_key']} | {market_key}")
-        print(f"  event_id:     {event_id}")
-        print(f"  outcome:      {outcome_name}")
-        print(f"  signal_at:    {signal_at}")
-        print(f"  teams:        {teams['home_team']} vs {teams['away_team']}")
-        print(f"  details point (recommended bet): {details_point}")
-        print(f"  pinnacle point (used by grader):  {pinnacle_point}")
-        print(f"  current result: {current_result}")
-        print()
+        # This signal's grade MIGHT be wrong
+        delta = abs(details_point - pinnacle_point)
+        direction = f"{current_result}→?"
 
-        misgraded.append(sig)
+        if current_result == "lost":
+            direction = "lost→won?"
+        elif current_result == "won":
+            direction = "won→lost?"
+        elif current_result == "push":
+            direction = "push→won/lost?"
 
-    if not misgraded:
-        print("No mismatches found — all signals were graded with the correct line.")
-    else:
-        print(f"Found {len(misgraded)} signal(s) with mismatched lines.")
-        print("These may have been graded incorrectly.")
+        stats[direction] += 1
+        at_risk.append({
+            **sig,
+            "pinnacle_point": pinnacle_point,
+            "details_point": details_point,
+            "delta": delta,
+            "direction": direction,
+        })
+
+    # ── Summary ──
+    print("=" * 60)
+    print("SUMMARY")
+    print("=" * 60)
+    print(f"  Total checked:    {len(rows)}")
+    print(f"  Definitely safe:  {safe}")
+    print(f"  At risk:          {len(at_risk)}")
+    print()
+    for direction, count in sorted(stats.items()):
+        print(f"    {direction:20s}  {count}")
+    print()
+
+    if not at_risk:
+        print("No signals at risk of being mis-graded.")
+        await db.close()
+        return
+
+    # ── Breakdown by sport and line delta ──
+    by_sport = defaultdict(list)
+    for s in at_risk:
+        by_sport[s["sport_key"]].append(s)
+
+    print("BREAKDOWN BY SPORT:")
+    for sport, sigs in sorted(by_sport.items()):
+        lost_to_won = sum(1 for s in sigs if s["direction"] == "lost→won?")
+        won_to_lost = sum(1 for s in sigs if s["direction"] == "won→lost?")
+        push_flip = sum(1 for s in sigs if s["direction"] == "push→won/lost?")
+        deltas = [s["delta"] for s in sigs]
+        avg_delta = sum(deltas) / len(deltas)
+        print(f"\n  {sport}: {len(sigs)} at risk")
+        print(f"    lost→won?:      {lost_to_won}")
+        print(f"    won→lost?:      {won_to_lost}")
+        print(f"    push→won/lost?: {push_flip}")
+        print(f"    avg line delta:  {avg_delta:.1f}")
+        print(f"    max line delta:  {max(deltas):.1f}")
+
+    # ── Detail: show the at-risk signals with large deltas ──
+    big_risk = [s for s in at_risk if s["delta"] >= 2.0]
+    if big_risk:
+        print(f"\n{'=' * 60}")
+        print(f"HIGH RISK (line delta >= 2.0): {len(big_risk)} signals")
+        print("=" * 60)
+        for s in big_risk:
+            print(f"\n  {s['signal_type']} | {s['sport_key']} | {s['market_key']}")
+            print(f"    event_id:    {s['event_id']}")
+            print(f"    outcome:     {s['outcome_name']}")
+            print(f"    signal_at:   {s['signal_at']}")
+            print(f"    graded:      {s['result']}")
+            print(f"    pinnacle pt: {s['pinnacle_point']}")
+            print(f"    correct pt:  {s['details_point']}")
+            print(f"    delta:       {s['delta']}")
+            print(f"    direction:   {s['direction']}")
 
     await db.close()
 
