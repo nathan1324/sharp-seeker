@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     # UTC hours when teaser tweets are allowed (JSON array in .env)
     # Free play tweets are always sent regardless of this setting.
     x_teaser_hours: list[int] = Field(default_factory=list)
+    x_max_strength: float = 1.0  # skip PD signals >= this strength for all tweets
+    x_free_play_sports: list[str] = Field(default_factory=list)   # preferred sports for free play picks
+    x_free_play_markets: list[str] = Field(default_factory=list)  # preferred markets for free play picks
 
     # Logging
     log_level: str = "INFO"

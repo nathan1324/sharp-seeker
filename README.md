@@ -172,6 +172,9 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `X_CTA_URL` | `""` | Link in tweet CTA (Discord invite / landing page) |
 | `X_FREE_PLAY_INTERVAL` | `10` | Every Nth Pinnacle Divergence = free play |
 | `X_TEASER_HOURS` | `[]` | UTC hours to allow teaser tweets (JSON array, empty = always) |
+| `X_MAX_STRENGTH` | `1.0` | Skip PD signals >= this strength for X tweets (0.0–1.0) |
+| `X_FREE_PLAY_SPORTS` | `[]` | Preferred sports for free play selection (JSON array) |
+| `X_FREE_PLAY_MARKETS` | `[]` | Preferred markets for free play selection (JSON array) |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
 #### Per-Sport Webhook Overrides
@@ -303,6 +306,14 @@ X_FREE_PLAY_INTERVAL=10
 ```
 
 **Daily recap tweet (13:45 UTC):** Each morning after grading, a recap of the previous day's free plays is posted to X with results (won/lost/pending) and a running record.
+
+#### Tweet Quality Filters
+
+X tweets use additional filtering to maximize public credibility:
+
+- **Strength cap** (`X_MAX_STRENGTH`) — signals at or above this strength are skipped entirely. Analysis shows very high strength signals (0.90+) underperform, so capping at 0.80 filters out traps.
+- **Smart free play selection** — when a free play is due, the best candidate is chosen by scoring: preferred sport > preferred market > lower strength. Configure with `X_FREE_PLAY_SPORTS` and `X_FREE_PLAY_MARKETS`.
+- **Teaser hours** — teaser tweets only post during configured UTC hours. Free plays always post regardless of hour.
 
 X posting is **optional** — if credentials are not set, the poster disables itself with no errors.
 
