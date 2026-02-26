@@ -1,8 +1,15 @@
-"""Analyze signal win rates by time of day, signal type, sport, and date range."""
+"""Analyze signal win rates by time of day, signal type, sport, and date range.
 
+Usage:
+    python analyze_by_hour.py                # default: last 7 days as "recent"
+    python analyze_by_hour.py --since 2026-02-23   # custom cutoff date
+"""
+
+import argparse
 import asyncio
 import json
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 
 from sharp_seeker.config import Settings
 from sharp_seeker.db.migrations import init_db
@@ -23,6 +30,18 @@ def _record(b):
 
 
 async def main():
+    parser = argparse.ArgumentParser(description="Analyze signal win rates")
+    parser.add_argument(
+        "--since", type=str, default=None,
+        help="Cutoff date (YYYY-MM-DD) for recent vs older. Default: 7 days ago.",
+    )
+    args = parser.parse_args()
+
+    if args.since:
+        cutoff = args.since
+    else:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+
     s = Settings()
     db = await init_db(s.db_path)
     repo = Repository(db)
@@ -78,18 +97,18 @@ async def main():
         print(f"  {date}: {_record(b)}  (n={b['total']})")
     print()
 
-    # ── Pre vs Post rule change (2/22 cutoff) ──
-    pre = [s for s in signals if s["signal_date"] <= "2026-02-22"]
-    post = [s for s in signals if s["signal_date"] >= "2026-02-23"]
+    # ── Older vs Recent (dynamic cutoff) ──
+    older = [s for s in signals if s["signal_date"] < cutoff]
+    recent = [s for s in signals if s["signal_date"] >= cutoff]
     print("=" * 60)
-    print("PRE vs POST RULE CHANGE (cutoff: 2/23)")
+    print(f"OLDER vs RECENT (cutoff: {cutoff})")
     print("-" * 60)
-    if pre:
-        b = bucket(pre)
-        print(f"  Pre  (<=2/22): {_record(b)}  (n={b['total']})")
-    if post:
-        b = bucket(post)
-        print(f"  Post (>=2/23): {_record(b)}  (n={b['total']})")
+    if older:
+        b = bucket(older)
+        print(f"  Older  (<{cutoff}): {_record(b)}  (n={b['total']})")
+    if recent:
+        b = bucket(recent)
+        print(f"  Recent (>={cutoff}): {_record(b)}  (n={b['total']})")
     print()
 
     # ── By hour (UTC) — all data ──
@@ -105,16 +124,16 @@ async def main():
         print(f"  {h:02d}:00 | {mt:02d}:00 | {_record(b)}  (n={b['total']})")
     print()
 
-    # ── By hour (UTC) — post rule change only ──
-    if post:
-        hours_post = sorted(set(s["hour_utc"] for s in post if s["hour_utc"] >= 0))
+    # ── By hour (UTC) — recent only ──
+    if recent:
+        hours_recent = sorted(set(s["hour_utc"] for s in recent if s["hour_utc"] >= 0))
         print("=" * 60)
-        print("BY HOUR (UTC) — Post rule change (>=2/23) only")
+        print(f"BY HOUR (UTC) — Recent (>={cutoff}) only")
         print("  UTC  |  MT   | Record")
         print("-" * 60)
-        for h in hours_post:
+        for h in hours_recent:
             mt = (h - 7) % 24
-            sigs = [s for s in post if s["hour_utc"] == h]
+            sigs = [s for s in recent if s["hour_utc"] == h]
             b = bucket(sigs)
             print(f"  {h:02d}:00 | {mt:02d}:00 | {_record(b)}  (n={b['total']})")
         print()
@@ -130,12 +149,12 @@ async def main():
         print(f"  {t}: {_record(b)}  (n={b['total']})")
     print()
 
-    if post:
+    if recent:
         print("=" * 60)
-        print("BY SIGNAL TYPE — Post rule change (>=2/23) only")
+        print(f"BY SIGNAL TYPE — Recent (>={cutoff}) only")
         print("-" * 60)
         for t in types:
-            sigs = [s for s in post if s["signal_type"] == t]
+            sigs = [s for s in recent if s["signal_type"] == t]
             if not sigs:
                 continue
             b = bucket(sigs)
@@ -164,13 +183,13 @@ async def main():
         print(f"  {m}: {_record(b)}  (n={b['total']})")
     print()
 
-    # ── Signal type × hour (post rule change) ──
-    if post:
+    # ── Signal type × hour (recent) ──
+    if recent:
         print("=" * 60)
-        print("SIGNAL TYPE × HOUR — Post rule change (>=2/23)")
+        print(f"SIGNAL TYPE × HOUR — Recent (>={cutoff})")
         print("-" * 60)
         for t in types:
-            t_sigs = [s for s in post if s["signal_type"] == t]
+            t_sigs = [s for s in recent if s["signal_type"] == t]
             if not t_sigs:
                 continue
             print(f"\n  {t}:")
