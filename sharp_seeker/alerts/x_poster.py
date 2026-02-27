@@ -51,6 +51,7 @@ class XPoster:
         self._free_play_sports: list[str] = settings.x_free_play_sports
         self._free_play_markets: list[str] = settings.x_free_play_markets
         self._tweet_types: set[str] = set(settings.x_tweet_signal_types)
+        self._excluded_books: set[str] = set(settings.x_excluded_books)
         self._enabled = False
 
         if all([
@@ -142,8 +143,25 @@ class XPoster:
             except Exception:
                 log.exception("x_tweet_failed", event_id=signal.event_id)
 
+    @staticmethod
+    def _get_book(signal: Signal) -> str | None:
+        """Extract the recommended bookmaker from signal details."""
+        value_books = signal.details.get("value_books", [])
+        if value_books:
+            return value_books[0].get("bookmaker")
+        return signal.details.get("us_book")
+
     def _pick_best_free_play(self, eligible: list[Signal]) -> Signal:
         """Score eligible signals and pick the best candidate for free play."""
+        if self._excluded_books:
+            filtered = [
+                s for s in eligible
+                if self._get_book(s) not in self._excluded_books
+            ]
+            # Fall back to unfiltered if all candidates are excluded
+            if filtered:
+                eligible = filtered
+
         def score(s: Signal) -> tuple[int, int, float]:
             sport_bonus = 1 if self._free_play_sports and s.sport_key in self._free_play_sports else 0
             market_bonus = 1 if self._free_play_markets and s.market_key in self._free_play_markets else 0
