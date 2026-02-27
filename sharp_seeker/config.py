@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     x_free_play_sports: list[str] = Field(default_factory=list)   # preferred sports for free play picks
     x_free_play_markets: list[str] = Field(default_factory=list)  # preferred markets for free play picks
     x_excluded_books: list[str] = Field(default_factory=list)
+    x_digest_interval_hours: int = 2  # 0 = tweet per signal (legacy)
 
     # Logging
     log_level: str = "INFO"

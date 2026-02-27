@@ -52,6 +52,8 @@ class XPoster:
         self._free_play_markets: list[str] = settings.x_free_play_markets
         self._tweet_types: set[str] = set(settings.x_tweet_signal_types)
         self._excluded_books: set[str] = set(settings.x_excluded_books)
+        self._digest_mode: bool = settings.x_digest_interval_hours > 0
+        self._digest_buffer: list[Signal] = []
         self._enabled = False
 
         if all([
@@ -123,25 +125,32 @@ class XPoster:
             except Exception:
                 log.exception("x_tweet_failed", event_id=free_play_pick.event_id)
 
-        # Post teasers (subject to teaser hours)
-        if self._teaser_hours and now_hour not in self._teaser_hours:
-            log.debug("x_teaser_skipped", reason="outside_teaser_hours", hour_utc=now_hour)
-            return
+        # Collect teaser-eligible signals (exclude the free play pick)
+        teasers = [s for s in eligible if s is not free_play_pick]
 
-        for signal in eligible:
-            if signal is free_play_pick:
-                continue  # already posted as free play
-            try:
-                text = self._format_teaser(signal)
-                self._post_tweet(text)
-                log.info(
-                    "x_tweet_posted",
-                    signal_type=signal.signal_type.value,
-                    event_id=signal.event_id,
-                    free_play=False,
-                )
-            except Exception:
-                log.exception("x_tweet_failed", event_id=signal.event_id)
+        if self._digest_mode:
+            # Buffer teasers for the next digest tweet
+            self._digest_buffer.extend(teasers)
+            if teasers:
+                log.info("x_teasers_buffered", count=len(teasers), buffer_size=len(self._digest_buffer))
+        else:
+            # Legacy per-signal mode (subject to teaser hours)
+            if self._teaser_hours and now_hour not in self._teaser_hours:
+                log.debug("x_teaser_skipped", reason="outside_teaser_hours", hour_utc=now_hour)
+                return
+
+            for signal in teasers:
+                try:
+                    text = self._format_teaser(signal)
+                    self._post_tweet(text)
+                    log.info(
+                        "x_tweet_posted",
+                        signal_type=signal.signal_type.value,
+                        event_id=signal.event_id,
+                        free_play=False,
+                    )
+                except Exception:
+                    log.exception("x_tweet_failed", event_id=signal.event_id)
 
     @staticmethod
     def _get_book(signal: Signal) -> str | None:
@@ -206,6 +215,48 @@ class XPoster:
             lines.append("")
             lines.append(f"Get real-time signals in Discord \u2192 {self._cta_url}")
         return "\n".join(lines)
+
+    async def post_digest(self) -> None:
+        """Post a single digest tweet for all buffered teasers, then clear the buffer."""
+        if not self._enabled:
+            return
+        if not self._digest_buffer:
+            log.debug("x_digest_skipped", reason="empty_buffer")
+            return
+
+        text = self._format_digest(self._digest_buffer)
+        try:
+            self._post_tweet(text)
+            log.info("x_digest_posted", count=len(self._digest_buffer))
+        except Exception:
+            log.exception("x_digest_failed")
+        self._digest_buffer.clear()
+
+    def _format_digest(self, signals: list[Signal]) -> str:
+        """Format buffered signals into a single digest tweet (max 280 chars)."""
+        cta = f"\n\nGet real-time signals in Discord \u2192 {self._cta_url}" if self._cta_url else ""
+        header = f"\U0001f4ca Sharp Signals \u2014 {len(signals)} alert{'s' if len(signals) != 1 else ''}"
+
+        lines: list[str] = []
+        for sig in signals:
+            label = _SIGNAL_LABELS.get(sig.signal_type, sig.signal_type.value)
+            lines.append(f"\U0001f525 {sig.away_team} @ {sig.home_team} \u2014 {label}")
+
+        # Try all lines first
+        tweet = f"{header}\n\n{'\n'.join(lines)}{cta}"
+        if len(tweet) <= 280:
+            return tweet
+
+        # Remove lines from the end until it fits with "...and N more"
+        for show in range(len(lines) - 1, 0, -1):
+            omitted = len(lines) - show
+            body = "\n".join(lines[:show])
+            tweet = f"{header}\n\n{body}\n...and {omitted} more{cta}"
+            if len(tweet) <= 280:
+                return tweet
+
+        # Fallback: header + count + cta only
+        return f"{header}\n\n...and {len(signals)} more{cta}"
 
     async def post_daily_recap(self) -> None:
         """Post a daily recap of yesterday's free plays to X."""
