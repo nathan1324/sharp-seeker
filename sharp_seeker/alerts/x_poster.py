@@ -243,7 +243,8 @@ class XPoster:
             lines.append(f"\U0001f525 {sig.away_team} @ {sig.home_team} \u2014 {label}")
 
         # Try all lines first
-        tweet = f"{header}\n\n{'\n'.join(lines)}{cta}"
+        body = "\n".join(lines)
+        tweet = f"{header}\n\n{body}{cta}"
         if len(tweet) <= 280:
             return tweet
 
