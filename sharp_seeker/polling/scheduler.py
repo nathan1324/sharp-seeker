@@ -116,6 +116,13 @@ class Poller:
         except Exception:
             log.exception("daily_recap_error")
 
+    async def post_digest(self) -> None:
+        """Post batched signal digest to X."""
+        try:
+            await self._x_poster.post_digest()
+        except Exception:
+            log.exception("x_digest_error")
+
     async def resolve_signals(self) -> None:
         """Grade unresolved signals against final game scores."""
         try:
@@ -188,5 +195,15 @@ def create_scheduler(poller: Poller, settings: Settings) -> AsyncIOScheduler:
         id="weekly_report",
         name="Send weekly signal report",
     )
+
+    # Digest tweet — batch teasers into a single tweet every N hours
+    if settings.x_digest_interval_hours > 0:
+        scheduler.add_job(
+            poller.post_digest,
+            "interval",
+            hours=settings.x_digest_interval_hours,
+            id="x_digest",
+            name="Post batched signal digest to X",
+        )
 
     return scheduler

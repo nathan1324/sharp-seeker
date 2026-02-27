@@ -197,6 +197,7 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `X_FREE_PLAY_SPORTS` | `[]` | Preferred sports for free play selection (JSON array) |
 | `X_FREE_PLAY_MARKETS` | `[]` | Preferred markets for free play selection (JSON array) |
 | `X_EXCLUDED_BOOKS` | `[]` | Books excluded from X free play selection (JSON array) |
+| `X_DIGEST_INTERVAL_HOURS` | `2` | Batch teasers into one digest tweet every N hours (0 = per-signal) |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
 #### Per-Sport Webhook Overrides
@@ -267,6 +268,7 @@ The daemon runs these jobs automatically via APScheduler:
 | Job | UTC | Mountain | Purpose |
 |-----|-----|----------|---------|
 | Odds polling | Every 12 min | — | Fetch odds, detect signals, send alerts |
+| **X digest** | **Every 2 hr** | **—** | Post batched teaser digest to X (if enabled) |
 | **Resolve signals** | **12:30** | **5:30 AM** | Grade yesterday's games against final scores |
 | **Free play recap** | **12:45** | **5:45 AM** | Tweet yesterday's free play results |
 | **Daily report** | **12:45** | **5:45 AM** | Per-type + combined performance report |
@@ -293,16 +295,22 @@ bash deploy/update.sh
 
 ## X (Twitter) Integration
 
-Sharp Seeker can automatically post to X when signals fire. By default, **Pinnacle Divergence** and **Rapid Change** signals are eligible (configurable via `X_TWEET_SIGNAL_TYPES`). Most tweets are **teasers** — showing the matchup and signal type to create curiosity — with a CTA link to your Discord. Every Nth eligible signal is posted as a **free play** with full pick details revealed publicly.
+Sharp Seeker can automatically post to X when signals fire. By default, **Pinnacle Divergence** and **Rapid Change** signals are eligible (configurable via `X_TWEET_SIGNAL_TYPES`). Every Nth eligible signal is posted as a **free play** with full pick details revealed publicly — free plays always post immediately since they're time-sensitive.
 
-**Teaser example:**
+**Digest mode (default):** Teasers are batched in memory and posted as a single digest tweet every 2 hours (configurable via `X_DIGEST_INTERVAL_HOURS`). This prevents spamming followers during active periods. Set to `0` for legacy per-signal tweeting.
+
+**Digest example:**
 ```
-🔥 Sharp money detected — Lakers vs Celtics (Steam Move)
+📊 Sharp Signals — 3 alerts
 
-Get real-time signals in Discord → https://discord.gg/your-link
+🔥 Celtics @ Lakers — Pinnacle Divergence
+🔥 Chiefs @ Eagles — Steam Move
+🔥 Yankees @ Red Sox — Rapid Change
+
+Get real-time signals in Discord → discord.gg/link
 ```
 
-**Free play example (every 10th Pinnacle Divergence):**
+**Free play example (posted immediately):**
 ```
 🎯 FREE PLAY — Lakers vs Celtics Spread
 
@@ -335,7 +343,7 @@ X tweets use additional filtering to maximize public credibility:
 
 - **Strength cap** (`X_MAX_STRENGTH`) — signals at or above this strength are skipped entirely. Analysis shows very high strength signals (0.90+) underperform, so capping at 0.80 filters out traps.
 - **Smart free play selection** — when a free play is due, the best candidate is chosen by scoring: preferred sport > preferred market > lower strength. Configure with `X_FREE_PLAY_SPORTS` and `X_FREE_PLAY_MARKETS`.
-- **Teaser hours** — teaser tweets only post during configured UTC hours. Free plays always post regardless of hour.
+- **Digest mode** — teasers are batched and posted as a single tweet every N hours (`X_DIGEST_INTERVAL_HOURS`). In legacy mode (0), teaser hours (`X_TEASER_HOURS`) gate per-signal tweets. Free plays always post immediately regardless of mode.
 
 X posting is **optional** — if credentials are not set, the poster disables itself with no errors.
 
