@@ -62,6 +62,7 @@ class PinnacleDivergenceDetector(BaseDetector):
             return []
 
         signals: list[Signal] = []
+        excluded = set(self._settings.pd_excluded_books)
 
         for (market_key, outcome_name), books in by_market.items():
             pinnacle = books.get(PINNACLE_KEY)
@@ -69,7 +70,7 @@ class PinnacleDivergenceDetector(BaseDetector):
                 continue
 
             for bm_key, row in books.items():
-                if bm_key not in US_BOOKS:
+                if bm_key not in US_BOOKS or bm_key in excluded:
                     continue
 
                 if market_key == "h2h":

@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     # Detection — Pinnacle divergence
     pinnacle_spread_threshold: float = 1.0
     pinnacle_ml_prob_threshold: float = 0.03  # 3% implied probability edge
+    pd_excluded_books: list[str] = Field(default_factory=list)
 
     # Detection — exchange monitor
     exchange_shift_threshold: float = 0.05  # 5% implied probability shift
@@ -113,6 +114,7 @@ class Settings(BaseSettings):
     )
     x_free_play_sports: list[str] = Field(default_factory=list)   # preferred sports for free play picks
     x_free_play_markets: list[str] = Field(default_factory=list)  # preferred markets for free play picks
+    x_excluded_books: list[str] = Field(default_factory=list)
 
     # Logging
     log_level: str = "INFO"

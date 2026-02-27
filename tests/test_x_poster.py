@@ -748,6 +748,48 @@ async def test_free_play_counter_uses_unfiltered_count(settings, repo):
     assert "FREE PLAY" in calls[0]
 
 
+def test_pick_best_free_play_excludes_book(settings, repo):
+    """Signals from excluded books should be skipped for free play selection."""
+    poster = XPoster(settings, repo)
+    poster._free_play_sports = []
+    poster._free_play_markets = []
+    poster._excluded_books = {"betmgm"}
+
+    mgm = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.50,
+        details={"value_books": [{"bookmaker": "betmgm", "price": -110, "point": -3.5}]},
+    )
+    dk = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.70,
+        details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
+    )
+
+    # MGM has lower strength (normally preferred), but is excluded
+    result = poster._pick_best_free_play([mgm, dk])
+    assert result is dk
+
+
+def test_pick_best_free_play_fallback_when_all_excluded(settings, repo):
+    """If all candidates are excluded, fall back to unfiltered list."""
+    poster = XPoster(settings, repo)
+    poster._free_play_sports = []
+    poster._free_play_markets = []
+    poster._excluded_books = {"betmgm"}
+
+    mgm1 = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.50,
+        details={"value_books": [{"bookmaker": "betmgm", "price": -110, "point": -3.5}]},
+    )
+    mgm2 = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.70,
+        details={"value_books": [{"bookmaker": "betmgm", "price": -105, "point": -2.5}]},
+    )
+
+    # All excluded → falls back to unfiltered, picks lower strength
+    result = poster._pick_best_free_play([mgm1, mgm2])
+    assert result is mgm1
+
+
 def test_pick_best_free_play_scoring(settings, repo):
     """Unit test for _pick_best_free_play scoring logic directly."""
     poster = XPoster(settings, repo)

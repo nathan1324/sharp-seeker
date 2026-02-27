@@ -176,6 +176,7 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `RAPID_ML_THRESHOLD` | `20` | Min moneyline change (cents) |
 | `PINNACLE_SPREAD_THRESHOLD` | `1.0` | Divergence threshold (points) |
 | `PINNACLE_ML_PROB_THRESHOLD` | `0.03` | ML divergence threshold (implied prob, 3%) |
+| `PD_EXCLUDED_BOOKS` | `[]` | Books excluded from Pinnacle divergence detection (JSON array) |
 | `EXCHANGE_SHIFT_THRESHOLD` | `0.05` | Implied probability shift (5%) |
 | `MIN_SIGNAL_STRENGTH` | `0.5` | Min strength to alert (0.0–1.0) |
 | `SIGNAL_STRENGTH_OVERRIDES` | `{}` | Per-signal-type min strength (JSON, overrides global) |
@@ -195,6 +196,7 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `X_TWEET_SIGNAL_TYPES` | `["pinnacle_divergence", "rapid_change"]` | Signal types eligible for X tweets (JSON array) |
 | `X_FREE_PLAY_SPORTS` | `[]` | Preferred sports for free play selection (JSON array) |
 | `X_FREE_PLAY_MARKETS` | `[]` | Preferred markets for free play selection (JSON array) |
+| `X_EXCLUDED_BOOKS` | `[]` | Books excluded from X free play selection (JSON array) |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
 #### Per-Sport Webhook Overrides

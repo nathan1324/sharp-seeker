@@ -172,6 +172,49 @@ async def test_no_divergence_below_threshold(settings, repo):
 
 
 @pytest.mark.asyncio
+async def test_excluded_book_skipped(settings, repo):
+    """Books in pd_excluded_books should not generate PD signals."""
+    event = "evt_pin_excl"
+    t = "2025-01-15T12:00:00+00:00"
+
+    # BetMGM has better ML odds than Pinnacle — would fire without exclusion
+    snapshots = [
+        _snap(event, "pinnacle", "h2h", "Lakers", -150, None, t),
+        _snap(event, "betmgm", "h2h", "Lakers", -110, None, t),
+        _snap(event, "draftkings", "h2h", "Lakers", -150, None, t),  # same as pin, no signal
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    settings.pd_excluded_books = ["betmgm"]
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 0
+
+
+@pytest.mark.asyncio
+async def test_excluded_book_does_not_affect_others(settings, repo):
+    """Excluding one book should not suppress signals from other books."""
+    event = "evt_pin_excl2"
+    t = "2025-01-15T12:00:00+00:00"
+
+    snapshots = [
+        _snap(event, "pinnacle", "h2h", "Lakers", -150, None, t),
+        _snap(event, "betmgm", "h2h", "Lakers", -110, None, t),
+        _snap(event, "draftkings", "h2h", "Lakers", -110, None, t),  # also diverges
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    settings.pd_excluded_books = ["betmgm"]
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    # Only DraftKings should fire, not BetMGM
+    assert len(signals) == 1
+    assert signals[0].details["us_book"] == "draftkings"
+
+
+@pytest.mark.asyncio
 async def test_no_signal_without_pinnacle(settings, repo):
     """No Pinnacle data means no divergence signals."""
     event = "evt_pin4"
