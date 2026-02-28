@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     pinnacle_spread_threshold: float = 1.0
     pinnacle_ml_prob_threshold: float = 0.03  # 3% implied probability edge
     pd_excluded_books: list[str] = Field(default_factory=list)
+    # Per-sport Pinnacle ML probability threshold overrides (JSON object in .env)
+    # Lowers or raises the ML divergence threshold for specific sports.
+    # Example: {"icehockey_nhl": 0.015}
+    pd_sport_ml_prob_overrides: dict[str, float] = Field(default_factory=dict)
 
     # Detection — exchange monitor
     exchange_shift_threshold: float = 0.05  # 5% implied probability shift
