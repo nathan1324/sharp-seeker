@@ -1,14 +1,13 @@
 """Diagnose why NHL PD signals aren't firing despite the sport override."""
 
-import shutil
+import subprocess
 import sqlite3
-import tempfile
 from datetime import datetime, timedelta, timezone
 
 DB = "/app/data/sharp_seeker.db"
-# Copy DB to avoid locking issues with the running daemon
-TMP_DB = tempfile.mktemp(suffix=".db")
-shutil.copy2(DB, TMP_DB)
+TMP_DB = "/tmp/diag_nhl.db"
+# Use SQLite's own backup to get a clean snapshot
+subprocess.run(["sqlite3", DB, ".backup " + TMP_DB], check=True)
 MST = timezone(timedelta(hours=-7))
 NHL_SPORT = "icehockey_nhl"
 PINNACLE_KEY = "pinnacle"
@@ -234,6 +233,12 @@ def run():
     conn.close()
     import os
     os.remove(TMP_DB)
+    # Clean up WAL/SHM if created
+    for ext in ("-wal", "-shm"):
+        try:
+            os.remove(TMP_DB + ext)
+        except FileNotFoundError:
+            pass
     print("\nDone.")
 
 
