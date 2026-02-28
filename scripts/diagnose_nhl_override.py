@@ -1,9 +1,14 @@
 """Diagnose why NHL PD signals aren't firing despite the sport override."""
 
+import shutil
 import sqlite3
+import tempfile
 from datetime import datetime, timedelta, timezone
 
 DB = "/app/data/sharp_seeker.db"
+# Copy DB to avoid locking issues with the running daemon
+TMP_DB = tempfile.mktemp(suffix=".db")
+shutil.copy2(DB, TMP_DB)
 MST = timezone(timedelta(hours=-7))
 NHL_SPORT = "icehockey_nhl"
 PINNACLE_KEY = "pinnacle"
@@ -18,10 +23,8 @@ def american_to_implied_prob(price):
 
 
 def run():
-    conn = sqlite3.connect(DB, timeout=30)
+    conn = sqlite3.connect(TMP_DB)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA query_only=ON")
 
     since_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     since_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
@@ -229,6 +232,8 @@ def run():
         print(f"   Could not check pipeline: {e}")
 
     conn.close()
+    import os
+    os.remove(TMP_DB)
     print("\nDone.")
 
 
