@@ -46,6 +46,7 @@ class XPoster:
         self._repo = repo
         self._cta_url = settings.x_cta_url
         self._free_play_interval = settings.x_free_play_interval
+        self._free_play_weekend_interval = settings.x_free_play_weekend_interval
         self._teaser_hours: list[int] = settings.x_teaser_hours
         self._max_strength = settings.x_max_strength
         self._free_play_sports: list[str] = settings.x_free_play_sports
@@ -98,13 +99,19 @@ class XPoster:
         seq_start = total - batch_size + 1
         seq_end = total  # inclusive
 
+        # Weekend (Sat/Sun) uses a wider interval to account for higher volume
+        now_utc = datetime.now(timezone.utc)
+        is_weekend = now_utc.weekday() >= 5  # 5=Sat, 6=Sun
+        weekend = self._free_play_weekend_interval or self._free_play_interval
+        interval = weekend if is_weekend else self._free_play_interval
+
         # Check if any seq in this batch hits the free play interval
         free_play_due = any(
-            seq > 0 and seq % self._free_play_interval == 0
+            seq > 0 and seq % interval == 0
             for seq in range(seq_start, seq_end + 1)
         )
 
-        now_hour = datetime.now(timezone.utc).hour
+        now_hour = now_utc.hour
 
         # Post free play (always, regardless of teaser hours)
         free_play_pick: Signal | None = None
