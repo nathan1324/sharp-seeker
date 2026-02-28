@@ -926,6 +926,74 @@ async def test_free_play_picks_different_game(settings, repo):
     assert "Warriors" in free_plays[0]  # new game picked, not repeat
 
 
+# ── Weekend interval ──────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_weekend_interval_used_on_saturday(settings, repo):
+    """On weekends, the wider weekend interval should be used."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._digest_mode = False
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._free_play_interval = 5
+    poster._free_play_weekend_interval = 10
+
+    # Insert 10 alerts so seq=10 (hits weekend interval=10 but not weekday=5*3=15)
+    for i in range(10):
+        await repo.record_alert(
+            event_id=f"evt_{i}", alert_type="pinnacle_divergence",
+            market_key="spreads", outcome_name="Lakers",
+        )
+
+    sig = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
+    )
+
+    # Saturday → weekend interval (10), seq=10, 10%10==0 → free play
+    fake_saturday = datetime(2026, 2, 28, 18, 0, 0, tzinfo=timezone.utc)
+    with patch("sharp_seeker.alerts.x_poster.datetime") as mock_dt:
+        mock_dt.now.return_value = fake_saturday
+        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+        await poster.post_signals([sig])
+
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    assert any("FREE PLAY" in t for t in calls)
+
+
+@pytest.mark.asyncio
+async def test_weekend_interval_not_used_on_weekday(settings, repo):
+    """On weekdays, the regular interval should be used — weekend interval ignored."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._digest_mode = False
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._free_play_interval = 5
+    poster._free_play_weekend_interval = 10
+
+    # Insert 7 alerts: seq=7, hits neither 5*2=10 nor 10 → no free play
+    for i in range(7):
+        await repo.record_alert(
+            event_id=f"evt_{i}", alert_type="pinnacle_divergence",
+            market_key="spreads", outcome_name="Lakers",
+        )
+
+    sig = _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)
+
+    # Wednesday → weekday interval (5), seq=7, 7%5!=0 → no free play
+    fake_wednesday = datetime(2026, 2, 25, 18, 0, 0, tzinfo=timezone.utc)
+    with patch("sharp_seeker.alerts.x_poster.datetime") as mock_dt:
+        mock_dt.now.return_value = fake_wednesday
+        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+        await poster.post_signals([sig])
+
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    assert all("FREE PLAY" not in t for t in calls)
+
+
 # ── Rapid change tweeting ──────────────────────────────────────
 
 

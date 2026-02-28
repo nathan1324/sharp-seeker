@@ -191,7 +191,8 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `X_ACCESS_TOKEN` | — | X OAuth 1.0a access token (optional) |
 | `X_ACCESS_TOKEN_SECRET` | — | X OAuth 1.0a access token secret (optional) |
 | `X_CTA_URL` | `""` | Link in tweet CTA (Discord invite / landing page) |
-| `X_FREE_PLAY_INTERVAL` | `10` | Every Nth eligible signal = free play |
+| `X_FREE_PLAY_INTERVAL` | `10` | Every Nth eligible signal = free play (weekdays) |
+| `X_FREE_PLAY_WEEKEND_INTERVAL` | `0` | Weekend free play interval (0 = use weekday) |
 | `X_TEASER_HOURS` | `[]` | UTC hours to allow teaser tweets (JSON array, empty = always) |
 | `X_MAX_STRENGTH` | `1.0` | Skip PD signals >= this strength for X tweets (0.0–1.0) |
 | `X_TWEET_SIGNAL_TYPES` | `["pinnacle_divergence", "rapid_change"]` | Signal types eligible for X tweets (JSON array) |
