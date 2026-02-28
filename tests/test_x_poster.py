@@ -1021,8 +1021,10 @@ async def test_digest_posts_free_play_immediately(settings, repo):
     poster._client.create_tweet.assert_called_once()
     call_text = poster._client.create_tweet.call_args.kwargs["text"]
     assert "FREE PLAY" in call_text
-    # Buffer should be empty (free play isn't buffered)
+    # Teaser buffer should be empty (free play isn't a teaser)
     assert len(poster._digest_buffer) == 0
+    # Free play should be in the digest free plays buffer
+    assert len(poster._digest_free_plays) == 1
 
 
 @pytest.mark.asyncio
@@ -1046,6 +1048,7 @@ async def test_post_digest_formats_and_posts(settings, repo):
     call_text = poster._client.create_tweet.call_args.kwargs["text"]
     assert "Sharp Signals" in call_text
     assert "2 alerts" in call_text
+    assert "\U0001f525 Discord Signals" in call_text
     assert "Pinnacle Divergence" in call_text
     assert "Rapid Change" in call_text
     assert "discord.gg/test" in call_text
@@ -1073,9 +1076,74 @@ async def test_post_digest_clears_buffer(settings, repo):
     poster._client.create_tweet = MagicMock()
 
     poster._digest_buffer = [_make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)]
+    poster._digest_free_plays = [_make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)]
     await poster.post_digest()
 
     assert len(poster._digest_buffer) == 0
+    assert len(poster._digest_free_plays) == 0
+
+
+@pytest.mark.asyncio
+async def test_digest_includes_free_plays(settings, repo):
+    """Digest should include free plays posted during the window with pick details."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._cta_url = "https://discord.gg/test"
+
+    free_play = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="spreads",
+        outcome_name="Lakers",
+        details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
+    )
+    teaser = _make_signal(signal_type=SignalType.RAPID_CHANGE)
+
+    poster._digest_buffer = [teaser]
+    poster._digest_free_plays = [free_play]
+
+    await poster.post_digest()
+
+    poster._client.create_tweet.assert_called_once()
+    call_text = poster._client.create_tweet.call_args.kwargs["text"]
+    assert "2 alerts" in call_text
+    # Free plays section with header
+    assert "\U0001f3af Free Plays" in call_text
+    assert "Draftkings" in call_text
+    assert "-3.5" in call_text
+    # Signals section with header
+    assert "\U0001f525 Discord Signals" in call_text
+    assert "Rapid Change" in call_text
+
+
+@pytest.mark.asyncio
+async def test_digest_only_free_plays(settings, repo):
+    """Digest should post even if there are only free plays and no teasers."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._cta_url = ""
+
+    free_play = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="h2h",
+        outcome_name="Lakers",
+        details={"value_books": [{"bookmaker": "fanduel", "price": 150}]},
+    )
+    poster._digest_free_plays = [free_play]
+
+    await poster.post_digest()
+
+    poster._client.create_tweet.assert_called_once()
+    call_text = poster._client.create_tweet.call_args.kwargs["text"]
+    assert "1 alert" in call_text
+    assert "\U0001f3af Free Plays" in call_text
+    assert "Fanduel" in call_text
+    assert "+150" in call_text
+    # No signals section when there are no teasers
+    assert "\U0001f525 Discord Signals" not in call_text
 
 
 @pytest.mark.asyncio

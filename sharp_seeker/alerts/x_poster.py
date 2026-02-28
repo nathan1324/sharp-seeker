@@ -54,6 +54,7 @@ class XPoster:
         self._excluded_books: set[str] = set(settings.x_excluded_books)
         self._digest_mode: bool = settings.x_digest_interval_hours > 0
         self._digest_buffer: list[Signal] = []
+        self._digest_free_plays: list[Signal] = []
         self._enabled = False
 
         if all([
@@ -116,6 +117,8 @@ class XPoster:
                     free_play_pick.event_id, free_play_pick.market_key,
                     free_play_pick.outcome_name,
                 )
+                if self._digest_mode:
+                    self._digest_free_plays.append(free_play_pick)
                 log.info(
                     "x_tweet_posted",
                     signal_type=free_play_pick.signal_type.value,
@@ -217,30 +220,58 @@ class XPoster:
         return "\n".join(lines)
 
     async def post_digest(self) -> None:
-        """Post a single digest tweet for all buffered teasers, then clear the buffer."""
+        """Post a single digest tweet for all buffered teasers + free plays, then clear."""
         if not self._enabled:
             return
-        if not self._digest_buffer:
+        if not self._digest_buffer and not self._digest_free_plays:
             log.debug("x_digest_skipped", reason="empty_buffer")
             return
 
-        text = self._format_digest(self._digest_buffer)
+        text = self._format_digest(self._digest_buffer, self._digest_free_plays)
         try:
             self._post_tweet(text)
-            log.info("x_digest_posted", count=len(self._digest_buffer))
+            log.info(
+                "x_digest_posted",
+                teasers=len(self._digest_buffer),
+                free_plays=len(self._digest_free_plays),
+            )
         except Exception:
             log.exception("x_digest_failed")
         self._digest_buffer.clear()
+        self._digest_free_plays.clear()
 
-    def _format_digest(self, signals: list[Signal]) -> str:
-        """Format buffered signals into a single digest tweet (max 280 chars)."""
+    def _format_digest(
+        self, signals: list[Signal], free_plays: list[Signal] | None = None,
+    ) -> str:
+        """Format buffered signals + free plays into a single digest tweet (max 280 chars)."""
+        free_plays = free_plays or []
+        total = len(signals) + len(free_plays)
         cta = f"\n\nGet real-time signals in Discord \u2192 {self._cta_url}" if self._cta_url else ""
-        header = f"\U0001f4ca Sharp Signals \u2014 {len(signals)} alert{'s' if len(signals) != 1 else ''}"
+        header = f"\U0001f4ca Sharp Signals \u2014 {total} alert{'s' if total != 1 else ''}"
 
         lines: list[str] = []
-        for sig in signals:
-            label = _SIGNAL_LABELS.get(sig.signal_type, sig.signal_type.value)
-            lines.append(f"\U0001f525 {sig.away_team} @ {sig.home_team} \u2014 {label}")
+        # Free plays section — show the pick since it's already public
+        if free_plays:
+            lines.append("\U0001f3af Free Plays")
+            for sig in free_plays:
+                d = sig.details
+                value_books = d.get("value_books", [])
+                if value_books:
+                    best = value_books[0]
+                    bm = best["bookmaker"].title()
+                    odds = _format_odds(sig.market_key, best.get("price"), best.get("point"))
+                    pick = f"{sig.outcome_name} {odds} @ {bm}"
+                else:
+                    pick = sig.outcome_name
+                lines.append(f"  {sig.away_team} @ {sig.home_team} \u2014 {pick}")
+        # Signals section
+        if signals:
+            if free_plays:
+                lines.append("")
+            lines.append("\U0001f525 Discord Signals")
+            for sig in signals:
+                label = _SIGNAL_LABELS.get(sig.signal_type, sig.signal_type.value)
+                lines.append(f"  {sig.away_team} @ {sig.home_team} \u2014 {label}")
 
         # Try all lines first
         body = "\n".join(lines)
@@ -257,7 +288,7 @@ class XPoster:
                 return tweet
 
         # Fallback: header + count + cta only
-        return f"{header}\n\n...and {len(signals)} more{cta}"
+        return f"{header}\n\n...and {total} more{cta}"
 
     async def post_daily_recap(self) -> None:
         """Post a daily recap of yesterday's free plays to X."""
