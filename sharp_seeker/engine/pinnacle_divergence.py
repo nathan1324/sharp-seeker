@@ -79,7 +79,9 @@ class PinnacleDivergenceDetector(BaseDetector):
                     us_prob = american_to_implied_prob(us_val)
                     pin_prob = american_to_implied_prob(pin_val)
                     delta = abs(us_prob - pin_prob)
-                    threshold = self._settings.pinnacle_ml_prob_threshold
+                    threshold = self._settings.pd_sport_ml_prob_overrides.get(
+                        meta[0], self._settings.pinnacle_ml_prob_threshold
+                    )
                 else:
                     if row["point"] is not None and pinnacle["point"] is not None:
                         us_val = row["point"]

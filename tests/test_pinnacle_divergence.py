@@ -16,10 +16,11 @@ def _snap(
     price: float,
     point: float | None,
     fetched_at: str,
+    sport_key: str = "basketball_nba",
 ) -> dict:
     return {
         "event_id": event_id,
-        "sport_key": "basketball_nba",
+        "sport_key": sport_key,
         "home_team": "Lakers",
         "away_team": "Celtics",
         "commence_time": "2025-01-15T00:00:00Z",
@@ -230,3 +231,34 @@ async def test_no_signal_without_pinnacle(settings, repo):
     signals = await detector.detect(event, t)
 
     assert len(signals) == 0
+
+
+@pytest.mark.asyncio
+async def test_sport_ml_prob_override(settings, repo):
+    """Sport-specific ML threshold should override global.
+
+    BetMGM -140 implied = 140/240 ≈ 0.5833
+    Pinnacle -155 implied = 155/255 ≈ 0.6078
+    Delta ≈ 0.0245 (2.45%) — below global 3% but above NHL 1.5% override.
+    """
+    event = "evt_nhl_override"
+    t = "2025-01-15T12:00:00+00:00"
+
+    snapshots = [
+        _snap(event, "pinnacle", "h2h", "Rangers", -155, None, t, sport_key="icehockey_nhl"),
+        _snap(event, "betmgm", "h2h", "Rangers", -140, None, t, sport_key="icehockey_nhl"),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    # Without override — global 3% threshold, 2.45% delta should NOT fire
+    settings.pd_sport_ml_prob_overrides = {}
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+    assert len(signals) == 0
+
+    # With NHL override at 1.5% — same delta SHOULD fire
+    settings.pd_sport_ml_prob_overrides = {"icehockey_nhl": 0.015}
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+    assert len(signals) == 1
+    assert signals[0].details["us_book"] == "betmgm"
