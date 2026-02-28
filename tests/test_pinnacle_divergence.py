@@ -262,3 +262,7 @@ async def test_sport_ml_prob_override(settings, repo):
     signals = await detector.detect(event, t)
     assert len(signals) == 1
     assert signals[0].details["us_book"] == "betmgm"
+
+    # Strength should use global threshold (0.03) not sport override (0.015)
+    # delta 0.0245 / (0.03 * 3) ≈ 0.272 — NOT 0.0245 / (0.015 * 3) ≈ 0.544
+    assert signals[0].strength < 0.30
