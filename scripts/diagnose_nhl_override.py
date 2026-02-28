@@ -18,8 +18,10 @@ def american_to_implied_prob(price):
 
 
 def run():
-    conn = sqlite3.connect(DB)
+    conn = sqlite3.connect(DB, timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA query_only=ON")
 
     since_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     since_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
