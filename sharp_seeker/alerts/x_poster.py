@@ -109,24 +109,30 @@ class XPoster:
         # Post free play (always, regardless of teaser hours)
         free_play_pick: Signal | None = None
         if free_play_due:
-            free_play_pick = self._pick_best_free_play(eligible)
-            try:
-                text = self._format_free_play(free_play_pick)
-                self._post_tweet(text)
-                await self._repo.mark_alert_free_play(
-                    free_play_pick.event_id, free_play_pick.market_key,
-                    free_play_pick.outcome_name,
-                )
-                if self._digest_mode:
-                    self._digest_free_plays.append(free_play_pick)
-                log.info(
-                    "x_tweet_posted",
-                    signal_type=free_play_pick.signal_type.value,
-                    event_id=free_play_pick.event_id,
-                    free_play=True,
-                )
-            except Exception:
-                log.exception("x_tweet_failed", event_id=free_play_pick.event_id)
+            # Never pick a game we already sent a free play for (avoids opposite-side picks)
+            past_fp_events = await self._repo.get_free_play_event_ids()
+            fp_candidates = [s for s in eligible if s.event_id not in past_fp_events]
+            if not fp_candidates:
+                log.info("x_free_play_skipped", reason="all_candidates_repeat_game")
+            else:
+                free_play_pick = self._pick_best_free_play(fp_candidates)
+                try:
+                    text = self._format_free_play(free_play_pick)
+                    self._post_tweet(text)
+                    await self._repo.mark_alert_free_play(
+                        free_play_pick.event_id, free_play_pick.market_key,
+                        free_play_pick.outcome_name,
+                    )
+                    if self._digest_mode:
+                        self._digest_free_plays.append(free_play_pick)
+                    log.info(
+                        "x_tweet_posted",
+                        signal_type=free_play_pick.signal_type.value,
+                        event_id=free_play_pick.event_id,
+                        free_play=True,
+                    )
+                except Exception:
+                    log.exception("x_tweet_failed", event_id=free_play_pick.event_id)
 
         # Collect teaser-eligible signals (exclude the free play pick)
         teasers = [s for s in eligible if s is not free_play_pick]
