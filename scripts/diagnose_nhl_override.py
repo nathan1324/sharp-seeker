@@ -1,13 +1,10 @@
 """Diagnose why NHL PD signals aren't firing despite the sport override."""
 
-import subprocess
 import sqlite3
+import time
 from datetime import datetime, timedelta, timezone
 
 DB = "/app/data/sharp_seeker.db"
-TMP_DB = "/tmp/diag_nhl.db"
-# Use SQLite's own backup to get a clean snapshot
-subprocess.run(["sqlite3", DB, ".backup " + TMP_DB], check=True)
 MST = timezone(timedelta(hours=-7))
 NHL_SPORT = "icehockey_nhl"
 PINNACLE_KEY = "pinnacle"
@@ -22,8 +19,20 @@ def american_to_implied_prob(price):
 
 
 def run():
-    conn = sqlite3.connect(TMP_DB)
-    conn.row_factory = sqlite3.Row
+    # Retry connection until the daemon releases the lock
+    for attempt in range(10):
+        try:
+            conn = sqlite3.connect(DB, timeout=10)
+            conn.row_factory = sqlite3.Row
+            conn.execute("SELECT 1 FROM odds_snapshots LIMIT 1")
+            break
+        except sqlite3.OperationalError:
+            print(f"   DB locked, retrying ({attempt + 1}/10)...")
+            time.sleep(3)
+    else:
+        print("   ERROR: Could not acquire DB lock after 10 attempts.")
+        print("   Try: docker compose exec sharp-seeker python -c \"import sqlite3; c=sqlite3.connect('/app/data/sharp_seeker.db'); c.execute('PRAGMA journal_mode=WAL'); c.close()\"")
+        return
 
     since_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     since_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
@@ -231,14 +240,6 @@ def run():
         print(f"   Could not check pipeline: {e}")
 
     conn.close()
-    import os
-    os.remove(TMP_DB)
-    # Clean up WAL/SHM if created
-    for ext in ("-wal", "-shm"):
-        try:
-            os.remove(TMP_DB + ext)
-        except FileNotFoundError:
-            pass
     print("\nDone.")
 
 
