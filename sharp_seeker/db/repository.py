@@ -138,6 +138,13 @@ class Repository:
         )
         await self._db.commit()
 
+    async def get_free_play_event_ids(self) -> set[str]:
+        """Return event IDs of all past free play alerts."""
+        sql = "SELECT DISTINCT event_id FROM sent_alerts WHERE is_free_play = 1"
+        cursor = await self._db.execute(sql)
+        rows = await cursor.fetchall()
+        return {row[0] for row in rows}
+
     async def mark_alert_free_play(
         self, event_id: str, market_key: str, outcome_name: str,
     ) -> None:

@@ -837,6 +837,95 @@ def test_pick_best_free_play_scoring(settings, repo):
     assert poster._pick_best_free_play([s1, s2, s3]) is s2
 
 
+# ── Same-game free play dedup ──────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_free_play_skips_repeat_game(settings, repo):
+    """Free play should not pick a game that already had a free play (avoids opposite-side picks)."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._digest_mode = False
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._free_play_interval = 1  # every signal is a free play
+
+    # Record a past free play for evt_123
+    await repo.record_alert(
+        event_id="evt_123", alert_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers", is_free_play=True,
+    )
+
+    # New batch: same game (evt_123) but different side — should be skipped for free play
+    sig = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        outcome_name="Celtics",
+        market_key="h2h",
+        details={"value_books": [{"bookmaker": "draftkings", "price": 150}]},
+    )
+    # Record the alert (as Discord alerter would)
+    await repo.record_alert(
+        event_id="evt_123", alert_type="pinnacle_divergence",
+        market_key="h2h", outcome_name="Celtics",
+    )
+
+    await poster.post_signals([sig])
+
+    # Should only get a teaser, not a free play
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    assert all("FREE PLAY" not in t for t in calls)
+
+
+@pytest.mark.asyncio
+async def test_free_play_picks_different_game(settings, repo):
+    """When one game already has a free play, pick the other game instead."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._digest_mode = False
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._free_play_interval = 1
+    poster._free_play_sports = []
+    poster._free_play_markets = []
+
+    # Past free play for evt_123
+    await repo.record_alert(
+        event_id="evt_123", alert_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers", is_free_play=True,
+    )
+
+    # Batch: evt_123 (repeat game) + evt_other (new game)
+    repeat = Signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        event_id="evt_123", sport_key="basketball_nba",
+        home_team="Lakers", away_team="Celtics",
+        market_key="h2h", outcome_name="Celtics", strength=0.50,
+        description="Test", commence_time="2099-01-15T00:00:00Z",
+        details={"value_books": [{"bookmaker": "draftkings", "price": 150}]},
+    )
+    new_game = Signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        event_id="evt_other", sport_key="basketball_nba",
+        home_team="Warriors", away_team="Suns",
+        market_key="spreads", outcome_name="Warriors", strength=0.70,
+        description="Test", commence_time="2099-01-15T00:00:00Z",
+        details={"value_books": [{"bookmaker": "fanduel", "price": -110, "point": -3.5}]},
+    )
+
+    for sig in [repeat, new_game]:
+        await repo.record_alert(
+            event_id=sig.event_id, alert_type="pinnacle_divergence",
+            market_key=sig.market_key, outcome_name=sig.outcome_name,
+        )
+
+    await poster.post_signals([repeat, new_game])
+
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    free_plays = [t for t in calls if "FREE PLAY" in t]
+    assert len(free_plays) == 1
+    assert "Warriors" in free_plays[0]  # new game picked, not repeat
+
+
 # ── Rapid change tweeting ──────────────────────────────────────
 
 
