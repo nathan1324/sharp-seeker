@@ -82,9 +82,6 @@ class PinnacleDivergenceDetector(BaseDetector):
                     threshold = self._settings.pd_sport_ml_prob_overrides.get(
                         meta[0], self._settings.pinnacle_ml_prob_threshold
                     )
-                    # Always use global threshold for strength so scores are
-                    # comparable across sports (sport override only gates firing).
-                    strength_base = self._settings.pinnacle_ml_prob_threshold
                 else:
                     if row["point"] is not None and pinnacle["point"] is not None:
                         us_val = row["point"]
@@ -94,12 +91,10 @@ class PinnacleDivergenceDetector(BaseDetector):
                             threshold = self._settings.pd_sport_totals_overrides.get(
                                 meta[0], self._settings.pinnacle_totals_threshold
                             )
-                            strength_base = self._settings.pinnacle_totals_threshold
                         else:
                             threshold = self._settings.pd_sport_spread_overrides.get(
                                 meta[0], self._settings.pinnacle_spread_threshold
                             )
-                            strength_base = self._settings.pinnacle_spread_threshold
                     else:
                         continue
 
@@ -110,7 +105,7 @@ class PinnacleDivergenceDetector(BaseDetector):
                 if not _us_has_better_value(market_key, outcome_name, us_val, pin_val):
                     continue
 
-                strength = min(1.0, delta / (strength_base * 3))
+                strength = min(1.0, delta / (threshold * 3))
 
                 details: dict = {
                     "us_book": bm_key,

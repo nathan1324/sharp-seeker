@@ -263,9 +263,9 @@ async def test_sport_ml_prob_override(settings, repo):
     assert len(signals) == 1
     assert signals[0].details["us_book"] == "betmgm"
 
-    # Strength should use global threshold (0.03) not sport override (0.015)
-    # delta 0.0245 / (0.03 * 3) ≈ 0.272 — NOT 0.0245 / (0.015 * 3) ≈ 0.544
-    assert signals[0].strength < 0.30
+    # Strength uses sport threshold (0.015) so scores reflect the sport's scale.
+    # delta 0.0245 / (0.015 * 3) ≈ 0.544
+    assert 0.50 < signals[0].strength < 0.60
 
 
 @pytest.mark.asyncio
@@ -383,9 +383,9 @@ async def test_totals_sport_override_fires(settings, repo):
     assert len(signals) == 1
     assert signals[0].details["us_book"] == "draftkings"
 
-    # Strength uses global threshold (1.0) not sport override (0.5)
-    # delta 0.5 / (1.0 * 3) ≈ 0.17
-    assert signals[0].strength < 0.20
+    # Strength uses sport threshold (0.5) so scores reflect the sport's scale.
+    # delta 0.5 / (0.5 * 3) ≈ 0.33
+    assert 0.30 < signals[0].strength < 0.40
 
 
 @pytest.mark.asyncio
@@ -418,6 +418,6 @@ async def test_spread_sport_override_fires(settings, repo):
     assert signals[0].details["us_book"] == "draftkings"
     assert signals[0].details["delta"] == 0.5
 
-    # Strength uses global threshold (1.0) not sport override (0.5)
-    # delta 0.5 / (1.0 * 3) ≈ 0.17
-    assert signals[0].strength < 0.20
+    # Strength uses sport threshold (0.5) so scores reflect the sport's scale.
+    # delta 0.5 / (0.5 * 3) ≈ 0.33
+    assert 0.30 < signals[0].strength < 0.40
