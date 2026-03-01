@@ -61,6 +61,26 @@ def _format_odds(market: str, price: float | None, point: float | None) -> str:
     return " ".join(parts) if parts else "?"
 
 
+ET = ZoneInfo("America/New_York")
+
+
+def _format_game_time(commence_time: str) -> str:
+    """Format commence_time as a readable date/time in Eastern."""
+    if not commence_time:
+        return ""
+    try:
+        ct = datetime.fromisoformat(commence_time)
+        if ct.tzinfo is None:
+            ct = ct.replace(tzinfo=timezone.utc)
+        ct_et = ct.astimezone(ET)
+        day = ct_et.strftime("%a, %b")
+        dom = ct_et.day
+        hour = ct_et.strftime("%I:%M %p").lstrip("0")
+        return f"{day} {dom} \u2022 {hour} (ET)"
+    except (ValueError, TypeError):
+        return ""
+
+
 def _live_tag(commence_time: str) -> str:
     """Return a LIVE or PREGAME tag based on commence_time vs now."""
     if not commence_time:
@@ -171,7 +191,11 @@ class DiscordAlerter:
     def _build_description(self, sig: Signal, matchup: str, market_name: str) -> str:
         """Build the main description block with prominent line movement."""
         d = sig.details
-        lines = [f"**{matchup}**", ""]
+        game_time = _format_game_time(sig.commence_time)
+        lines = [f"**{matchup}**"]
+        if game_time:
+            lines.append(f"-# {game_time}")
+        lines.append("")
 
         bet_line = _bet_recommendation(sig, market_name)
 
