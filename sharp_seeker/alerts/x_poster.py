@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 import structlog
 import tweepy
+from discord_webhook import DiscordWebhook
 
 from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
@@ -56,6 +57,7 @@ class XPoster:
         self._digest_mode: bool = settings.x_digest_interval_hours > 0
         self._digest_buffer: list[Signal] = []
         self._digest_free_plays: list[Signal] = []
+        self._discord_webhook_url: str = settings.discord_webhook_url
         self._enabled = False
 
         if all([
@@ -125,11 +127,13 @@ class XPoster:
                 free_play_pick = self._pick_best_free_play(fp_candidates)
                 try:
                     text = self._format_free_play(free_play_pick)
-                    self._post_tweet(text)
+                    tweet_url = self._post_tweet(text)
                     await self._repo.mark_alert_free_play(
                         free_play_pick.event_id, free_play_pick.market_key,
                         free_play_pick.outcome_name,
                     )
+                    if tweet_url:
+                        self._notify_discord(tweet_url)
                     if self._digest_mode:
                         self._digest_free_plays.append(free_play_pick)
                     log.info(
@@ -366,7 +370,20 @@ class XPoster:
 
         return "\n".join(lines)
 
-    def _post_tweet(self, text: str) -> None:
-        """Send a tweet via the X API v2."""
+    def _post_tweet(self, text: str) -> str | None:
+        """Send a tweet via the X API v2. Returns the tweet URL if available."""
         assert self._client is not None
-        self._client.create_tweet(text=text)
+        resp = self._client.create_tweet(text=text)
+        try:
+            tweet_id = resp.data["id"]
+            return f"https://x.com/i/status/{tweet_id}"
+        except (TypeError, KeyError, AttributeError):
+            return None
+
+    def _notify_discord(self, tweet_url: str) -> None:
+        """Send the tweet link to the default Discord webhook."""
+        try:
+            webhook = DiscordWebhook(url=self._discord_webhook_url, content=tweet_url)
+            webhook.execute()
+        except Exception:
+            log.exception("discord_free_play_notify_failed")
