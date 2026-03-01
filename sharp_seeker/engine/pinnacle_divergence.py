@@ -90,8 +90,16 @@ class PinnacleDivergenceDetector(BaseDetector):
                         us_val = row["point"]
                         pin_val = pinnacle["point"]
                         delta = abs(us_val - pin_val)
-                        threshold = self._settings.pinnacle_spread_threshold
-                        strength_base = threshold
+                        if market_key == "totals":
+                            threshold = self._settings.pd_sport_totals_overrides.get(
+                                meta[0], self._settings.pinnacle_totals_threshold
+                            )
+                            strength_base = self._settings.pinnacle_totals_threshold
+                        else:
+                            threshold = self._settings.pd_sport_spread_overrides.get(
+                                meta[0], self._settings.pinnacle_spread_threshold
+                            )
+                            strength_base = self._settings.pinnacle_spread_threshold
                     else:
                         continue
 

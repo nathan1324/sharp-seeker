@@ -174,10 +174,13 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `STEAM_WINDOW_MINUTES` | `30` | Time window for steam moves |
 | `RAPID_SPREAD_THRESHOLD` | `0.5` | Min spread change (points) |
 | `RAPID_ML_THRESHOLD` | `20` | Min moneyline change (cents) |
-| `PINNACLE_SPREAD_THRESHOLD` | `1.0` | Divergence threshold (points) |
+| `PINNACLE_SPREAD_THRESHOLD` | `1.0` | Spread divergence threshold (points) |
+| `PINNACLE_TOTALS_THRESHOLD` | `1.0` | Totals divergence threshold (points) |
 | `PINNACLE_ML_PROB_THRESHOLD` | `0.03` | ML divergence threshold (implied prob, 3%) |
 | `PD_EXCLUDED_BOOKS` | `[]` | Books excluded from Pinnacle divergence detection (JSON array) |
 | `PD_SPORT_ML_PROB_OVERRIDES` | `{}` | Per-sport Pinnacle ML prob threshold (JSON, overrides global) |
+| `PD_SPORT_TOTALS_OVERRIDES` | `{}` | Per-sport Pinnacle totals threshold (JSON, overrides global) |
+| `PD_SPORT_SPREAD_OVERRIDES` | `{}` | Per-sport Pinnacle spread threshold (JSON, overrides global) |
 | `EXCHANGE_SHIFT_THRESHOLD` | `0.05` | Implied probability shift (5%) |
 | `MIN_SIGNAL_STRENGTH` | `0.5` | Min strength to alert (0.0–1.0) |
 | `SIGNAL_STRENGTH_OVERRIDES` | `{}` | Per-signal-type min strength (JSON, overrides global) |
