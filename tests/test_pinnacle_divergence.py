@@ -266,3 +266,158 @@ async def test_sport_ml_prob_override(settings, repo):
     # Strength should use global threshold (0.03) not sport override (0.015)
     # delta 0.0245 / (0.03 * 3) ≈ 0.272 — NOT 0.0245 / (0.015 * 3) ≈ 0.544
     assert signals[0].strength < 0.30
+
+
+@pytest.mark.asyncio
+async def test_totals_over_divergence(settings, repo):
+    """US book with lower Over total than Pinnacle should trigger with sport override.
+
+    DK Over 5.5 vs Pinnacle Over 6.0 — easier to go over at DK (0.5 delta).
+    NHL sport override lowers threshold to 0.5.
+    """
+    event = "evt_totals1"
+    t = "2025-01-15T12:00:00+00:00"
+
+    snapshots = [
+        _snap(event, "pinnacle", "totals", "Over", -110, 6.0, t, sport_key="icehockey_nhl"),
+        _snap(event, "draftkings", "totals", "Over", -110, 5.5, t, sport_key="icehockey_nhl"),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    settings.pd_sport_totals_overrides = {"icehockey_nhl": 0.5}
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 1
+    assert signals[0].details["us_book"] == "draftkings"
+    assert signals[0].details["delta"] == 0.5
+    assert signals[0].market_key == "totals"
+
+
+@pytest.mark.asyncio
+async def test_totals_under_divergence(settings, repo):
+    """US book with higher Under total than Pinnacle should trigger with sport override.
+
+    FanDuel Under 6.5 vs Pinnacle Under 6.0 — easier to stay under at FD (0.5 delta).
+    """
+    event = "evt_totals2"
+    t = "2025-01-15T12:00:00+00:00"
+
+    snapshots = [
+        _snap(event, "pinnacle", "totals", "Under", -110, 6.0, t, sport_key="icehockey_nhl"),
+        _snap(event, "fanduel", "totals", "Under", -110, 6.5, t, sport_key="icehockey_nhl"),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    settings.pd_sport_totals_overrides = {"icehockey_nhl": 0.5}
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 1
+    assert signals[0].details["us_book"] == "fanduel"
+    assert signals[0].details["delta"] == 0.5
+
+
+@pytest.mark.asyncio
+async def test_totals_no_fire_below_threshold(settings, repo):
+    """Totals divergence below threshold should NOT fire."""
+    event = "evt_totals3"
+    t = "2025-01-15T12:00:00+00:00"
+
+    # Same total — no divergence
+    snapshots = [
+        _snap(event, "pinnacle", "totals", "Over", -110, 6.0, t),
+        _snap(event, "draftkings", "totals", "Over", -110, 6.0, t),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 0
+
+
+@pytest.mark.asyncio
+async def test_totals_no_fire_without_sport_override(settings, repo):
+    """NHL totals at 0.5 delta should NOT fire without sport override.
+
+    Global totals threshold is 1.0 — a 0.5-point divergence is below it.
+    """
+    event = "evt_totals4"
+    t = "2025-01-15T12:00:00+00:00"
+
+    snapshots = [
+        _snap(event, "pinnacle", "totals", "Over", -110, 6.0, t, sport_key="icehockey_nhl"),
+        _snap(event, "draftkings", "totals", "Over", -110, 5.5, t, sport_key="icehockey_nhl"),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    # No sport override — global 1.0 threshold applies
+    settings.pd_sport_totals_overrides = {}
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 0
+
+
+@pytest.mark.asyncio
+async def test_totals_sport_override_fires(settings, repo):
+    """NHL totals at 0.5 delta SHOULD fire with sport override at 0.5.
+
+    Verifies sport override lowers the threshold for NHL only.
+    """
+    event = "evt_totals5"
+    t = "2025-01-15T12:00:00+00:00"
+
+    snapshots = [
+        _snap(event, "pinnacle", "totals", "Over", -110, 6.0, t, sport_key="icehockey_nhl"),
+        _snap(event, "draftkings", "totals", "Over", -110, 5.5, t, sport_key="icehockey_nhl"),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    # With NHL override at 0.5 — should fire
+    settings.pd_sport_totals_overrides = {"icehockey_nhl": 0.5}
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 1
+    assert signals[0].details["us_book"] == "draftkings"
+
+    # Strength uses global threshold (1.0) not sport override (0.5)
+    # delta 0.5 / (1.0 * 3) ≈ 0.17
+    assert signals[0].strength < 0.20
+
+
+@pytest.mark.asyncio
+async def test_spread_sport_override_fires(settings, repo):
+    """NBA spread at 0.5 delta should fire with sport override at 0.5.
+
+    Global spread threshold is 1.0 — without override this wouldn't fire.
+    """
+    event = "evt_spread_override"
+    t = "2025-01-15T12:00:00+00:00"
+
+    # DK has -2.5 vs Pinnacle -3.0 — 0.5 better for bettor at DK
+    snapshots = [
+        _snap(event, "pinnacle", "spreads", "Lakers", -110, -3.0, t),
+        _snap(event, "draftkings", "spreads", "Lakers", -110, -2.5, t),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    # Without override — global 1.0 threshold, 0.5 delta should NOT fire
+    settings.pd_sport_spread_overrides = {}
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+    assert len(signals) == 0
+
+    # With NBA override at 0.5 — should fire
+    settings.pd_sport_spread_overrides = {"basketball_nba": 0.5}
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+    assert len(signals) == 1
+    assert signals[0].details["us_book"] == "draftkings"
+    assert signals[0].details["delta"] == 0.5
+
+    # Strength uses global threshold (1.0) not sport override (0.5)
+    # delta 0.5 / (1.0 * 3) ≈ 0.17
+    assert signals[0].strength < 0.20
