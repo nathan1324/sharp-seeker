@@ -120,9 +120,12 @@ class XPoster:
         if free_play_due:
             # Never pick a game we already sent a free play for (avoids opposite-side picks)
             past_fp_events = await self._repo.get_free_play_event_ids()
-            fp_candidates = [s for s in eligible if s.event_id not in past_fp_events]
+            fp_candidates = [
+                s for s in eligible
+                if s.event_id not in past_fp_events and s.strength >= 0.50
+            ]
             if not fp_candidates:
-                log.info("x_free_play_skipped", reason="all_candidates_repeat_game")
+                log.info("x_free_play_skipped", reason="no_eligible_candidates")
             else:
                 free_play_pick = self._pick_best_free_play(fp_candidates)
                 try:
