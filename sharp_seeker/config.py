@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     # Example: {"pinnacle_divergence": [14], "reverse_line": [3, 20, 21]}
     signal_quiet_hours: dict[str, list[int]] = Field(default_factory=dict)
 
+    # Signal blocklist — block specific type:market or type:sport:market combos (JSON array in .env)
+    # 2-key patterns ("steam_move:h2h") block across all sports.
+    # 3-key patterns ("rapid_change:basketball_ncaab:h2h") block only that sport.
+    signal_blocklist: list[str] = Field(default_factory=list)
+
     # Alert dedup
     alert_cooldown_minutes: int = 60
 
