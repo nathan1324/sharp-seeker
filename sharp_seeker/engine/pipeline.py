@@ -86,6 +86,7 @@ class DetectionPipeline:
             ReverseLineDetector(settings, repo),
             ExchangeMonitorDetector(settings, repo),
         ]
+        self._blocklist: frozenset[str] = frozenset(settings.signal_blocklist)
 
     def _get_min_strength(self, signal_type: str, market_key: str, sport_key: str) -> float:
         """Resolve min strength via tiered lookup: market > sport > type > global."""
@@ -100,6 +101,12 @@ class DetectionPipeline:
             return sport_override
         # 3. Type-level
         return s.signal_strength_overrides.get(signal_type, s.min_signal_strength)
+
+    def _is_blocklisted(self, signal_type: str, sport_key: str, market_key: str) -> bool:
+        """Check if a signal matches any blocklist pattern (2-key or 3-key)."""
+        two_key = f"{signal_type}:{market_key}"
+        three_key = f"{signal_type}:{sport_key}:{market_key}"
+        return two_key in self._blocklist or three_key in self._blocklist
 
     async def run(self, fetched_at: str) -> list[Signal]:
         """Run all detectors on all events from a fetch cycle, return deduplicated signals."""
@@ -149,6 +156,22 @@ class DetectionPipeline:
                 log.info(
                     "max_strength_filter",
                     dropped=before_cap - len(strong_signals),
+                    remaining=len(strong_signals),
+                )
+
+        # Filter by signal blocklist (2-key type:market or 3-key type:sport:market)
+        if self._blocklist:
+            before_bl = len(strong_signals)
+            strong_signals = [
+                s for s in strong_signals
+                if not self._is_blocklisted(
+                    s.signal_type.value, s.sport_key, s.market_key
+                )
+            ]
+            if len(strong_signals) < before_bl:
+                log.info(
+                    "blocklist_filter",
+                    dropped=before_bl - len(strong_signals),
                     remaining=len(strong_signals),
                 )
 

@@ -32,15 +32,16 @@ Every report embed includes a **downloadable CSV attachment** with the full resu
 
 ### Signal Pipeline
 
-Raw signals pass through a 7-stage filter before alerting:
+Raw signals pass through an 8-stage filter before alerting:
 
 1. **Min strength filter** — tiered lookup: market override > sport override > type override > global `MIN_SIGNAL_STRENGTH`
 2. **Max strength cap** — per-type ceiling via `MAX_SIGNAL_STRENGTH_OVERRIDES` (drops trap signals with suspiciously high strength)
-3. **Quiet hours filter** — suppresses specific signal types during configured UTC hours via `SIGNAL_QUIET_HOURS`
-4. **Live signal filter** — drops signals for games that have already started
-5. **Market-side dedup** — when both sides of a spread/total fire, keeps only the actionable side using signal-type-aware logic
-6. **Value books filter** — requires at least one actionable value bet
-7. **Cooldown dedup** — suppresses repeat alerts for the same (event, signal, market, outcome) within 60 minutes
+3. **Blocklist filter** — drops losing type+market combos via `SIGNAL_BLOCKLIST` (supports 2-key `type:market` and 3-key `type:sport:market` patterns)
+4. **Quiet hours filter** — suppresses specific signal types during configured UTC hours via `SIGNAL_QUIET_HOURS`
+5. **Live signal filter** — drops signals for games that have already started
+6. **Market-side dedup** — when both sides of a spread/total fire, keeps only the actionable side using signal-type-aware logic
+7. **Value books filter** — requires at least one actionable value bet
+8. **Cooldown dedup** — suppresses repeat alerts for the same (event, signal, market, outcome) within 60 minutes
 
 #### Tiered Strength Lookup
 
@@ -188,6 +189,7 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `SIGNAL_MARKET_STRENGTH_OVERRIDES` | `{}` | Per-signal-type + market min strength (JSON, compound keys) |
 | `SIGNAL_SPORT_STRENGTH_OVERRIDES` | `{}` | Per-signal-type + sport min strength (JSON, compound keys) |
 | `SIGNAL_QUIET_HOURS` | `{}` | Suppress signal types at specific UTC hours (JSON) |
+| `SIGNAL_BLOCKLIST` | `[]` | Block losing type:market or type:sport:market combos (JSON array) |
 | `ALERT_COOLDOWN_MINUTES` | `60` | Dedup cooldown per signal |
 | `X_CONSUMER_KEY` | — | X OAuth 1.0a consumer key (optional) |
 | `X_CONSUMER_SECRET` | — | X OAuth 1.0a consumer secret (optional) |

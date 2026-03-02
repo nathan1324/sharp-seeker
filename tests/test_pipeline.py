@@ -609,3 +609,117 @@ async def test_max_strength_cap_boundary(repo):
     signals_exact = await pipeline_exact.run(t2)
     steam_exact = [s for s in signals_exact if s.signal_type == SignalType.STEAM_MOVE]
     assert len(steam_exact) == 0, "Signal at exactly cap should be filtered (strict <)"
+
+
+# ── Blocklist filter tests ──────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_blocklist_two_key(repo):
+    """A 2-key blocklist pattern (type:market) blocks across all sports,
+    while the same type on a different market passes through."""
+    event = "evt_bl2"
+    t1 = "2025-01-15T12:00:00+00:00"
+    t2 = "2025-01-15T12:20:00+00:00"
+
+    # Create data that triggers a steam move on spreads
+    snapshots = []
+    for bm in ("draftkings", "fanduel", "betmgm"):
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    await repo.insert_snapshots(snapshots)
+
+    # Block steam_move:h2h — should NOT affect spreads
+    settings_bl = Settings(
+        odds_api_key="test_key",
+        discord_webhook_url="https://discord.com/api/webhooks/test/test",
+        db_path=":memory:",
+        signal_blocklist=["steam_move:h2h"],
+    )
+    pipeline = DetectionPipeline(settings_bl, repo)
+    signals = await pipeline.run(t2)
+    steam = [s for s in signals if s.signal_type == SignalType.STEAM_MOVE]
+    assert len(steam) > 0, "steam_move:spreads should pass when only h2h is blocklisted"
+
+    # Now block steam_move:spreads — should be filtered
+    settings_bl2 = Settings(
+        odds_api_key="test_key",
+        discord_webhook_url="https://discord.com/api/webhooks/test/test",
+        db_path=":memory:",
+        signal_blocklist=["steam_move:spreads"],
+    )
+    pipeline2 = DetectionPipeline(settings_bl2, repo)
+    signals2 = await pipeline2.run(t2)
+    steam2 = [s for s in signals2 if s.signal_type == SignalType.STEAM_MOVE]
+    assert len(steam2) == 0, "steam_move:spreads should be blocked by 2-key blocklist"
+
+
+@pytest.mark.asyncio
+async def test_blocklist_three_key(repo):
+    """A 3-key blocklist pattern (type:sport:market) blocks only that sport,
+    while the same type+market on a different sport passes through."""
+    event = "evt_bl3"
+    t1 = "2025-01-15T12:00:00+00:00"
+    t2 = "2025-01-15T12:20:00+00:00"
+
+    # Data triggers steam_move on basketball_nba spreads
+    snapshots = []
+    for bm in ("draftkings", "fanduel", "betmgm"):
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    await repo.insert_snapshots(snapshots)
+
+    # Block steam_move:basketball_ncaab:spreads — should NOT affect basketball_nba
+    settings_bl = Settings(
+        odds_api_key="test_key",
+        discord_webhook_url="https://discord.com/api/webhooks/test/test",
+        db_path=":memory:",
+        signal_blocklist=["steam_move:basketball_ncaab:spreads"],
+    )
+    pipeline = DetectionPipeline(settings_bl, repo)
+    signals = await pipeline.run(t2)
+    steam = [s for s in signals if s.signal_type == SignalType.STEAM_MOVE]
+    assert len(steam) > 0, "basketball_nba should pass when only ncaab is blocklisted"
+
+    # Block steam_move:basketball_nba:spreads — should filter it
+    settings_bl2 = Settings(
+        odds_api_key="test_key",
+        discord_webhook_url="https://discord.com/api/webhooks/test/test",
+        db_path=":memory:",
+        signal_blocklist=["steam_move:basketball_nba:spreads"],
+    )
+    pipeline2 = DetectionPipeline(settings_bl2, repo)
+    signals2 = await pipeline2.run(t2)
+    steam2 = [s for s in signals2 if s.signal_type == SignalType.STEAM_MOVE]
+    assert len(steam2) == 0, "basketball_nba should be blocked by 3-key blocklist"
+
+
+@pytest.mark.asyncio
+async def test_blocklist_empty(repo):
+    """Empty blocklist passes everything through (backwards compat)."""
+    event = "evt_bl0"
+    t1 = "2025-01-15T12:00:00+00:00"
+    t2 = "2025-01-15T12:20:00+00:00"
+
+    snapshots = []
+    for bm in ("draftkings", "fanduel", "betmgm"):
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
+        snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    await repo.insert_snapshots(snapshots)
+
+    settings_empty = Settings(
+        odds_api_key="test_key",
+        discord_webhook_url="https://discord.com/api/webhooks/test/test",
+        db_path=":memory:",
+        signal_blocklist=[],
+    )
+    pipeline = DetectionPipeline(settings_empty, repo)
+    signals = await pipeline.run(t2)
+    steam = [s for s in signals if s.signal_type == SignalType.STEAM_MOVE]
+    assert len(steam) > 0, "Signals should pass with empty blocklist"
