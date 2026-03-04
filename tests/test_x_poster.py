@@ -1363,3 +1363,99 @@ async def test_legacy_mode_unchanged(settings, repo):
     assert "Sharp money detected" in call_text
     # Buffer should be empty
     assert len(poster._digest_buffer) == 0
+
+
+# ── Weekly recap ──────────────────────────────────────────────────
+
+
+def test_format_weekly_recap_with_results(settings, repo):
+    """Won/lost results format correctly in the weekly recap."""
+    poster = XPoster(settings, repo)
+    poster._cta_url = "https://discord.gg/test"
+
+    results = [
+        {"outcome_name": "Lakers", "market_key": "spreads", "result": "won",
+         "signal_strength": 0.85, "event_id": "e1", "sent_at": "2099-01-15",
+         "details_json": json.dumps({"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]})},
+        {"outcome_name": "Chiefs", "market_key": "h2h", "result": "lost",
+         "signal_strength": 0.70, "event_id": "e2", "sent_at": "2099-01-15",
+         "details_json": json.dumps({"value_books": [{"bookmaker": "fanduel", "price": 150}]})},
+        {"outcome_name": "Celtics", "market_key": "spreads", "result": "won",
+         "signal_strength": 0.80, "event_id": "e3", "sent_at": "2099-01-16",
+         "details_json": json.dumps({"value_books": [{"bookmaker": "betmgm", "price": -105, "point": -2.5}]})},
+    ]
+
+    text = poster._format_weekly_recap(results)
+    assert "Weekly Free Plays" in text
+    assert "\u2705" in text  # won emoji
+    assert "\u274c" in text  # lost emoji
+    assert "Lakers" in text
+    assert "Chiefs" in text
+    assert "Celtics" in text
+    assert "Record: 2-1" in text
+    assert "discord.gg/test" in text
+    assert len(text) <= 280
+
+
+def test_format_weekly_recap_truncation(settings, repo):
+    """Many picks should truncate with '...and N more' and stay <= 280 chars."""
+    poster = XPoster(settings, repo)
+    poster._cta_url = "https://discord.gg/test"
+
+    results = []
+    for i in range(15):
+        results.append({
+            "outcome_name": f"Team{i}LongName",
+            "market_key": "spreads",
+            "result": "won" if i % 2 == 0 else "lost",
+            "signal_strength": 0.70,
+            "event_id": f"e{i}",
+            "sent_at": "2099-01-15",
+            "details_json": json.dumps({"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]}),
+        })
+
+    text = poster._format_weekly_recap(results)
+    assert len(text) <= 280
+    assert "...and" in text
+    assert "more" in text
+    assert "Weekly Free Plays" in text
+    assert "Record:" in text
+
+
+@pytest.mark.asyncio
+async def test_post_weekly_recap_empty(settings, repo):
+    """No free plays in 168-hour window → no tweet posted."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    await poster.post_weekly_recap()
+
+    poster._client.create_tweet.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_post_weekly_recap_calls_tweepy(settings, repo):
+    """When free plays exist in the past week, weekly recap tweet is posted."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._cta_url = "https://discord.gg/test"
+
+    # Insert a free play alert
+    await repo.record_alert(
+        event_id="evt_weekly",
+        alert_type="pinnacle_divergence",
+        market_key="spreads",
+        outcome_name="Lakers",
+        is_free_play=True,
+    )
+
+    await poster.post_weekly_recap()
+
+    poster._client.create_tweet.assert_called_once()
+    call_text = poster._client.create_tweet.call_args.kwargs["text"]
+    assert "Weekly Free Plays" in call_text
+    assert "Lakers" in call_text

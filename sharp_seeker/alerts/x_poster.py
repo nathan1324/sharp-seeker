@@ -326,6 +326,92 @@ class XPoster:
         self._post_tweet(text)
         log.info("x_recap_posted", free_plays=len(results))
 
+    async def post_weekly_recap(self) -> None:
+        """Post a weekly recap of this week's free plays to X."""
+        if not self._enabled:
+            log.info("x_weekly_recap_skipped", reason="disabled")
+            return
+
+        since = (datetime.now(timezone.utc) - timedelta(hours=168)).isoformat()
+        results = await self._repo.get_free_play_results_since(since)
+        if not results:
+            log.info("x_weekly_recap_skipped", reason="no_free_plays")
+            return
+
+        text = self._format_weekly_recap(results)
+        self._post_tweet(text)
+        log.info("x_weekly_recap_posted", free_plays=len(results))
+
+    def _format_weekly_recap(self, results: list) -> str:
+        """Format a weekly recap tweet from free play results (max 280 chars)."""
+        _RESULT_EMOJI = {
+            "won": "\u2705",
+            "lost": "\u274c",
+            "push": "\u21a9\ufe0f",
+        }
+        header = "\U0001f4ca Weekly Free Plays"
+
+        # Build per-pick lines
+        lines: list[str] = []
+        wins = losses = 0
+        for row in results:
+            row_dict = dict(row) if not isinstance(row, dict) else row
+            result = row_dict.get("result")
+            outcome = row_dict["outcome_name"]
+            market = row_dict["market_key"]
+
+            odds_str = ""
+            details_raw = row_dict.get("details_json")
+            if details_raw:
+                try:
+                    details = json.loads(details_raw) if isinstance(details_raw, str) else details_raw
+                    value_books = details.get("value_books", [])
+                    if value_books:
+                        best = value_books[0]
+                        odds_str = " " + _format_odds(market, best.get("price"), best.get("point"))
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            if result:
+                emoji = _RESULT_EMOJI.get(result, "\u2753")
+                label = result.upper()
+                lines.append(f"{emoji} {outcome}{odds_str} \u2014 {label}")
+                if result == "won":
+                    wins += 1
+                elif result == "lost":
+                    losses += 1
+            else:
+                lines.append(f"\u23f3 {outcome}{odds_str} \u2014 PENDING")
+
+        # Fixed footer — always shown
+        footer_parts: list[str] = []
+        decided = wins + losses
+        if decided > 0:
+            footer_parts.append(f"Record: {wins}-{losses}")
+        if self._cta_url:
+            footer_parts.append(f"Get all picks \u2192 {self._cta_url}")
+        footer = "\n".join(footer_parts)
+
+        # Try all lines first
+        body = "\n".join(lines)
+        tweet = f"{header}\n\n{body}\n\n{footer}" if footer else f"{header}\n\n{body}"
+        if len(tweet) <= 280:
+            return tweet
+
+        # Remove lines from the end until it fits with "...and N more"
+        for show in range(len(lines) - 1, 0, -1):
+            omitted = len(lines) - show
+            body = "\n".join(lines[:show])
+            suffix = f"\n...and {omitted} more"
+            tweet = f"{header}\n\n{body}{suffix}\n\n{footer}" if footer else f"{header}\n\n{body}{suffix}"
+            if len(tweet) <= 280:
+                return tweet
+
+        # Fallback: header + count + footer only
+        total = len(lines)
+        tweet = f"{header}\n\n...and {total} more\n\n{footer}" if footer else f"{header}\n\n...and {total} more"
+        return tweet
+
     def _format_recap(self, results: list) -> str:
         """Format a recap tweet from free play results."""
         _RESULT_EMOJI = {"won": "\u2705", "lost": "\u274c", "push": "\u21a9\ufe0f"}
