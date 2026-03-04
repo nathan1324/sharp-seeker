@@ -280,6 +280,7 @@ The daemon runs these jobs automatically via APScheduler:
 | **Free play recap** | **12:45** | **5:45 AM** | Tweet yesterday's free play results |
 | **Daily report** | **12:45** | **5:45 AM** | Per-type + combined performance report |
 | **Weekly report** | **Mon 12:45** | **Mon 5:45 AM** | Weekly summary |
+| **Weekly X recap** | **Sun 18:00** | **Sun 11:00 AM** | Post weekly free play results to X |
 | Budget summary | 00:00 | 5:00 PM (prev day) | API credit usage |
 
 Grading runs 15 minutes before the reports so that results are included. Quiet hours (default 01:00–13:00 UTC) only affect odds polling — reports and grading run regardless.

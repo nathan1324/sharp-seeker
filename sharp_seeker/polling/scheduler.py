@@ -116,6 +116,13 @@ class Poller:
         except Exception:
             log.exception("daily_recap_error")
 
+    async def weekly_recap(self) -> None:
+        """Post weekly free play recap to X."""
+        try:
+            await self._x_poster.post_weekly_recap()
+        except Exception:
+            log.exception("weekly_recap_error")
+
     async def post_digest(self) -> None:
         """Post batched signal digest to X."""
         try:
@@ -173,6 +180,17 @@ def create_scheduler(poller: Poller, settings: Settings) -> AsyncIOScheduler:
         minute=45,
         id="daily_recap",
         name="Post daily free play recap to X",
+    )
+
+    # Weekly free play recap tweet at 18:00 UTC (11:00 AM MT) on Sundays
+    scheduler.add_job(
+        poller.weekly_recap,
+        "cron",
+        day_of_week="sun",
+        hour=18,
+        minute=0,
+        id="weekly_recap",
+        name="Post weekly free play recap to X",
     )
 
     # Daily signal performance report at 12:45 UTC (5:45 AM MT) — after grading
