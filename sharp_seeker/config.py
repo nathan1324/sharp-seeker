@@ -106,6 +106,10 @@ class Settings(BaseSettings):
     # 3-key patterns ("rapid_change:basketball_ncaab:h2h") block only that sport.
     signal_blocklist: list[str] = Field(default_factory=list)
 
+    # Signal best combos — highlight high-confidence type:sport:market combos (JSON array in .env)
+    # 3-key patterns: "signal_type:sport_key:market_key"
+    signal_best_combos: list[str] = Field(default_factory=list)
+
     # Alert dedup
     alert_cooldown_minutes: int = 60
 

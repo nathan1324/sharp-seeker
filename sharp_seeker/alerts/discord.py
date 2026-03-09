@@ -128,6 +128,12 @@ class DiscordAlerter:
                 self._webhook_urls[sig_type] = url
         # Per-sport+signal overrides: "signal_type:sport_key" → webhook URL
         self._webhook_overrides: dict[str, str] = settings.discord_webhook_overrides
+        # Best combos — high-confidence type:sport:market patterns
+        self._best_combos: set[str] = set(settings.signal_best_combos)
+
+    def _is_best_combo(self, sig: Signal) -> bool:
+        key = f"{sig.signal_type.value}:{sig.sport_key}:{sig.market_key}"
+        return key in self._best_combos
 
     async def send_signals(self, signals: list[Signal]) -> None:
         """Send each signal as a Discord embed and record it."""
@@ -173,6 +179,14 @@ class DiscordAlerter:
         embed.add_embed_field(
             name="Strength", value=_strength_bar(sig.strength), inline=False
         )
+
+        # Top performer badge for high-confidence combos
+        if self._best_combos and self._is_best_combo(sig):
+            embed.add_embed_field(
+                name="\u2b50 Top Performer",
+                value="High-confidence combo",
+                inline=False,
+            )
 
         # Signal-type-specific details
         self._add_details(embed, sig, market_name)
