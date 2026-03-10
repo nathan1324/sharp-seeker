@@ -191,6 +191,7 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `SIGNAL_QUIET_HOURS` | `{}` | Suppress signal types at specific UTC hours (JSON) |
 | `SIGNAL_BLOCKLIST` | `[]` | Block losing type:market or type:sport:market combos (JSON array) |
 | `SIGNAL_BEST_COMBOS` | `[]` | Tag high-confidence type:sport:market combos on Discord embeds (JSON array) |
+| `SIGNAL_BEST_HOURS` | `{}` | Tag high-confidence type:hour(MST) combos on Discord embeds (JSON) |
 | `ALERT_COOLDOWN_MINUTES` | `60` | Dedup cooldown per signal |
 | `X_CONSUMER_KEY` | — | X OAuth 1.0a consumer key (optional) |
 | `X_CONSUMER_SECRET` | — | X OAuth 1.0a consumer secret (optional) |
