@@ -110,6 +110,10 @@ class Settings(BaseSettings):
     # 3-key patterns: "signal_type:sport_key:market_key"
     signal_best_combos: list[str] = Field(default_factory=list)
 
+    # Signal best hours — highlight high-confidence type:hour(MST) combos (JSON object in .env)
+    # Keys: signal type, values: list of MST hours (0-23)
+    signal_best_hours: dict[str, list[int]] = Field(default_factory=dict)
+
     # Alert dedup
     alert_cooldown_minutes: int = 60
 

@@ -1,7 +1,8 @@
-"""Tests for Discord alerter — best combo badge."""
+"""Tests for Discord alerter — best combo and best hour badges."""
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -112,3 +113,97 @@ def test_best_combo_empty_config(mock_webhook_cls):
     embed = mock_instance.add_embed.call_args[0][0]
     field_names = [f["name"] for f in embed.fields]
     assert "\u2b50 Top Performer" not in field_names
+
+
+# ── Best hour badge tests ──────────────────────────────────────
+
+
+def _utc_for_mst_hour(hour: int) -> datetime:
+    """Return a UTC datetime whose MST equivalent has the given hour."""
+    # MST = UTC-7, so UTC hour = MST hour + 7
+    return datetime(2025, 6, 15, (hour + 7) % 24, 30, 0, tzinfo=timezone.utc)
+
+
+@patch("sharp_seeker.alerts.discord.datetime")
+@patch("sharp_seeker.alerts.discord.DiscordWebhook")
+def test_best_hour_badge_shown(mock_webhook_cls, mock_dt):
+    """Signal matching a best hour gets the badge."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_instance = MagicMock()
+    mock_instance.execute.return_value = mock_resp
+    mock_webhook_cls.return_value = mock_instance
+
+    # Make datetime.now() return MST hour 16 (UTC 23)
+    mock_dt.now.return_value = _utc_for_mst_hour(16)
+    mock_dt.fromisoformat = datetime.fromisoformat
+    mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+
+    settings = _make_settings(
+        signal_best_hours={"pinnacle_divergence": [6, 12, 14, 16, 17]},
+    )
+    alerter = DiscordAlerter(settings, repo=MagicMock())
+    sig = _make_signal()  # PD — matches hour 16
+
+    alerter._send_embed(sig)
+
+    embed = mock_instance.add_embed.call_args[0][0]
+    field_names = [f["name"] for f in embed.fields]
+    assert "\u2b50 Top Performer" in field_names
+
+
+@patch("sharp_seeker.alerts.discord.datetime")
+@patch("sharp_seeker.alerts.discord.DiscordWebhook")
+def test_best_hour_badge_not_shown(mock_webhook_cls, mock_dt):
+    """Signal NOT matching a best hour should have no badge."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_instance = MagicMock()
+    mock_instance.execute.return_value = mock_resp
+    mock_webhook_cls.return_value = mock_instance
+
+    # MST hour 10 — not in the best hours list
+    mock_dt.now.return_value = _utc_for_mst_hour(10)
+    mock_dt.fromisoformat = datetime.fromisoformat
+    mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+
+    settings = _make_settings(
+        signal_best_hours={"pinnacle_divergence": [6, 12, 14, 16, 17]},
+    )
+    alerter = DiscordAlerter(settings, repo=MagicMock())
+    sig = _make_signal()
+
+    alerter._send_embed(sig)
+
+    embed = mock_instance.add_embed.call_args[0][0]
+    field_names = [f["name"] for f in embed.fields]
+    assert "\u2b50 Top Performer" not in field_names
+
+
+@patch("sharp_seeker.alerts.discord.datetime")
+@patch("sharp_seeker.alerts.discord.DiscordWebhook")
+def test_best_hour_or_combo(mock_webhook_cls, mock_dt):
+    """Signal matches best hour but NOT best combo — still gets badge."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_instance = MagicMock()
+    mock_instance.execute.return_value = mock_resp
+    mock_webhook_cls.return_value = mock_instance
+
+    # MST hour 16 — matches best hour for PD
+    mock_dt.now.return_value = _utc_for_mst_hour(16)
+    mock_dt.fromisoformat = datetime.fromisoformat
+    mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+
+    settings = _make_settings(
+        signal_best_combos=["pinnacle_divergence:basketball_nba:spreads"],  # won't match totals
+        signal_best_hours={"pinnacle_divergence": [16]},
+    )
+    alerter = DiscordAlerter(settings, repo=MagicMock())
+    sig = _make_signal(market_key="totals")  # combo won't match, but hour will
+
+    alerter._send_embed(sig)
+
+    embed = mock_instance.add_embed.call_args[0][0]
+    field_names = [f["name"] for f in embed.fields]
+    assert "\u2b50 Top Performer" in field_names
