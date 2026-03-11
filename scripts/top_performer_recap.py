@@ -105,6 +105,7 @@ def main():
     # --- Untagged signals ---
     untagged_w = sum(1 for r in untagged if r["result"] == "won")
     untagged_l = sum(1 for r in untagged if r["result"] == "lost")
+    untagged_p = sum(1 for r in untagged if r["result"] == "push")
     untagged_resolved = untagged_w + untagged_l
     untagged_pct = untagged_w / untagged_resolved * 100 if untagged_resolved else 0
 
