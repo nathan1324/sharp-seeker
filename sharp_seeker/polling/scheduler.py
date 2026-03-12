@@ -173,63 +173,63 @@ def create_scheduler(poller: Poller, settings: Settings) -> AsyncIOScheduler:
         name="Send daily budget summary",
     )
 
-    # Resolve signals at 12:30 UTC (5:30 AM MT) — grade yesterday's games
+    # Resolve signals at 11:30 UTC (5:30 AM MDT) — grade yesterday's games
     scheduler.add_job(
         poller.resolve_signals,
         "cron",
-        hour=12,
+        hour=11,
         minute=30,
         id="resolve_signals",
         name="Grade signals against final scores",
     )
 
-    # Daily free play recap tweet at 12:45 UTC (5:45 AM MT) — after grading
+    # Daily free play recap tweet at 11:45 UTC (5:45 AM MDT) — after grading
     scheduler.add_job(
         poller.daily_recap,
         "cron",
-        hour=12,
+        hour=11,
         minute=45,
         id="daily_recap",
         name="Post daily free play recap to X",
     )
 
-    # Weekly free play recap tweet at 18:00 UTC (11:00 AM MT) on Sundays
+    # Weekly free play recap tweet at 17:00 UTC (11:00 AM MDT) on Sundays
     scheduler.add_job(
         poller.weekly_recap,
         "cron",
         day_of_week="sun",
-        hour=18,
+        hour=17,
         minute=0,
         id="weekly_recap",
         name="Post weekly free play recap to X",
     )
 
-    # Daily signal performance report at 12:45 UTC (5:45 AM MT) — after grading
+    # Daily signal performance report at 11:45 UTC (5:45 AM MDT) — after grading
     scheduler.add_job(
         poller.daily_report,
         "cron",
-        hour=12,
+        hour=11,
         minute=45,
         id="daily_report",
         name="Send daily signal report",
     )
 
-    # Daily results card images at 12:46 UTC (5:46 AM MST) — after recap
+    # Daily results card images at 11:46 UTC (5:46 AM MDT) — after recap
     scheduler.add_job(
         poller.generate_daily_cards,
         "cron",
-        hour=12,
+        hour=11,
         minute=46,
         id="daily_cards",
         name="Generate daily results card images",
     )
 
-    # Weekly report every Monday at 12:45 UTC (5:45 AM MT)
+    # Weekly report every Monday at 11:45 UTC (5:45 AM MDT)
     scheduler.add_job(
         poller.weekly_report,
         "cron",
         day_of_week="mon",
-        hour=12,
+        hour=11,
         minute=45,
         id="weekly_report",
         name="Send weekly signal report",
