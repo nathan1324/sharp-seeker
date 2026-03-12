@@ -13,6 +13,10 @@ from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
 from sharp_seeker.engine.base import Signal, SignalType
 
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from sharp_seeker.analysis.card_generator import CardGenerator
+
 log = structlog.get_logger()
 
 # Human-readable labels for signal types
@@ -43,8 +47,14 @@ def _format_odds(market: str, price: float | None, point: float | None) -> str:
 class XPoster:
     """Posts signal teasers (and occasional free plays) to X."""
 
-    def __init__(self, settings: Settings, repo: Repository) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        repo: Repository,
+        card_gen: CardGenerator | None = None,
+    ) -> None:
         self._repo = repo
+        self._card_gen = card_gen
         self._cta_url = settings.x_cta_url
         self._free_play_interval = settings.x_free_play_interval
         self._free_play_weekend_interval = settings.x_free_play_weekend_interval
@@ -59,6 +69,7 @@ class XPoster:
         self._digest_free_plays: list[Signal] = []
         self._discord_webhook_url: str = settings.discord_webhook_url
         self._enabled = False
+        self._api: tweepy.API | None = None
 
         if all([
             settings.x_consumer_key,
@@ -72,6 +83,14 @@ class XPoster:
                 access_token=settings.x_access_token,
                 access_token_secret=settings.x_access_token_secret,
             )
+            # v1.1 API for media uploads (create_tweet only accepts media_ids)
+            auth = tweepy.OAuth1UserHandler(
+                settings.x_consumer_key,
+                settings.x_consumer_secret,
+                settings.x_access_token,
+                settings.x_access_token_secret,
+            )
+            self._api = tweepy.API(auth)
             self._enabled = True
             log.info("x_poster_enabled")
         else:
@@ -311,7 +330,7 @@ class XPoster:
         return f"{header}\n\n...and {total} more{cta}"
 
     async def post_daily_recap(self) -> None:
-        """Post a daily recap of yesterday's free plays to X."""
+        """Post a daily recap of yesterday's free plays to X, with card image."""
         if not self._enabled:
             log.info("x_recap_skipped", reason="disabled")
             return
@@ -323,8 +342,22 @@ class XPoster:
             return
 
         text = self._format_recap(results)
-        self._post_tweet(text)
-        log.info("x_recap_posted", free_plays=len(results))
+
+        # Generate card images and attach the square one to the tweet
+        media_ids = None
+        if self._card_gen is not None:
+            try:
+                paths = await self._card_gen.generate_daily_cards()
+                square = [p for p in paths if "1080x1080" in p]
+                if square:
+                    media_id = self._upload_media(square[0])
+                    if media_id is not None:
+                        media_ids = [media_id]
+            except Exception:
+                log.exception("x_recap_card_error")
+
+        self._post_tweet(text, media_ids=media_ids)
+        log.info("x_recap_posted", free_plays=len(results), has_card=media_ids is not None)
 
     async def post_weekly_recap(self) -> None:
         """Post a weekly recap of this week's free plays to X."""
@@ -459,13 +492,28 @@ class XPoster:
 
         return "\n".join(lines)
 
-    def _post_tweet(self, text: str) -> str | None:
+    def _upload_media(self, filepath: str) -> int | None:
+        """Upload an image via the v1.1 API. Returns media_id or None."""
+        if self._api is None:
+            return None
+        try:
+            media = self._api.media_upload(filename=filepath)
+            log.info("x_media_uploaded", media_id=media.media_id, path=filepath)
+            return media.media_id
+        except Exception:
+            log.exception("x_media_upload_failed", path=filepath)
+            return None
+
+    def _post_tweet(self, text: str, media_ids: list[int] | None = None) -> str | None:
         """Send a tweet via the X API v2. Returns the tweet URL if available."""
         assert self._client is not None
-        resp = self._client.create_tweet(text=text)
+        kwargs: dict = {"text": text}
+        if media_ids:
+            kwargs["media_ids"] = media_ids
+        resp = self._client.create_tweet(**kwargs)
         try:
             tweet_id = resp.data["id"]
-            return f"https://x.com/i/status/{tweet_id}"
+            return "https://x.com/i/status/{tid}".format(tid=tweet_id)
         except (TypeError, KeyError, AttributeError):
             return None
 

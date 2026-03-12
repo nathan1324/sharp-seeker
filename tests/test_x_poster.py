@@ -1459,3 +1459,85 @@ async def test_post_weekly_recap_calls_tweepy(settings, repo):
     call_text = poster._client.create_tweet.call_args.kwargs["text"]
     assert "Weekly Free Plays" in call_text
     assert "Lakers" in call_text
+
+
+# ── Daily recap with card image attachment ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_daily_recap_attaches_card(settings, repo):
+    """When card_gen returns paths, recap tweet includes media_ids."""
+    mock_card_gen = AsyncMock()
+    mock_card_gen.generate_daily_cards.return_value = [
+        "/tmp/results_2026-03-12_1080x1080.png",
+        "/tmp/results_2026-03-12_1080x1920.png",
+    ]
+    poster = XPoster(settings, repo, card_gen=mock_card_gen)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._api = MagicMock()
+    mock_media = MagicMock()
+    mock_media.media_id = 12345
+    poster._api.media_upload.return_value = mock_media
+
+    # Insert a free play alert
+    await repo.record_alert(
+        event_id="evt_card", alert_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers", is_free_play=True,
+    )
+
+    await poster.post_daily_recap()
+
+    poster._api.media_upload.assert_called_once_with(
+        filename="/tmp/results_2026-03-12_1080x1080.png"
+    )
+    call_kwargs = poster._client.create_tweet.call_args.kwargs
+    assert call_kwargs["media_ids"] == [12345]
+
+
+@pytest.mark.asyncio
+async def test_daily_recap_text_fallback_on_upload_failure(settings, repo):
+    """When media upload fails, recap posts text-only."""
+    mock_card_gen = AsyncMock()
+    mock_card_gen.generate_daily_cards.return_value = [
+        "/tmp/results_2026-03-12_1080x1080.png",
+    ]
+    poster = XPoster(settings, repo, card_gen=mock_card_gen)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._api = MagicMock()
+    poster._api.media_upload.side_effect = Exception("upload failed")
+
+    await repo.record_alert(
+        event_id="evt_fail", alert_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers", is_free_play=True,
+    )
+
+    await poster.post_daily_recap()
+
+    # Tweet should still be posted, without media_ids
+    poster._client.create_tweet.assert_called_once()
+    call_kwargs = poster._client.create_tweet.call_args.kwargs
+    assert "media_ids" not in call_kwargs
+
+
+@pytest.mark.asyncio
+async def test_daily_recap_no_card_gen(settings, repo):
+    """When card_gen is None, recap posts text-only (backwards compatible)."""
+    poster = XPoster(settings, repo, card_gen=None)
+    poster._enabled = True
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    await repo.record_alert(
+        event_id="evt_nocard", alert_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers", is_free_play=True,
+    )
+
+    await poster.post_daily_recap()
+
+    poster._client.create_tweet.assert_called_once()
+    call_kwargs = poster._client.create_tweet.call_args.kwargs
+    assert "media_ids" not in call_kwargs
