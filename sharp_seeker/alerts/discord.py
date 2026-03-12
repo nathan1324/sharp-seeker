@@ -193,7 +193,7 @@ class DiscordAlerter:
         )
 
         # Top performer badge for high-confidence combos or hours
-        if (self._best_combos and self._is_best_combo(sig)) or self._is_best_hour(sig):
+        if (self._best_combos and self._is_best_combo(sig) and sig.strength >= 0.50) or self._is_best_hour(sig):
             embed.add_embed_field(
                 name="\u2b50 Top Performer",
                 value="High-confidence combo",
