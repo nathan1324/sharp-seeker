@@ -120,6 +120,9 @@ class Settings(BaseSettings):
     # Database
     db_path: str = "sharp_seeker.db"
 
+    # Card image output directory
+    card_output_dir: str = "data/cards"
+
     # X (Twitter) — optional, disabled if credentials not set
     x_consumer_key: str | None = None
     x_consumer_secret: str | None = None

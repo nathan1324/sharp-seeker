@@ -9,6 +9,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from sharp_seeker.alerts.discord import DiscordAlerter
 from sharp_seeker.alerts.x_poster import XPoster
+from sharp_seeker.analysis.card_generator import CardGenerator
 from sharp_seeker.analysis.grader import ScoreGrader
 from sharp_seeker.analysis.performance import PerformanceTracker
 from sharp_seeker.analysis.reports import ReportGenerator
@@ -32,6 +33,7 @@ class Poller:
         perf_tracker: PerformanceTracker,
         report_gen: ReportGenerator,
         grader: ScoreGrader,
+        card_gen: CardGenerator,
     ) -> None:
         self._settings = settings
         self._odds_client = odds_client
@@ -42,6 +44,7 @@ class Poller:
         self._perf_tracker = perf_tracker
         self._report_gen = report_gen
         self._grader = grader
+        self._card_gen = card_gen
         self._cycle_count = 0
 
     async def poll_cycle(self) -> None:
@@ -130,6 +133,14 @@ class Poller:
         except Exception:
             log.exception("x_digest_error")
 
+    async def generate_daily_cards(self) -> None:
+        """Generate daily results card images."""
+        try:
+            paths = await self._card_gen.generate_daily_cards()
+            log.info("daily_cards_done", count=len(paths))
+        except Exception:
+            log.exception("daily_cards_error")
+
     async def resolve_signals(self) -> None:
         """Grade unresolved signals against final game scores."""
         try:
@@ -201,6 +212,16 @@ def create_scheduler(poller: Poller, settings: Settings) -> AsyncIOScheduler:
         minute=45,
         id="daily_report",
         name="Send daily signal report",
+    )
+
+    # Daily results card images at 12:46 UTC (5:46 AM MST) — after recap
+    scheduler.add_job(
+        poller.generate_daily_cards,
+        "cron",
+        hour=12,
+        minute=46,
+        id="daily_cards",
+        name="Generate daily results card images",
     )
 
     # Weekly report every Monday at 12:45 UTC (5:45 AM MT)

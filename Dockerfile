@@ -6,10 +6,11 @@ WORKDIR /app
 COPY pyproject.toml .
 COPY sharp_seeker/ sharp_seeker/
 COPY scripts/ scripts/
+COPY assets/ assets/
 RUN pip install --no-cache-dir .
 
 RUN useradd --create-home appuser
-RUN mkdir -p /app/data && chown appuser:appuser /app/data
+RUN mkdir -p /app/data /app/data/cards && chown -R appuser:appuser /app/data
 
 VOLUME /app/data
 

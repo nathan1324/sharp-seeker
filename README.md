@@ -88,6 +88,7 @@ sharp_seeker/
 │   └── smart.py                 # Priority polling by game proximity
 ├── analysis/
 │   ├── backtest.py              # Replay historical snapshots through detectors
+│   ├── card_generator.py        # Daily results card image generator (social media)
 │   ├── grader.py                # Auto-grade signals against final scores
 │   ├── performance.py           # Signal win/loss/push tracking
 │   └── reports.py               # Daily/weekly Discord reports (per-type + combined)
@@ -192,6 +193,7 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `SIGNAL_BLOCKLIST` | `[]` | Block losing type:market or type:sport:market combos (JSON array) |
 | `SIGNAL_BEST_COMBOS` | `[]` | Tag high-confidence type:sport:market combos on Discord embeds (JSON array) |
 | `SIGNAL_BEST_HOURS` | `{}` | Tag high-confidence type:hour(MST) combos on Discord embeds (JSON) |
+| `CARD_OUTPUT_DIR` | `data/cards` | Directory for daily results card PNGs |
 | `ALERT_COOLDOWN_MINUTES` | `60` | Dedup cooldown per signal |
 | `X_CONSUMER_KEY` | — | X OAuth 1.0a consumer key (optional) |
 | `X_CONSUMER_SECRET` | — | X OAuth 1.0a consumer secret (optional) |
@@ -261,6 +263,9 @@ sharp-seeker-tools report weekly
 
 # Manually grade unresolved signals against final scores
 sharp-seeker-tools resolve
+
+# Generate daily results card images (1080x1080 + 1080x1920)
+sharp-seeker-tools cards
 ```
 
 In Docker:
@@ -280,6 +285,7 @@ The daemon runs these jobs automatically via APScheduler:
 | **X digest** | **Every 2 hr** | **—** | Post batched teaser digest to X (if enabled) |
 | **Resolve signals** | **12:30** | **5:30 AM** | Grade yesterday's games against final scores |
 | **Free play recap** | **12:45** | **5:45 AM** | Tweet yesterday's free play results |
+| **Daily cards** | **12:46** | **5:46 AM** | Generate results card PNGs for social media |
 | **Daily report** | **12:45** | **5:45 AM** | Per-type + combined performance report |
 | **Weekly report** | **Mon 12:45** | **Mon 5:45 AM** | Weekly summary |
 | **Weekly X recap** | **Sun 18:00** | **Sun 11:00 AM** | Post weekly free play results to X |
