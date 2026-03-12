@@ -16,9 +16,22 @@ from sharp_seeker.db.repository import Repository
 
 log = structlog.get_logger()
 
-# ── Paths ────────────────────────────────────────────────────────────────────
+# ── Asset paths (try local dev path first, then Docker /app/) ────────────────
 
-ASSETS_DIR = Path(__file__).parent.parent.parent / "assets"
+_DEV_ASSETS = Path(__file__).parent.parent.parent / "assets"
+_DOCKER_ASSETS = Path("/app/assets")
+
+
+def _find_assets_dir() -> Path:
+    """Resolve assets directory — works in both local dev and Docker."""
+    if (_DEV_ASSETS / "fonts").exists():
+        return _DEV_ASSETS
+    if (_DOCKER_ASSETS / "fonts").exists():
+        return _DOCKER_ASSETS
+    return _DEV_ASSETS  # fallback, will use default fonts
+
+
+ASSETS_DIR = _find_assets_dir()
 FONTS_DIR = ASSETS_DIR / "fonts"
 LOGO_PATH = ASSETS_DIR / "logo-square.png"
 
@@ -213,59 +226,63 @@ class CardGenerator:
 
         is_story = h > w  # 1080x1920 story format
 
-        # Scale factor relative to 1080 base width
-        s = w / 1080.0
-
-        # Load fonts
-        font_bold = _load_font("Inter-Bold.ttf", int(28 * s))
-        font_title = _load_font("Inter-Bold.ttf", int(36 * s))
-        font_hero = _load_font("Inter-Bold.ttf", int(96 * s))
-        font_label = _load_font("Inter-Regular.ttf", int(22 * s))
-        font_record = _load_font("Inter-Bold.ttf", int(42 * s))
-        font_units = _load_font("Inter-Bold.ttf", int(26 * s))
-        font_streak = _load_font("Inter-Bold.ttf", int(32 * s))
-        font_footer = _load_font("Inter-Regular.ttf", int(20 * s))
-
-        # Vertical layout positions
-        if is_story:
-            # Story: more vertical space, push content to upper-center
-            y_logo = int(180 * s)
-            y_brand = y_logo + int(110 * s)
-            y_title = y_brand + int(60 * s)
-            y_hero = y_title + int(80 * s)
-            y_hero_label = y_hero + int(110 * s)
-            y_divider = y_hero_label + int(60 * s)
-            y_col_label = y_divider + int(40 * s)
-            y_col_record = y_col_label + int(40 * s)
-            y_col_units = y_col_record + int(55 * s)
-            y_streak = y_col_units + int(80 * s)
-            y_footer = h - int(120 * s)
-        else:
-            # Square: tighter layout
-            y_logo = int(50 * s)
-            y_brand = y_logo + int(100 * s)
-            y_title = y_brand + int(50 * s)
-            y_hero = y_title + int(70 * s)
-            y_hero_label = y_hero + int(105 * s)
-            y_divider = y_hero_label + int(50 * s)
-            y_col_label = y_divider + int(35 * s)
-            y_col_record = y_col_label + int(35 * s)
-            y_col_units = y_col_record + int(50 * s)
-            y_streak = y_col_units + int(65 * s)
-            y_footer = h - int(60 * s)
+        # Load fonts — sized for 1080px width
+        font_brand = _load_font("Inter-Bold.ttf", 48)
+        font_title = _load_font("Inter-Bold.ttf", 52)
+        font_hero = _load_font("Inter-Bold.ttf", 160)
+        font_hero_label = _load_font("Inter-Regular.ttf", 34)
+        font_col_label = _load_font("Inter-Regular.ttf", 32)
+        font_record = _load_font("Inter-Bold.ttf", 72)
+        font_units = _load_font("Inter-Bold.ttf", 38)
+        font_streak = _load_font("Inter-Bold.ttf", 44)
+        font_footer = _load_font("Inter-Regular.ttf", 28)
 
         cx = w // 2  # center x
 
+        if is_story:
+            # ── Story (1080x1920): vertically centered block ─────────
+            # Total content height ~750px, center in 1920
+            top = 340
+            y_logo = top
+            y_brand = y_logo + 120
+            y_title = y_brand + 70
+            y_hero = y_title + 90
+            y_hero_label = y_hero + 160
+            y_divider = y_hero_label + 60
+            y_col_label = y_divider + 45
+            y_col_record = y_col_label + 50
+            y_col_units = y_col_record + 80
+            y_streak = y_col_units + 80
+            y_footer = 1920 - 80
+        else:
+            # ── Square (1080x1080): tight, vertically centered ───────
+            top = 40
+            y_logo = top
+            y_brand = y_logo + 115
+            y_title = y_brand + 68
+            y_hero = y_title + 85
+            y_hero_label = y_hero + 155
+            y_divider = y_hero_label + 58
+            y_col_label = y_divider + 40
+            y_col_record = y_col_label + 48
+            y_col_units = y_col_record + 78
+            y_streak = y_col_units + 70
+            y_footer = 1080 - 55
+
         # ── Logo ─────────────────────────────────────────────────────
-        logo_size = int(80 * s)
+        logo_size = 90
         if LOGO_PATH.exists():
             logo = Image.open(str(LOGO_PATH)).convert("RGBA")
             logo = logo.resize((logo_size, logo_size), Image.LANCZOS)
             logo_x = cx - logo_size // 2
-            img.paste(logo, (logo_x, y_logo), logo)
+            # Create a composite to handle transparency
+            logo_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+            logo_layer.paste(logo, (logo_x, y_logo))
+            img = Image.alpha_composite(img.convert("RGBA"), logo_layer).convert("RGB")
+            draw = ImageDraw.Draw(img)
 
         # ── Brand name ───────────────────────────────────────────────
-        _draw_centered(draw, "SANDBOX SPORTS", font_bold, GOLD, cx, y_brand)
+        _draw_centered(draw, "SANDBOX SPORTS", font_brand, GOLD, cx, y_brand)
 
         # ── Title ────────────────────────────────────────────────────
         _draw_centered(draw, "FREE PLAY RESULTS", font_title, WHITE, cx, y_title)
@@ -276,25 +293,25 @@ class CardGenerator:
         hero_color = GREEN if stats.ytd_units >= 0 else RED
         _draw_centered(draw, hero_text, font_hero, hero_color, cx, y_hero)
 
-        _draw_centered(draw, "2026 YTD Profit", font_label, GRAY, cx, y_hero_label)
+        _draw_centered(draw, "2026 YTD Profit", font_hero_label, GRAY, cx, y_hero_label)
 
         # ── Gold divider ─────────────────────────────────────────────
-        margin = int(80 * s)
-        draw.line([(margin, y_divider), (w - margin, y_divider)], fill=GOLD, width=int(2 * s))
+        margin = 100
+        draw.line([(margin, y_divider), (w - margin, y_divider)], fill=GOLD, width=3)
 
         # ── Two columns: Yesterday / Month ───────────────────────────
-        col_left = w // 4
-        col_right = 3 * w // 4
+        col_left = int(w * 0.30)
+        col_right = int(w * 0.70)
 
         # Labels
-        _draw_centered(draw, "Yesterday", font_label, GRAY, col_left, y_col_label)
-        _draw_centered(draw, stats.month_name, font_label, GRAY, col_right, y_col_label)
+        _draw_centered(draw, "Yesterday", font_col_label, GRAY, col_left, y_col_label)
+        _draw_centered(draw, stats.month_name, font_col_label, GRAY, col_right, y_col_label)
 
         # Records
-        y_record = "{w}-{l}".format(w=stats.yesterday_w, l=stats.yesterday_l)
-        m_record = "{w}-{l}".format(w=stats.month_w, l=stats.month_l)
-        _draw_centered(draw, y_record, font_record, WHITE, col_left, y_col_record)
-        _draw_centered(draw, m_record, font_record, WHITE, col_right, y_col_record)
+        y_rec_text = "{w}-{l}".format(w=stats.yesterday_w, l=stats.yesterday_l)
+        m_rec_text = "{w}-{l}".format(w=stats.month_w, l=stats.month_l)
+        _draw_centered(draw, y_rec_text, font_record, WHITE, col_left, y_col_record)
+        _draw_centered(draw, m_rec_text, font_record, WHITE, col_right, y_col_record)
 
         # Unit numbers
         y_sign = "+" if stats.yesterday_units >= 0 else ""
@@ -308,11 +325,6 @@ class CardGenerator:
 
         # ── Streak ───────────────────────────────────────────────────
         if stats.streak_count >= 3:
-            streak_emoji = "\U0001f525" if stats.streak_type == "W" else ""
-            streak_text = " {count}{t} Streak".format(
-                count=stats.streak_count, t=stats.streak_type,
-            )
-            # Draw without emoji (Pillow can't render emoji reliably)
             streak_display = "{count}{t} Streak".format(
                 count=stats.streak_count, t=stats.streak_type,
             )
