@@ -351,7 +351,7 @@ X_CTA_URL=https://discord.gg/your-invite-link
 X_FREE_PLAY_INTERVAL=10
 ```
 
-**Daily recap tweet (13:45 UTC):** Each morning after grading, a recap of the previous day's free plays is posted to X with results (won/lost/pending) and a running record.
+**Daily recap tweet (12:45 UTC / 5:45 AM MT):** Each morning after grading, a recap of the previous day's free plays is posted to X with results (won/lost/pending), a running record, and an attached results card image (1080x1080 branded PNG with YTD profit, monthly record, and streak).
 
 #### Tweet Quality Filters
 

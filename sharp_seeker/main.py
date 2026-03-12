@@ -54,8 +54,8 @@ async def run() -> None:
     report_gen = ReportGenerator(settings, repo)
     grader = ScoreGrader(settings, odds_client, repo)
 
-    x_poster = XPoster(settings, repo)
     card_gen = CardGenerator(settings, repo)
+    x_poster = XPoster(settings, repo, card_gen=card_gen)
     poller = Poller(
         settings, odds_client, pipeline, alerter, x_poster, budget, perf_tracker,
         report_gen, grader, card_gen,
