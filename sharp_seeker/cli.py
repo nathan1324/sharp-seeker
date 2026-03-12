@@ -9,6 +9,7 @@ import sys
 import structlog
 
 from sharp_seeker.analysis.backtest import Backtester
+from sharp_seeker.analysis.card_generator import CardGenerator
 from sharp_seeker.analysis.grader import ScoreGrader
 from sharp_seeker.analysis.performance import PerformanceTracker
 from sharp_seeker.analysis.reports import ReportGenerator
@@ -95,6 +96,24 @@ async def run_stats() -> None:
     await db.close()
 
 
+async def run_cards() -> None:
+    settings = Settings()  # type: ignore[call-arg]
+    configure_logging(settings.log_level)
+
+    db = await init_db(settings.db_path)
+    repo = Repository(db)
+    card_gen = CardGenerator(settings, repo)
+
+    paths = await card_gen.generate_daily_cards()
+    if paths:
+        for p in paths:
+            print(p)
+    else:
+        print("No free play results found — no cards generated.")
+
+    await db.close()
+
+
 def cli() -> None:
     parser = argparse.ArgumentParser(prog="sharp-seeker-tools", description="Sharp Seeker CLI tools")
     sub = parser.add_subparsers(dest="command")
@@ -108,6 +127,7 @@ def cli() -> None:
 
     sub.add_parser("stats", help="Show signal performance stats")
     sub.add_parser("resolve", help="Grade unresolved signals against final scores")
+    sub.add_parser("cards", help="Generate daily results card images")
 
     args = parser.parse_args()
 
@@ -119,6 +139,8 @@ def cli() -> None:
         asyncio.run(run_stats())
     elif args.command == "resolve":
         asyncio.run(run_resolve())
+    elif args.command == "cards":
+        asyncio.run(run_cards())
     else:
         parser.print_help()
         sys.exit(1)
