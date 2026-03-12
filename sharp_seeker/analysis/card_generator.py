@@ -33,7 +33,7 @@ def _find_assets_dir() -> Path:
 
 ASSETS_DIR = _find_assets_dir()
 FONTS_DIR = ASSETS_DIR / "fonts"
-LOGO_PATH = ASSETS_DIR / "logo-square.png"
+LOGO_PATH = ASSETS_DIR / "logo.png"
 
 # ── Colors ───────────────────────────────────────────────────────────────────
 
@@ -101,8 +101,8 @@ class CardGenerator:
         """Query free play results and compute stats for card."""
         now = datetime.now(timezone.utc)
 
-        # Yesterday = last 48h to be safe (grading may lag)
-        since_yesterday = (now - timedelta(hours=48)).isoformat()
+        # Yesterday = last 24h
+        since_yesterday = (now - timedelta(hours=24)).isoformat()
         # Current month = first of this month
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         since_month = month_start.isoformat()
@@ -241,10 +241,9 @@ class CardGenerator:
 
         if is_story:
             # ── Story (1080x1920): vertically centered block ─────────
-            # Total content height ~750px, center in 1920
-            top = 340
+            top = 300
             y_logo = top
-            y_brand = y_logo + 120
+            y_brand = y_logo + 185
             y_title = y_brand + 70
             y_hero = y_title + 90
             y_hero_label = y_hero + 160
@@ -256,21 +255,21 @@ class CardGenerator:
             y_footer = 1920 - 80
         else:
             # ── Square (1080x1080): tight, vertically centered ───────
-            top = 40
+            top = 30
             y_logo = top
-            y_brand = y_logo + 115
-            y_title = y_brand + 68
-            y_hero = y_title + 85
+            y_brand = y_logo + 180
+            y_title = y_brand + 65
+            y_hero = y_title + 80
             y_hero_label = y_hero + 155
-            y_divider = y_hero_label + 58
-            y_col_label = y_divider + 40
-            y_col_record = y_col_label + 48
-            y_col_units = y_col_record + 78
-            y_streak = y_col_units + 70
-            y_footer = 1080 - 55
+            y_divider = y_hero_label + 55
+            y_col_label = y_divider + 38
+            y_col_record = y_col_label + 45
+            y_col_units = y_col_record + 75
+            y_streak = y_col_units + 65
+            y_footer = 1080 - 50
 
         # ── Logo ─────────────────────────────────────────────────────
-        logo_size = 90
+        logo_size = 160
         if LOGO_PATH.exists():
             logo = Image.open(str(LOGO_PATH)).convert("RGBA")
             logo = logo.resize((logo_size, logo_size), Image.LANCZOS)
@@ -332,7 +331,7 @@ class CardGenerator:
             _draw_centered(draw, streak_display, font_streak, streak_color, cx, y_streak)
 
         # ── Footer ───────────────────────────────────────────────────
-        _draw_centered(draw, "@SandboxSportsX", font_footer, GRAY, cx, y_footer)
+        _draw_centered(draw, "@SandboxSport", font_footer, GRAY, cx, y_footer)
 
         return img
 
