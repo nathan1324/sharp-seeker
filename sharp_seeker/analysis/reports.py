@@ -74,7 +74,7 @@ class ReportGenerator:
 
     async def send_daily_report(self) -> None:
         """Send per-signal-type reports + combined summary + override reports."""
-        since = self._hours_ago(24)
+        since = self._hours_ago(48)
         await self._send_per_type_reports("Daily", since)
         await self._send_override_reports("Daily", since)
         await self._send_combined_report("Daily Signal Report", since)
