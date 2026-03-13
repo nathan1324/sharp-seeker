@@ -71,6 +71,7 @@ class ReportGenerator:
     def __init__(self, settings: Settings, repo: Repository) -> None:
         self._settings = settings
         self._repo = repo
+        self._best_combos: set[str] = set(settings.signal_best_combos)
 
     async def send_daily_report(self) -> None:
         """Send per-signal-type reports + combined summary + override reports."""
@@ -149,9 +150,10 @@ class ReportGenerator:
                     emoji = RESULT_EMOJI.get(sig_dict["result"], "?")
                     teams = await self._repo.get_event_teams(sig_dict["event_id"])
                     matchup = f"{teams[1]} vs {teams[0]}" if teams else sig_dict["event_id"]
+                    star = self._top_performer_star(sig_dict)
                     lines.append(
                         f"{emoji} {matchup} — {sig_dict['market_key']} "
-                        f"{sig_dict['outcome_name']}"
+                        f"{sig_dict['outcome_name']}{star}"
                     )
                 embed.add_embed_field(
                     name="Results",
@@ -255,9 +257,10 @@ class ReportGenerator:
                     emoji = RESULT_EMOJI.get(sig_dict["result"], "?")
                     teams = await self._repo.get_event_teams(sig_dict["event_id"])
                     matchup = f"{teams[1]} vs {teams[0]}" if teams else sig_dict["event_id"]
+                    star = self._top_performer_star(sig_dict)
                     lines.append(
                         f"{emoji} {matchup} — {sig_dict['market_key']} "
-                        f"{sig_dict['outcome_name']}"
+                        f"{sig_dict['outcome_name']}{star}"
                     )
                 embed.add_embed_field(
                     name="Results",
@@ -460,6 +463,17 @@ class ReportGenerator:
             log.info("report_sent", title=label)
         else:
             log.error("report_send_failed", title=label)
+
+    def _top_performer_star(self, sig_dict: dict) -> str:
+        """Return a star emoji if the signal matches a best combo at 50%+ strength."""
+        key = "{t}:{s}:{m}".format(
+            t=sig_dict.get("signal_type", ""),
+            s=sig_dict.get("sport_key", ""),
+            m=sig_dict.get("market_key", ""),
+        )
+        if key in self._best_combos and sig_dict.get("signal_strength", 0) >= 0.50:
+            return " \u2b50"
+        return ""
 
     @staticmethod
     def _hours_ago(hours: int) -> str:
