@@ -16,6 +16,7 @@ Sections:
 
 import json
 import sqlite3
+import sys
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -130,13 +131,23 @@ def print_buckets(buckets, key_order=None, label_fn=None, indent=2):
 def run():
     conn = connect()
 
-    cur = conn.execute("""
-        SELECT event_id, sport_key, signal_type, market_key, outcome_name,
-               signal_strength, signal_at, result, details_json
-        FROM signal_results
-        WHERE result IS NOT NULL
-        ORDER BY signal_at
-    """)
+    since = sys.argv[1] if len(sys.argv) > 1 else None
+    if since:
+        cur = conn.execute("""
+            SELECT event_id, sport_key, signal_type, market_key, outcome_name,
+                   signal_strength, signal_at, result, details_json
+            FROM signal_results
+            WHERE result IS NOT NULL AND signal_at >= ?
+            ORDER BY signal_at
+        """, (since,))
+    else:
+        cur = conn.execute("""
+            SELECT event_id, sport_key, signal_type, market_key, outcome_name,
+                   signal_strength, signal_at, result, details_json
+            FROM signal_results
+            WHERE result IS NOT NULL
+            ORDER BY signal_at
+        """)
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
 
