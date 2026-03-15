@@ -419,5 +419,157 @@ async def test_spread_sport_override_fires(settings, repo):
     assert signals[0].details["delta"] == 0.5
 
     # Strength uses sport threshold (0.5) so scores reflect the sport's scale.
-    # delta 0.5 / (0.5 * 3) ≈ 0.33
+    # delta 0.5 / (0.5 * 3) ≈ 0.33 (no hold boost — only one side in snapshot)
     assert 0.30 < signals[0].strength < 0.40
+
+
+# ── Hold (vig) tests ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_hold_in_signal_details(settings, repo):
+    """Hold should be computed when both sides of the market are available."""
+    event = "evt_hold1"
+    t = "2025-01-15T12:00:00+00:00"
+
+    # Both sides of NHL totals for DK and Pinnacle
+    snapshots = [
+        _snap(event, "pinnacle", "totals", "Over", -110, 6.0, t, sport_key="icehockey_nhl"),
+        _snap(event, "pinnacle", "totals", "Under", -110, 6.0, t, sport_key="icehockey_nhl"),
+        _snap(event, "draftkings", "totals", "Over", -110, 5.5, t, sport_key="icehockey_nhl"),
+        _snap(event, "draftkings", "totals", "Under", -110, 5.5, t, sport_key="icehockey_nhl"),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    settings.pd_sport_totals_overrides = {"icehockey_nhl": 0.5}
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 1
+    # Both sides at -110: implied = 110/210 ≈ 0.5238 each
+    # hold = 0.5238 + 0.5238 - 1.0 ≈ 0.0476
+    assert signals[0].details["us_hold"] is not None
+    assert abs(signals[0].details["us_hold"] - 0.0476) < 0.001
+    assert signals[0].details["pinnacle_hold"] is not None
+    assert abs(signals[0].details["pinnacle_hold"] - 0.0476) < 0.001
+
+
+@pytest.mark.asyncio
+async def test_hold_boost_sharp_pricing(settings, repo):
+    """Low hold at US book (< 4.5%) should boost strength above base."""
+    event = "evt_hold_sharp"
+    t = "2025-01-15T12:00:00+00:00"
+
+    # Sharp pricing: -105/-105 → hold = 2.44%
+    snapshots = [
+        _snap(event, "pinnacle", "totals", "Over", -110, 6.0, t, sport_key="icehockey_nhl"),
+        _snap(event, "pinnacle", "totals", "Under", -110, 6.0, t, sport_key="icehockey_nhl"),
+        _snap(event, "draftkings", "totals", "Over", -105, 5.5, t, sport_key="icehockey_nhl"),
+        _snap(event, "draftkings", "totals", "Under", -105, 5.5, t, sport_key="icehockey_nhl"),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    settings.pd_sport_totals_overrides = {"icehockey_nhl": 0.5}
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 1
+    # base = 0.5 / (0.5 * 3) ≈ 0.33, hold 2.44% → sharp boost +0.08
+    assert signals[0].strength > 0.40
+    assert signals[0].details["hold_boost"] == 0.08
+
+
+@pytest.mark.asyncio
+async def test_hold_boost_average_pricing(settings, repo):
+    """Below-average hold (4.5-5.0%) should get smaller boost."""
+    event = "evt_hold_avg"
+    t = "2025-01-15T12:00:00+00:00"
+
+    # DK at -110/-110 → hold = 4.76% → between 4.5% and 5.0% = average boost
+    snapshots = [
+        _snap(event, "pinnacle", "totals", "Over", -105, 6.0, t, sport_key="icehockey_nhl"),
+        _snap(event, "pinnacle", "totals", "Under", -105, 6.0, t, sport_key="icehockey_nhl"),
+        _snap(event, "draftkings", "totals", "Over", -110, 5.5, t, sport_key="icehockey_nhl"),
+        _snap(event, "draftkings", "totals", "Under", -110, 5.5, t, sport_key="icehockey_nhl"),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    settings.pd_sport_totals_overrides = {"icehockey_nhl": 0.5}
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 1
+    # DK hold at -110/-110 = 4.76% → between 4.5% and 5.0% = average boost +0.04
+    assert signals[0].details["hold_boost"] == 0.04
+    # base ≈ 0.33 + 0.04 = 0.37
+    assert 0.35 < signals[0].strength < 0.40
+
+
+@pytest.mark.asyncio
+async def test_no_hold_boost_wide_pricing(settings, repo):
+    """High hold (>= 5.0%) should get no boost."""
+    event = "evt_hold_wide"
+    t = "2025-01-15T12:00:00+00:00"
+
+    # Wide pricing: -115/-115 → hold ≈ 6.52%
+    snapshots = [
+        _snap(event, "pinnacle", "totals", "Over", -105, 6.0, t, sport_key="icehockey_nhl"),
+        _snap(event, "pinnacle", "totals", "Under", -105, 6.0, t, sport_key="icehockey_nhl"),
+        _snap(event, "draftkings", "totals", "Over", -115, 5.5, t, sport_key="icehockey_nhl"),
+        _snap(event, "draftkings", "totals", "Under", -115, 5.5, t, sport_key="icehockey_nhl"),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    settings.pd_sport_totals_overrides = {"icehockey_nhl": 0.5}
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 1
+    assert signals[0].details["hold_boost"] == 0.0
+    # base ≈ 0.33, no boost
+    assert 0.30 < signals[0].strength < 0.40
+
+
+@pytest.mark.asyncio
+async def test_no_hold_when_other_side_missing(settings, repo):
+    """Hold should be None when only one side of the market is in the snapshot."""
+    event = "evt_no_hold"
+    t = "2025-01-15T12:00:00+00:00"
+
+    # Only Over side — no Under
+    snapshots = [
+        _snap(event, "pinnacle", "totals", "Over", -110, 6.0, t, sport_key="icehockey_nhl"),
+        _snap(event, "draftkings", "totals", "Over", -110, 5.5, t, sport_key="icehockey_nhl"),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    settings.pd_sport_totals_overrides = {"icehockey_nhl": 0.5}
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 1
+    assert signals[0].details["us_hold"] is None
+    assert signals[0].details["hold_boost"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_hold_works_for_h2h(settings, repo):
+    """Hold should be computed for moneyline (h2h) markets too."""
+    event = "evt_hold_h2h"
+    t = "2025-01-15T12:00:00+00:00"
+
+    # Both sides of h2h at FanDuel
+    snapshots = [
+        _snap(event, "pinnacle", "h2h", "Lakers", -150, None, t),
+        _snap(event, "pinnacle", "h2h", "Celtics", 130, None, t),
+        _snap(event, "fanduel", "h2h", "Lakers", -110, None, t),
+        _snap(event, "fanduel", "h2h", "Celtics", 130, None, t),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 1
+    assert signals[0].details["us_hold"] is not None
+    assert signals[0].details["pinnacle_hold"] is not None

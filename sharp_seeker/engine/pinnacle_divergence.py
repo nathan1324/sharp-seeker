@@ -14,6 +14,52 @@ log = structlog.get_logger()
 PINNACLE_KEY = "pinnacle"
 US_BOOKS = {"draftkings", "fanduel", "betmgm", "caesars", "williamhill_us"}
 
+# Hold boost thresholds — based on analysis of PD win rates by hold band.
+# Lower hold (sharper pricing) correlates with higher win rates, especially
+# for totals (64% at <4.5% vs 57% at 4.5-5.5%) and NHL (61% vs 57%).
+HOLD_SHARP_THRESHOLD = 0.045   # below 4.5% = sharp book pricing
+HOLD_AVERAGE_THRESHOLD = 0.050  # below 5.0% = slightly below median
+HOLD_SHARP_BOOST = 0.08        # boost for sharp hold
+HOLD_AVERAGE_BOOST = 0.04      # boost for below-average hold
+
+
+def _compute_hold(
+    by_market: dict[tuple[str, str], dict[str, dict]],
+    market_key: str,
+    outcome_name: str,
+    bookmaker_key: str,
+) -> float | None:
+    """Compute hold (overround) for a bookmaker on a market.
+
+    hold = implied_prob(side_a) + implied_prob(side_b) - 1.0
+
+    Returns float (e.g. 0.048 = 4.8% hold) or None if opposite side
+    is not available in the snapshot data.
+    """
+    # Determine the opposite outcome
+    if market_key == "totals":
+        other_outcome = "Under" if outcome_name == "Over" else "Over"
+    else:
+        # For h2h/spreads, scan by_market for the other outcome
+        other_outcome = None
+        for (mk, on) in by_market:
+            if mk == market_key and on != outcome_name:
+                if bookmaker_key in by_market[(mk, on)]:
+                    other_outcome = on
+                    break
+        if other_outcome is None:
+            return None
+
+    this_side = by_market.get((market_key, outcome_name), {}).get(bookmaker_key)
+    other_side = by_market.get((market_key, other_outcome), {}).get(bookmaker_key)
+
+    if this_side is None or other_side is None:
+        return None
+
+    prob_a = american_to_implied_prob(this_side["price"])
+    prob_b = american_to_implied_prob(other_side["price"])
+    return prob_a + prob_b - 1.0
+
 
 def _us_has_better_value(
     market_key: str, outcome_name: str, us_value: float, pin_value: float
@@ -105,13 +151,28 @@ class PinnacleDivergenceDetector(BaseDetector):
                 if not _us_has_better_value(market_key, outcome_name, us_val, pin_val):
                     continue
 
-                strength = min(1.0, delta / (threshold * 3))
+                base_strength = delta / (threshold * 3)
+
+                # Hold boost: lower vig at US book = sharper pricing = cleaner edge
+                us_hold = _compute_hold(by_market, market_key, outcome_name, bm_key)
+                pin_hold = _compute_hold(by_market, market_key, outcome_name, PINNACLE_KEY)
+                hold_boost = 0.0
+                if us_hold is not None:
+                    if us_hold < HOLD_SHARP_THRESHOLD:
+                        hold_boost = HOLD_SHARP_BOOST
+                    elif us_hold < HOLD_AVERAGE_THRESHOLD:
+                        hold_boost = HOLD_AVERAGE_BOOST
+
+                strength = min(1.0, base_strength + hold_boost)
 
                 details: dict = {
                     "us_book": bm_key,
                     "us_value": us_val,
                     "pinnacle_value": pin_val,
                     "delta": round(delta, 4 if market_key == "h2h" else 2),
+                    "us_hold": round(us_hold, 4) if us_hold is not None else None,
+                    "pinnacle_hold": round(pin_hold, 4) if pin_hold is not None else None,
+                    "hold_boost": round(hold_boost, 2),
                     "value_books": [{
                         "bookmaker": bm_key,
                         "price": row["price"],
