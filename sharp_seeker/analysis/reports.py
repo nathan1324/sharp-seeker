@@ -465,13 +465,13 @@ class ReportGenerator:
             log.error("report_send_failed", title=label)
 
     def _top_performer_star(self, sig_dict: dict) -> str:
-        """Return a star emoji if the signal matches a best combo at 50%+ strength."""
+        """Return a star emoji if the signal matches a best combo."""
         key = "{t}:{s}:{m}".format(
             t=sig_dict.get("signal_type", ""),
             s=sig_dict.get("sport_key", ""),
             m=sig_dict.get("market_key", ""),
         )
-        if key in self._best_combos and sig_dict.get("signal_strength", 0) >= 0.50:
+        if key in self._best_combos:
             return " \u2b50"
         return ""
 
