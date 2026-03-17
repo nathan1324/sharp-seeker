@@ -8,19 +8,12 @@ from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
 from sharp_seeker.engine.base import BaseDetector, Signal, SignalType
 from sharp_seeker.engine.exchange_monitor import american_to_implied_prob
+from sharp_seeker.engine.hold import compute_hold_boost
 
 log = structlog.get_logger()
 
 PINNACLE_KEY = "pinnacle"
 US_BOOKS = {"draftkings", "fanduel", "betmgm", "caesars", "williamhill_us"}
-
-# Hold boost thresholds — based on analysis of PD win rates by hold band.
-# Lower hold (sharper pricing) correlates with higher win rates, especially
-# for totals (64% at <4.5% vs 57% at 4.5-5.5%) and NHL (61% vs 57%).
-HOLD_SHARP_THRESHOLD = 0.045   # below 4.5% = sharp book pricing
-HOLD_AVERAGE_THRESHOLD = 0.050  # below 5.0% = slightly below median
-HOLD_SHARP_BOOST = 0.08        # boost for sharp hold
-HOLD_AVERAGE_BOOST = 0.04      # boost for below-average hold
 
 
 def _compute_hold(
@@ -156,12 +149,7 @@ class PinnacleDivergenceDetector(BaseDetector):
                 # Hold boost: lower vig at US book = sharper pricing = cleaner edge
                 us_hold = _compute_hold(by_market, market_key, outcome_name, bm_key)
                 pin_hold = _compute_hold(by_market, market_key, outcome_name, PINNACLE_KEY)
-                hold_boost = 0.0
-                if us_hold is not None:
-                    if us_hold < HOLD_SHARP_THRESHOLD:
-                        hold_boost = HOLD_SHARP_BOOST
-                    elif us_hold < HOLD_AVERAGE_THRESHOLD:
-                        hold_boost = HOLD_AVERAGE_BOOST
+                hold_boost = compute_hold_boost(us_hold)
 
                 strength = min(1.0, base_strength + hold_boost)
 
