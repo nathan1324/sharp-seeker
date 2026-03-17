@@ -296,3 +296,51 @@ async def test_rapid_steepening_finds_stale_books(settings, repo):
     assert sig.outcome_name == "Chiefs"  # same side
     assert sig.details["value_books"][0]["bookmaker"] == "fanduel"
     assert sig.details["value_books"][0]["point"] == -3.0
+
+
+@pytest.mark.asyncio
+async def test_rapid_hold_in_details(settings, repo):
+    """Rapid change should include us_hold when value book has both sides."""
+    event = "evt_rapid_hold1"
+    t1 = "2025-01-20T12:00:00+00:00"
+    t2 = "2025-01-20T12:20:00+00:00"
+
+    snapshots = [
+        # Pinnacle steepens Chiefs from -3.0 to -4.0
+        _snap(event, "pinnacle", "spreads", "Chiefs", -110, -3.0, t1),
+        _snap(event, "pinnacle", "spreads", "Chiefs", -110, -4.0, t2),
+        # FanDuel stale at -3.0 with both sides for hold calculation
+        _snap(event, "fanduel", "spreads", "Chiefs", -105, -3.0, t2),
+        _snap(event, "fanduel", "spreads", "Bills", -105, 3.0, t2),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = RapidChangeDetector(settings, repo)
+    signals = await detector.detect(event, t2)
+
+    assert len(signals) == 1
+    sig = signals[0]
+    assert sig.details["us_hold"] is not None
+    # -105/-105 hold ≈ 0.0244
+    assert sig.details["us_hold"] < 0.03
+
+
+@pytest.mark.asyncio
+async def test_rapid_hold_none_no_value_books(settings, repo):
+    """Hold should be None when there are no value books."""
+    event = "evt_rapid_hold2"
+    t1 = "2025-01-20T12:00:00+00:00"
+    t2 = "2025-01-20T12:20:00+00:00"
+
+    snapshots = [
+        # Pinnacle steepens but no stale US books
+        _snap(event, "pinnacle", "spreads", "Chiefs", -110, -3.0, t1),
+        _snap(event, "pinnacle", "spreads", "Chiefs", -110, -4.0, t2),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = RapidChangeDetector(settings, repo)
+    signals = await detector.detect(event, t2)
+
+    assert len(signals) == 1
+    assert signals[0].details["us_hold"] is None

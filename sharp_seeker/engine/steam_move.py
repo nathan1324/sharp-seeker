@@ -10,6 +10,7 @@ import structlog
 from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
 from sharp_seeker.engine.base import BaseDetector, Signal, SignalType
+from sharp_seeker.engine.hold import compute_hold_for_book
 
 log = structlog.get_logger()
 
@@ -120,6 +121,12 @@ class SteamMoveDetector(BaseDetector):
                         "deep_link": current.get("deep_link"),
                     })
 
+            # Compute hold for the best value book (or first moved book)
+            hold_book = value_books[0]["bookmaker"] if value_books else aligned[0][0]
+            us_hold = compute_hold_for_book(
+                current_lines, market_key, outcome_name, hold_book,
+            )
+
             signals.append(
                 Signal(
                     signal_type=SignalType.STEAM_MOVE,
@@ -141,6 +148,7 @@ class SteamMoveDetector(BaseDetector):
                         "avg_delta": round(avg_delta, 2),
                         "book_details": book_details,
                         "value_books": value_books,
+                        "us_hold": round(us_hold, 4) if us_hold is not None else None,
                     },
                 )
             )

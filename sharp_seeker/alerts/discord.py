@@ -257,22 +257,6 @@ class DiscordAlerter:
             else:
                 lines.append(f"**Value edge: {delta:+.1f}**")
 
-            # Show hold (vig) if available
-            us_hold = d.get("us_hold")
-            if us_hold is not None:
-                hold_pct = us_hold * 100
-                if hold_pct < 4.5:
-                    hold_label = "Sharp"
-                elif hold_pct < 5.0:
-                    hold_label = "Average"
-                else:
-                    hold_label = "Wide"
-                lines.append(
-                    "-# Hold: {pct:.1f}% ({label})".format(
-                        pct=hold_pct, label=hold_label
-                    )
-                )
-
         elif sig.signal_type == SignalType.REVERSE_LINE:
             us_dir = d.get("us_direction", "?")
             pin_dir = d.get("pinnacle_direction", "?")
@@ -296,6 +280,22 @@ class DiscordAlerter:
 
         else:
             lines.append(sig.description)
+
+        # Show hold (vig) if available — applies to PD, SM, RC
+        us_hold = d.get("us_hold")
+        if us_hold is not None:
+            hold_pct = us_hold * 100
+            if hold_pct < 4.5:
+                hold_label = "Sharp"
+            elif hold_pct < 5.0:
+                hold_label = "Average"
+            else:
+                hold_label = "Wide"
+            lines.append(
+                "-# Hold: {pct:.1f}% ({label})".format(
+                    pct=hold_pct, label=hold_label
+                )
+            )
 
         return "\n".join(lines)
 

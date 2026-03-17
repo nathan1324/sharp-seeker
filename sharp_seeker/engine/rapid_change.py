@@ -7,6 +7,7 @@ import structlog
 from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
 from sharp_seeker.engine.base import BaseDetector, Signal, SignalType
+from sharp_seeker.engine.hold import compute_hold_for_book
 
 log = structlog.get_logger()
 
@@ -120,6 +121,14 @@ class RapidChangeDetector(BaseDetector):
                 if not value_books:
                     continue  # no US book beats Pinnacle on the other side
 
+            # Compute hold for best value book
+            us_hold = None
+            if value_books:
+                us_hold = compute_hold_for_book(
+                    current_lines, market_key, signal_outcome,
+                    value_books[0]["bookmaker"],
+                )
+
             signals.append(
                 Signal(
                     signal_type=SignalType.RAPID_CHANGE,
@@ -143,6 +152,7 @@ class RapidChangeDetector(BaseDetector):
                         "new_point": row.get("point"),
                         "delta": round(delta, 2),
                         "value_books": value_books,
+                        "us_hold": round(us_hold, 4) if us_hold is not None else None,
                     },
                 )
             )

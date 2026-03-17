@@ -109,3 +109,64 @@ async def test_steam_moneyline(settings, repo):
 
     assert len(signals) == 1
     assert signals[0].details["direction"] == "down"
+
+
+@pytest.mark.asyncio
+async def test_steam_hold_in_details(settings, repo):
+    """Steam move should include us_hold when both sides of the market are available."""
+    event = "evt_hold1"
+    t1 = "2025-01-15T12:00:00+00:00"
+    t2 = "2025-01-15T12:20:00+00:00"
+
+    snapshots = [
+        # Time 1: 3 books at -3.5
+        _snap(event, "draftkings", "spreads", "Lakers", -110, -3.5, t1),
+        _snap(event, "fanduel", "spreads", "Lakers", -110, -3.5, t1),
+        _snap(event, "betmgm", "spreads", "Lakers", -110, -3.5, t1),
+        # Time 2: 3 books move to -4.0
+        _snap(event, "draftkings", "spreads", "Lakers", -110, -4.0, t2),
+        _snap(event, "fanduel", "spreads", "Lakers", -110, -4.0, t2),
+        _snap(event, "betmgm", "spreads", "Lakers", -110, -4.0, t2),
+        # Caesars didn't move — will be value book; add both sides for hold
+        _snap(event, "caesars", "spreads", "Lakers", -105, -3.5, t1),
+        _snap(event, "caesars", "spreads", "Lakers", -105, -3.5, t2),
+        _snap(event, "caesars", "spreads", "Celtics", -105, 3.5, t2),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = SteamMoveDetector(settings, repo)
+    signals = await detector.detect(event, t2)
+
+    assert len(signals) == 1
+    sig = signals[0]
+    assert sig.details["value_books"][0]["bookmaker"] == "caesars"
+    # -105/-105 hold ≈ 0.0244
+    assert sig.details["us_hold"] is not None
+    assert sig.details["us_hold"] < 0.03
+
+
+@pytest.mark.asyncio
+async def test_steam_hold_none_when_other_side_missing(settings, repo):
+    """Hold should be None when only one side of market is available."""
+    event = "evt_hold2"
+    t1 = "2025-01-15T12:00:00+00:00"
+    t2 = "2025-01-15T12:20:00+00:00"
+
+    snapshots = [
+        _snap(event, "draftkings", "spreads", "Lakers", -110, -3.5, t1),
+        _snap(event, "fanduel", "spreads", "Lakers", -110, -3.5, t1),
+        _snap(event, "betmgm", "spreads", "Lakers", -110, -3.5, t1),
+        _snap(event, "draftkings", "spreads", "Lakers", -110, -4.0, t2),
+        _snap(event, "fanduel", "spreads", "Lakers", -110, -4.0, t2),
+        _snap(event, "betmgm", "spreads", "Lakers", -110, -4.0, t2),
+        # Caesars value book — but no other side
+        _snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1),
+        _snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = SteamMoveDetector(settings, repo)
+    signals = await detector.detect(event, t2)
+
+    assert len(signals) == 1
+    assert signals[0].details["us_hold"] is None
