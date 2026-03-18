@@ -70,45 +70,55 @@ async def test_non_tweetable_signals_skipped(settings, repo):
     poster._client.create_tweet.assert_not_called()
 
 
-# ── Free play logic ─────────────────────────────────────────────
+# ── Free play logic (2U = qualifier_count >= 3) ───────────────
 
 
 @pytest.mark.asyncio
-async def test_free_play_batch_sequencing(settings, repo):
-    """When a batch of PD signals fires, the one landing on the interval gets free play."""
+async def test_2u_signal_becomes_free_play(settings, repo):
+    """A 2U signal (3+ qualifiers) should automatically become a free play."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
-    poster._free_play_interval = 5
 
-    # Pre-insert 3 PD alerts (count = 3 before this batch)
-    for i in range(3):
-        await repo.record_alert(
-            event_id=f"evt_{i}",
-            alert_type="pinnacle_divergence",
-            market_key="spreads",
-            outcome_name="Lakers",
-        )
+    sig = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        details={
+            "qualifier_count": 3,
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
+        },
+    )
 
-    # Batch of 4 PD signals: seq 4, 5, 6, 7 — only seq 5 is free play
-    batch = [_make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE) for _ in range(4)]
-    # Record them in sent_alerts (as Discord alerter would)
-    for i in range(4):
-        await repo.record_alert(
-            event_id=f"evt_batch_{i}",
-            alert_type="pinnacle_divergence",
-            market_key="spreads",
-            outcome_name="Lakers",
-        )
+    await poster.post_signals([sig])
 
-    await poster.post_signals(batch)
+    poster._client.create_tweet.assert_called_once()
+    call_text = poster._client.create_tweet.call_args.kwargs["text"]
+    assert "FREE PLAY" in call_text
 
-    assert poster._client.create_tweet.call_count == 4
+
+@pytest.mark.asyncio
+async def test_non_2u_signal_no_free_play(settings, repo):
+    """Signals with fewer than 3 qualifiers should NOT become free plays."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._digest_mode = False
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    sig = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        details={
+            "qualifier_count": 2,
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
+        },
+    )
+
+    await poster.post_signals([sig])
+
+    # Should get a teaser, not a free play
     calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
-    free_play_count = sum(1 for t in calls if "FREE PLAY" in t)
-    assert free_play_count == 1  # only seq 5
+    assert all("FREE PLAY" not in t for t in calls)  # only seq 5
 
 
 # ── Tweet formatting ─────────────────────────────────────────────
@@ -258,33 +268,28 @@ async def test_post_signals_calls_tweepy(settings, repo):
 
 
 @pytest.mark.asyncio
-async def test_post_signals_free_play_tweet(settings, repo):
-    """A free play signal should produce a FREE PLAY tweet."""
+async def test_2u_excluded_book_skipped(settings, repo):
+    """2U signal from an excluded book should NOT become a free play."""
     poster = XPoster(settings, repo)
     poster._enabled = True
+    poster._digest_mode = False
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
-    poster._free_play_interval = 5
+    poster._excluded_books = {"betmgm"}
 
     sig = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
-        details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
+        details={
+            "qualifier_count": 3,
+            "value_books": [{"bookmaker": "betmgm", "price": -110, "point": -3.5}],
+        },
     )
-
-    # Insert exactly 5 alerts (batch of 1 signal, total=5, seq=5, 5%5==0)
-    for i in range(5):
-        await repo.record_alert(
-            event_id=f"evt_{i}",
-            alert_type="pinnacle_divergence",
-            market_key="spreads",
-            outcome_name="Lakers",
-        )
 
     await poster.post_signals([sig])
 
-    poster._client.create_tweet.assert_called_once()
-    call_text = poster._client.create_tweet.call_args.kwargs["text"]
-    assert "FREE PLAY" in call_text
+    # Should get a teaser, not a free play
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    assert all("FREE PLAY" not in t for t in calls)
 
 
 @pytest.mark.asyncio
@@ -414,27 +419,26 @@ async def test_mark_alert_free_play(settings, repo):
 
 
 @pytest.mark.asyncio
-async def test_post_signals_marks_free_play(settings, repo):
-    """post_signals should mark the alert as a free play in the DB when it posts one."""
+async def test_post_signals_marks_2u_free_play(settings, repo):
+    """post_signals should mark 2U signals as free plays in the DB."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
-    poster._free_play_interval = 5
 
     sig = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
-        details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
+        details={
+            "qualifier_count": 3,
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
+        },
     )
 
-    # Insert exactly 5 alerts (batch of 1 signal, total=5, seq=5, 5%5==0)
-    for i in range(5):
-        await repo.record_alert(
-            event_id="evt_123" if i == 4 else f"evt_{i}",
-            alert_type="pinnacle_divergence",
-            market_key="spreads",
-            outcome_name="Lakers",
-        )
+    # Record the alert (as Discord alerter would)
+    await repo.record_alert(
+        event_id="evt_123", alert_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+    )
 
     await poster.post_signals([sig])
 
@@ -607,264 +611,43 @@ async def test_strength_cap_boundary(settings, repo):
     poster._client.create_tweet.assert_not_called()
 
 
-# ── Smart free play selection ────────────────────────────────
-
-
 @pytest.mark.asyncio
-async def test_smart_free_play_prefers_sport(settings, repo):
-    """NBA should be picked over NCAAB when NBA is in preferred sports, even with higher strength."""
+async def test_multiple_2u_signals_all_become_free_plays(settings, repo):
+    """All 2U signals in a batch should become free plays."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
-    poster._free_play_interval = 1  # every signal is a free play
-    poster._free_play_sports = ["basketball_nba"]
-    poster._free_play_markets = []
-    poster._max_strength = 1.0
 
-    # Record 2 alerts for the batch
-    for i in range(2):
-        await repo.record_alert(
-            event_id=f"evt_{i}", alert_type="pinnacle_divergence",
-            market_key="spreads", outcome_name="Lakers",
-        )
-
-    nba = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.70,
-        sport_key="basketball_nba",
-        details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
+    sig1 = Signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        event_id="evt_1", sport_key="basketball_nba",
+        home_team="Lakers", away_team="Celtics",
+        market_key="totals", outcome_name="Over", strength=0.60,
+        description="Test", commence_time="2099-01-15T00:00:00Z",
+        details={
+            "qualifier_count": 3,
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 220.5}],
+        },
     )
-    ncaab = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.55,
-        sport_key="basketball_ncaab",
-        details={"value_books": [{"bookmaker": "fanduel", "price": -105, "point": -2.5}]},
+    sig2 = Signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        event_id="evt_2", sport_key="basketball_nba",
+        home_team="Warriors", away_team="Suns",
+        market_key="spreads", outcome_name="Warriors", strength=0.55,
+        description="Test", commence_time="2099-01-15T00:00:00Z",
+        details={
+            "qualifier_count": 3,
+            "value_books": [{"bookmaker": "fanduel", "price": -105, "point": -3.5}],
+        },
     )
 
-    await poster.post_signals([ncaab, nba])
+    await poster.post_signals([sig1, sig2])
 
     calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
-    free_plays = [t for t in calls if "FREE PLAY" in t]
-    assert len(free_plays) == 1
-    assert "70%" in free_plays[0]  # NBA signal strength
-
-
-@pytest.mark.asyncio
-async def test_smart_free_play_prefers_market(settings, repo):
-    """Moneyline should be picked over spreads when h2h is preferred market."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._digest_mode = False
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-    poster._free_play_interval = 1
-    poster._free_play_sports = []
-    poster._free_play_markets = ["h2h"]
-    poster._max_strength = 1.0
-
-    for i in range(2):
-        await repo.record_alert(
-            event_id=f"evt_{i}", alert_type="pinnacle_divergence",
-            market_key="spreads", outcome_name="Lakers",
-        )
-
-    ml = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.70, market_key="h2h",
-        details={"value_books": [{"bookmaker": "draftkings", "price": 150}]},
-    )
-    spread = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.55, market_key="spreads",
-        details={"value_books": [{"bookmaker": "fanduel", "price": -110, "point": -3.5}]},
-    )
-
-    await poster.post_signals([spread, ml])
-
-    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
-    free_plays = [t for t in calls if "FREE PLAY" in t]
-    assert len(free_plays) == 1
-    assert "Moneyline" in free_plays[0]
-
-
-@pytest.mark.asyncio
-async def test_smart_free_play_falls_back_to_strength(settings, repo):
-    """With no preferences, the lower-strength signal should win."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._digest_mode = False
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-    poster._free_play_interval = 1
-    poster._free_play_sports = []
-    poster._free_play_markets = []
-    poster._max_strength = 1.0
-
-    for i in range(2):
-        await repo.record_alert(
-            event_id=f"evt_{i}", alert_type="pinnacle_divergence",
-            market_key="spreads", outcome_name="Lakers",
-        )
-
-    low = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.55,
-        details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
-    )
-    high = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.75,
-        details={"value_books": [{"bookmaker": "fanduel", "price": -105, "point": -2.5}]},
-    )
-
-    await poster.post_signals([high, low])
-
-    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
-    free_plays = [t for t in calls if "FREE PLAY" in t]
-    assert len(free_plays) == 1
-    assert "55%" in free_plays[0]
-
-
-@pytest.mark.asyncio
-async def test_free_play_counter_uses_unfiltered_count(settings, repo):
-    """Seq should be computed from all tweetable signals, not just eligible (below cap)."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._digest_mode = False
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-    poster._free_play_interval = 5
-    poster._max_strength = 0.80
-
-    # 3 prior alerts + batch of 3 (unfiltered) = seq 4,5,6 → free play due at 5
-    for i in range(3):
-        await repo.record_alert(
-            event_id=f"evt_{i}", alert_type="pinnacle_divergence",
-            market_key="spreads", outcome_name="Lakers",
-        )
-
-    batch = [
-        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.60),  # eligible
-        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.90),  # filtered
-        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.92),  # filtered
-    ]
-    # Record them as Discord alerter would
-    for i in range(3):
-        await repo.record_alert(
-            event_id=f"evt_batch_{i}", alert_type="pinnacle_divergence",
-            market_key="spreads", outcome_name="Lakers",
-        )
-
-    await poster.post_signals(batch)
-
-    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
-    # Should have 1 tweet: the free play (only 1 eligible signal, and it becomes the free play)
-    assert len(calls) == 1
-    assert "FREE PLAY" in calls[0]
-
-
-def test_pick_best_free_play_excludes_book(settings, repo):
-    """Signals from excluded books should be skipped for free play selection."""
-    poster = XPoster(settings, repo)
-    poster._free_play_sports = []
-    poster._free_play_markets = []
-    poster._excluded_books = {"betmgm"}
-
-    mgm = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.50,
-        details={"value_books": [{"bookmaker": "betmgm", "price": -110, "point": -3.5}]},
-    )
-    dk = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.70,
-        details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
-    )
-
-    # MGM has lower strength (normally preferred), but is excluded
-    result = poster._pick_best_free_play([mgm, dk])
-    assert result is dk
-
-
-def test_pick_best_free_play_fallback_when_all_excluded(settings, repo):
-    """If all candidates are excluded, fall back to unfiltered list."""
-    poster = XPoster(settings, repo)
-    poster._free_play_sports = []
-    poster._free_play_markets = []
-    poster._excluded_books = {"betmgm"}
-
-    mgm1 = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.50,
-        details={"value_books": [{"bookmaker": "betmgm", "price": -110, "point": -3.5}]},
-    )
-    mgm2 = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.70,
-        details={"value_books": [{"bookmaker": "betmgm", "price": -105, "point": -2.5}]},
-    )
-
-    # All excluded → falls back to unfiltered, picks lower strength
-    result = poster._pick_best_free_play([mgm1, mgm2])
-    assert result is mgm1
-
-
-def test_pick_best_free_play_scoring(settings, repo):
-    """Unit test for _pick_best_free_play scoring logic directly."""
-    poster = XPoster(settings, repo)
-    poster._free_play_sports = ["basketball_nba"]
-    poster._free_play_markets = ["h2h"]
-
-    # NBA + h2h + high strength (worst on strength, best on sport+market)
-    s1 = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.75,
-        sport_key="basketball_nba", market_key="h2h",
-    )
-    # NCAAB + spreads + low strength (best on strength, worst on sport+market)
-    s2 = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.50,
-        sport_key="basketball_ncaab", market_key="spreads",
-    )
-    # NBA + spreads + medium strength
-    s3 = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.60,
-        sport_key="basketball_nba", market_key="spreads",
-    )
-
-    # s1 wins: sport(1) + market(1) beats s2's sport(0) + market(0)
-    assert poster._pick_best_free_play([s1, s2, s3]) is s1
-
-    # Without sport preference, market preference still wins
-    poster._free_play_sports = []
-    # s1: sport(0), market(1), 0.25  vs  s3: sport(0), market(0), 0.40
-    assert poster._pick_best_free_play([s1, s2, s3]) is s1
-
-    # Without any preferences, lowest strength wins
-    poster._free_play_markets = []
-    # s2: (0, 0, 0, 0.50)  vs  s3: (0, 0, 0, 0.40)  vs  s1: (0, 0, 0, 0.25)
-    assert poster._pick_best_free_play([s1, s2, s3]) is s2
-
-
-def test_pick_best_free_play_prefers_elite(settings, repo):
-    """Free play should prefer signal with higher qualifier_count."""
-    poster = XPoster(settings, repo)
-    poster._free_play_sports = ["basketball_nba"]
-    poster._free_play_markets = ["h2h"]
-
-    # Elite signal (2 qualifiers) — NCAAB spreads (no sport/market bonus)
-    elite = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.60,
-        sport_key="basketball_ncaab", market_key="spreads",
-        details={"qualifier_count": 2},
-    )
-    # Regular signal (0 qualifiers) — NBA h2h (has sport+market bonus)
-    regular = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.50,
-        sport_key="basketball_nba", market_key="h2h",
-        details={"qualifier_count": 0},
-    )
-    # Elite wins despite no sport/market bonus
-    assert poster._pick_best_free_play([elite, regular]) is elite
-
-    # 2U play (3 qualifiers) beats Elite (2 qualifiers)
-    two_u = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.70,
-        sport_key="basketball_ncaab", market_key="totals",
-        details={"qualifier_count": 3},
-    )
-    assert poster._pick_best_free_play([elite, two_u, regular]) is two_u
+    free_play_count = sum(1 for t in calls if "FREE PLAY" in t)
+    assert free_play_count == 2
 
 
 # ── Same-game free play dedup ──────────────────────────────────
@@ -872,13 +655,12 @@ def test_pick_best_free_play_prefers_elite(settings, repo):
 
 @pytest.mark.asyncio
 async def test_free_play_skips_repeat_game(settings, repo):
-    """Free play should not pick a game that already had a free play (avoids opposite-side picks)."""
+    """2U free play should skip a game that already had a free play."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
-    poster._free_play_interval = 1  # every signal is a free play
 
     # Record a past free play for evt_123
     await repo.record_alert(
@@ -886,17 +668,15 @@ async def test_free_play_skips_repeat_game(settings, repo):
         market_key="spreads", outcome_name="Lakers", is_free_play=True,
     )
 
-    # New batch: same game (evt_123) but different side — should be skipped for free play
+    # New batch: same game (evt_123) with 3 qualifiers — should be skipped for free play
     sig = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
         outcome_name="Celtics",
         market_key="h2h",
-        details={"value_books": [{"bookmaker": "draftkings", "price": 150}]},
-    )
-    # Record the alert (as Discord alerter would)
-    await repo.record_alert(
-        event_id="evt_123", alert_type="pinnacle_divergence",
-        market_key="h2h", outcome_name="Celtics",
+        details={
+            "qualifier_count": 3,
+            "value_books": [{"bookmaker": "draftkings", "price": 150}],
+        },
     )
 
     await poster.post_signals([sig])
@@ -908,15 +688,12 @@ async def test_free_play_skips_repeat_game(settings, repo):
 
 @pytest.mark.asyncio
 async def test_free_play_picks_different_game(settings, repo):
-    """When one game already has a free play, pick the other game instead."""
+    """When one game already has a free play, the other 2U game gets picked."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
-    poster._free_play_interval = 1
-    poster._free_play_sports = []
-    poster._free_play_markets = []
 
     # Past free play for evt_123
     await repo.record_alert(
@@ -924,14 +701,17 @@ async def test_free_play_picks_different_game(settings, repo):
         market_key="spreads", outcome_name="Lakers", is_free_play=True,
     )
 
-    # Batch: evt_123 (repeat game) + evt_other (new game)
+    # Batch: evt_123 (repeat, 2U) + evt_other (new, 2U)
     repeat = Signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
         event_id="evt_123", sport_key="basketball_nba",
         home_team="Lakers", away_team="Celtics",
         market_key="h2h", outcome_name="Celtics", strength=0.50,
         description="Test", commence_time="2099-01-15T00:00:00Z",
-        details={"value_books": [{"bookmaker": "draftkings", "price": 150}]},
+        details={
+            "qualifier_count": 3,
+            "value_books": [{"bookmaker": "draftkings", "price": 150}],
+        },
     )
     new_game = Signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
@@ -939,14 +719,11 @@ async def test_free_play_picks_different_game(settings, repo):
         home_team="Warriors", away_team="Suns",
         market_key="spreads", outcome_name="Warriors", strength=0.70,
         description="Test", commence_time="2099-01-15T00:00:00Z",
-        details={"value_books": [{"bookmaker": "fanduel", "price": -110, "point": -3.5}]},
+        details={
+            "qualifier_count": 3,
+            "value_books": [{"bookmaker": "fanduel", "price": -110, "point": -3.5}],
+        },
     )
-
-    for sig in [repeat, new_game]:
-        await repo.record_alert(
-            event_id=sig.event_id, alert_type="pinnacle_divergence",
-            market_key=sig.market_key, outcome_name=sig.outcome_name,
-        )
 
     await poster.post_signals([repeat, new_game])
 
@@ -956,72 +733,6 @@ async def test_free_play_picks_different_game(settings, repo):
     assert "Warriors" in free_plays[0]  # new game picked, not repeat
 
 
-# ── Weekend interval ──────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_weekend_interval_used_on_saturday(settings, repo):
-    """On weekends, the wider weekend interval should be used."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._digest_mode = False
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-    poster._free_play_interval = 5
-    poster._free_play_weekend_interval = 10
-
-    # Insert 10 alerts so seq=10 (hits weekend interval=10 but not weekday=5*3=15)
-    for i in range(10):
-        await repo.record_alert(
-            event_id=f"evt_{i}", alert_type="pinnacle_divergence",
-            market_key="spreads", outcome_name="Lakers",
-        )
-
-    sig = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE,
-        details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
-    )
-
-    # Saturday → weekend interval (10), seq=10, 10%10==0 → free play
-    fake_saturday = datetime(2026, 2, 28, 18, 0, 0, tzinfo=timezone.utc)
-    with patch("sharp_seeker.alerts.x_poster.datetime") as mock_dt:
-        mock_dt.now.return_value = fake_saturday
-        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
-        await poster.post_signals([sig])
-
-    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
-    assert any("FREE PLAY" in t for t in calls)
-
-
-@pytest.mark.asyncio
-async def test_weekend_interval_not_used_on_weekday(settings, repo):
-    """On weekdays, the regular interval should be used — weekend interval ignored."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._digest_mode = False
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-    poster._free_play_interval = 5
-    poster._free_play_weekend_interval = 10
-
-    # Insert 7 alerts: seq=7, hits neither 5*2=10 nor 10 → no free play
-    for i in range(7):
-        await repo.record_alert(
-            event_id=f"evt_{i}", alert_type="pinnacle_divergence",
-            market_key="spreads", outcome_name="Lakers",
-        )
-
-    sig = _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)
-
-    # Wednesday → weekday interval (5), seq=7, 7%5!=0 → no free play
-    fake_wednesday = datetime(2026, 2, 25, 18, 0, 0, tzinfo=timezone.utc)
-    with patch("sharp_seeker.alerts.x_poster.datetime") as mock_dt:
-        mock_dt.now.return_value = fake_wednesday
-        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
-        await poster.post_signals([sig])
-
-    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
-    assert all("FREE PLAY" not in t for t in calls)
 
 
 # ── Rapid change tweeting ──────────────────────────────────────
@@ -1052,28 +763,22 @@ async def test_rapid_change_gets_teaser(settings, repo):
 
 
 @pytest.mark.asyncio
-async def test_rapid_change_eligible_for_free_play(settings, repo):
-    """Rapid change signal can become a free play pick."""
+async def test_rapid_change_2u_gets_free_play(settings, repo):
+    """Rapid change signal with 3+ qualifiers becomes a free play."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
-    poster._free_play_interval = 5
 
     sig = _make_signal(
         signal_type=SignalType.RAPID_CHANGE,
-        details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
+        details={
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
+            "qualifier_count": 3,
+            "qualifier_tags": ["Best Combo", "Best Hour", "Sharp Hold"],
+        },
     )
-
-    # Insert exactly 5 alerts of rapid_change type
-    for i in range(5):
-        await repo.record_alert(
-            event_id=f"evt_{i}",
-            alert_type="rapid_change",
-            market_key="spreads",
-            outcome_name="Lakers",
-        )
 
     await poster.post_signals([sig])
 
@@ -1081,50 +786,6 @@ async def test_rapid_change_eligible_for_free_play(settings, repo):
     call_text = poster._client.create_tweet.call_args.kwargs["text"]
     assert "FREE PLAY" in call_text
     assert "Rapid Change" in call_text
-
-
-@pytest.mark.asyncio
-async def test_mixed_batch_counter(settings, repo):
-    """Batch with PD + rapid changes counts both for seq numbering."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._digest_mode = False
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-    poster._free_play_interval = 5
-
-    # Pre-insert 3 alerts (2 PD + 1 rapid)
-    for i in range(2):
-        await repo.record_alert(
-            event_id=f"evt_pd_{i}", alert_type="pinnacle_divergence",
-            market_key="spreads", outcome_name="Lakers",
-        )
-    await repo.record_alert(
-        event_id="evt_rc_0", alert_type="rapid_change",
-        market_key="spreads", outcome_name="Lakers",
-    )
-
-    # Batch of 3: 1 PD + 2 rapid (total = 3 prior + 3 batch = 6, seq 4,5,6)
-    batch = [
-        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE),
-        _make_signal(signal_type=SignalType.RAPID_CHANGE),
-        _make_signal(signal_type=SignalType.RAPID_CHANGE),
-    ]
-    for i, sig in enumerate(batch):
-        await repo.record_alert(
-            event_id=f"evt_batch_{i}",
-            alert_type=sig.signal_type.value,
-            market_key="spreads",
-            outcome_name="Lakers",
-        )
-
-    await poster.post_signals(batch)
-
-    # seq 5 hits interval → 1 free play + 2 teasers = 3 tweets
-    assert poster._client.create_tweet.call_count == 3
-    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
-    free_play_count = sum(1 for t in calls if "FREE PLAY" in t)
-    assert free_play_count == 1
 
 
 @pytest.mark.asyncio
@@ -1180,27 +841,21 @@ async def test_digest_buffers_teasers(settings, repo):
 
 @pytest.mark.asyncio
 async def test_digest_posts_free_play_immediately(settings, repo):
-    """Free plays still tweet right away in digest mode."""
+    """2U free plays still tweet right away in digest mode."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = True
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
-    poster._free_play_interval = 5
 
     sig = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
-        details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
+        details={
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
+            "qualifier_count": 3,
+            "qualifier_tags": ["Best Combo", "Best Hour", "Sharp Hold"],
+        },
     )
-
-    # Insert exactly 5 alerts so seq=5 triggers free play
-    for i in range(5):
-        await repo.record_alert(
-            event_id=f"evt_{i}",
-            alert_type="pinnacle_divergence",
-            market_key="spreads",
-            outcome_name="Lakers",
-        )
 
     await poster.post_signals([sig])
 
