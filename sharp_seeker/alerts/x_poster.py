@@ -56,8 +56,6 @@ class XPoster:
         self._repo = repo
         self._card_gen = card_gen
         self._cta_url = settings.x_cta_url
-        self._free_play_interval = settings.x_free_play_interval
-        self._free_play_weekend_interval = settings.x_free_play_weekend_interval
         self._teaser_hours: list[int] = settings.x_teaser_hours
         self._max_strength = settings.x_max_strength
         self._free_play_sports: list[str] = settings.x_free_play_sports
@@ -112,63 +110,46 @@ class XPoster:
             log.info("x_batch_skipped", reason="all_above_strength_cap", cap=self._max_strength)
             return
 
-        # Discord alerter already recorded all signals before we run,
-        # so total includes the entire current batch.  Compute seq
-        # range from *unfiltered* batch size to keep counter predictable.
-        total = await self._repo.count_alerts_by_types(list(self._tweet_types))
-        batch_size = len(tweetable)
-        seq_start = total - batch_size + 1
-        seq_end = total  # inclusive
-
-        # Weekend (Sat/Sun) uses a wider interval to account for higher volume
         now_utc = datetime.now(timezone.utc)
-        is_weekend = now_utc.weekday() >= 5  # 5=Sat, 6=Sun
-        weekend = self._free_play_weekend_interval or self._free_play_interval
-        interval = weekend if is_weekend else self._free_play_interval
-
-        # Check if any seq in this batch hits the free play interval
-        free_play_due = any(
-            seq > 0 and seq % interval == 0
-            for seq in range(seq_start, seq_end + 1)
-        )
-
         now_hour = now_utc.hour
 
-        # Post free play (always, regardless of teaser hours)
-        free_play_pick: Signal | None = None
-        if free_play_due:
-            # Never pick a game we already sent a free play for (avoids opposite-side picks)
-            past_fp_events = await self._repo.get_free_play_event_ids()
-            fp_candidates = [
-                s for s in eligible
-                if s.event_id not in past_fp_events and s.strength >= 0.50
-            ]
-            if not fp_candidates:
-                log.info("x_free_play_skipped", reason="no_eligible_candidates")
-            else:
-                free_play_pick = self._pick_best_free_play(fp_candidates)
-                try:
-                    text = self._format_free_play(free_play_pick)
-                    tweet_url = self._post_tweet(text)
-                    await self._repo.mark_alert_free_play(
-                        free_play_pick.event_id, free_play_pick.market_key,
-                        free_play_pick.outcome_name,
-                    )
-                    if tweet_url:
-                        self._notify_discord(tweet_url)
-                    if self._digest_mode:
-                        self._digest_free_plays.append(free_play_pick)
-                    log.info(
-                        "x_tweet_posted",
-                        signal_type=free_play_pick.signal_type.value,
-                        event_id=free_play_pick.event_id,
-                        free_play=True,
-                    )
-                except Exception:
-                    log.exception("x_tweet_failed", event_id=free_play_pick.event_id)
+        # Free plays: every 2U signal (3+ qualifiers) becomes a free play
+        past_fp_events = await self._repo.get_free_play_event_ids()
+        free_play_picks: list[Signal] = []
+        for s in eligible:
+            q_count = (s.details or {}).get("qualifier_count", 0)
+            if q_count < 3:
+                continue
+            if s.event_id in past_fp_events:
+                continue
+            if self._excluded_books and self._get_book(s) in self._excluded_books:
+                continue
+            free_play_picks.append(s)
 
-        # Collect teaser-eligible signals (exclude the free play pick)
-        teasers = [s for s in eligible if s is not free_play_pick]
+        for pick in free_play_picks:
+            try:
+                text = self._format_free_play(pick)
+                tweet_url = self._post_tweet(text)
+                await self._repo.mark_alert_free_play(
+                    pick.event_id, pick.market_key, pick.outcome_name,
+                )
+                if tweet_url:
+                    self._notify_discord(tweet_url)
+                if self._digest_mode:
+                    self._digest_free_plays.append(pick)
+                log.info(
+                    "x_tweet_posted",
+                    signal_type=pick.signal_type.value,
+                    event_id=pick.event_id,
+                    free_play=True,
+                    qualifier_count=3,
+                )
+            except Exception:
+                log.exception("x_tweet_failed", event_id=pick.event_id)
+
+        # Collect teaser-eligible signals (exclude free play picks)
+        fp_set = set(id(s) for s in free_play_picks)
+        teasers = [s for s in eligible if id(s) not in fp_set]
 
         if self._digest_mode:
             # Buffer teasers for the next digest tweet
@@ -201,25 +182,6 @@ class XPoster:
         if value_books:
             return value_books[0].get("bookmaker")
         return signal.details.get("us_book")
-
-    def _pick_best_free_play(self, eligible: list[Signal]) -> Signal:
-        """Score eligible signals and pick the best candidate for free play."""
-        if self._excluded_books:
-            filtered = [
-                s for s in eligible
-                if self._get_book(s) not in self._excluded_books
-            ]
-            # Fall back to unfiltered if all candidates are excluded
-            if filtered:
-                eligible = filtered
-
-        def score(s: Signal) -> tuple[int, int, int, float]:
-            qualifier_count = (s.details or {}).get("qualifier_count", 0)
-            sport_bonus = 1 if self._free_play_sports and s.sport_key in self._free_play_sports else 0
-            market_bonus = 1 if self._free_play_markets and s.market_key in self._free_play_markets else 0
-            strength_score = 1.0 - s.strength  # lower strength → higher score
-            return (qualifier_count, sport_bonus, market_bonus, strength_score)
-        return max(eligible, key=score)
 
     def _format_teaser(self, signal: Signal) -> str:
         matchup = f"{signal.away_team} vs {signal.home_team}"
