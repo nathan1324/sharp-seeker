@@ -360,7 +360,7 @@ def main():
 
     free_plays = conn.execute("""
         SELECT sa.event_id, sa.alert_type, sa.market_key, sa.outcome_name,
-               sa.created_at, sr.result, sr.signal_strength, sr.sport_key,
+               sa.sent_at, sr.result, sr.signal_strength, sr.sport_key,
                sr.details_json
         FROM sent_alerts sa
         LEFT JOIN signal_results sr
@@ -369,7 +369,7 @@ def main():
             AND sa.market_key = sr.market_key
             AND sa.outcome_name = sr.outcome_name
         WHERE sa.is_free_play = 1
-        ORDER BY sa.created_at DESC
+        ORDER BY sa.sent_at DESC
     """).fetchall()
     free_plays = [dict(r) for r in free_plays]
 
@@ -404,7 +404,7 @@ def main():
                 result_marker = " P"
 
             print("    {dt} {sp:<6s} {mk:<8s} {on:<18s} {res:<8s}{m}".format(
-                dt=(fp.get("created_at") or "?")[:10],
+                dt=(fp.get("sent_at") or "?")[:10],
                 sp=SPORT_SHORT.get(fp.get("sport_key", ""), fp.get("sport_key", "?")),
                 mk=fp.get("market_key", "?"),
                 on=fp.get("outcome_name", "?")[:18],
@@ -428,8 +428,8 @@ def main():
             print("  Current streak: {n} {t}".format(n=streak_count, t=streak_type))
 
         # Last 7 days
-        fp_recent = [f for f in resolved_fp if f.get("created_at") and
-                     f["created_at"] >= (now - timedelta(days=7)).isoformat()]
+        fp_recent = [f for f in resolved_fp if f.get("sent_at") and
+                     f["sent_at"] >= (now - timedelta(days=7)).isoformat()]
         if fp_recent:
             w7, l7, p7 = _record(fp_recent)
             print("  Last 7 days: {w}-{l} ({wr})".format(
