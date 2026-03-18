@@ -19,7 +19,7 @@ async def grade():
     db = await aiosqlite.connect(s.db_path)
     db.row_factory = aiosqlite.Row
     repo = Repository(db)
-    client = OddsClient(s)
+    client = OddsClient(s, repo)
     grader = ScoreGrader(s, client, repo)
     result = await grader.resolve_all()
     print(result)
