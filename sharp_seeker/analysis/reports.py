@@ -71,7 +71,6 @@ class ReportGenerator:
     def __init__(self, settings: Settings, repo: Repository) -> None:
         self._settings = settings
         self._repo = repo
-        self._best_combos: set[str] = set(settings.signal_best_combos)
 
     async def send_daily_report(self) -> None:
         """Send per-signal-type reports + combined summary + override reports."""
@@ -150,7 +149,7 @@ class ReportGenerator:
                     emoji = RESULT_EMOJI.get(sig_dict["result"], "?")
                     teams = await self._repo.get_event_teams(sig_dict["event_id"])
                     matchup = f"{teams[1]} vs {teams[0]}" if teams else sig_dict["event_id"]
-                    star = self._top_performer_star(sig_dict)
+                    star = self._qualifier_badge(sig_dict)
                     lines.append(
                         f"{emoji} {matchup} — {sig_dict['market_key']} "
                         f"{sig_dict['outcome_name']}{star}"
@@ -257,7 +256,7 @@ class ReportGenerator:
                     emoji = RESULT_EMOJI.get(sig_dict["result"], "?")
                     teams = await self._repo.get_event_teams(sig_dict["event_id"])
                     matchup = f"{teams[1]} vs {teams[0]}" if teams else sig_dict["event_id"]
-                    star = self._top_performer_star(sig_dict)
+                    star = self._qualifier_badge(sig_dict)
                     lines.append(
                         f"{emoji} {matchup} — {sig_dict['market_key']} "
                         f"{sig_dict['outcome_name']}{star}"
@@ -464,15 +463,23 @@ class ReportGenerator:
         else:
             log.error("report_send_failed", title=label)
 
-    def _top_performer_star(self, sig_dict: dict) -> str:
-        """Return a star emoji if the signal matches a best combo."""
-        key = "{t}:{s}:{m}".format(
-            t=sig_dict.get("signal_type", ""),
-            s=sig_dict.get("sport_key", ""),
-            m=sig_dict.get("market_key", ""),
-        )
-        if key in self._best_combos:
-            return " \u2b50"
+    @staticmethod
+    def _qualifier_badge(sig_dict: dict) -> str:
+        """Return the tiered badge emoji based on qualifier_count in details."""
+        details_raw = sig_dict.get("details_json")
+        if not details_raw:
+            return ""
+        try:
+            details = json.loads(details_raw) if isinstance(details_raw, str) else details_raw
+        except (json.JSONDecodeError, TypeError):
+            return ""
+        q_count = details.get("qualifier_count", 0)
+        if q_count >= 3:
+            return " \U0001f525"  # 2U PLAY
+        if q_count >= 2:
+            return " \U0001f3c6"  # Elite
+        if q_count >= 1:
+            return " \u2b50"  # Top Performer
         return ""
 
     @staticmethod
