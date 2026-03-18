@@ -213,11 +213,12 @@ class XPoster:
             if filtered:
                 eligible = filtered
 
-        def score(s: Signal) -> tuple[int, int, float]:
+        def score(s: Signal) -> tuple[int, int, int, float]:
+            qualifier_count = (s.details or {}).get("qualifier_count", 0)
             sport_bonus = 1 if self._free_play_sports and s.sport_key in self._free_play_sports else 0
             market_bonus = 1 if self._free_play_markets and s.market_key in self._free_play_markets else 0
             strength_score = 1.0 - s.strength  # lower strength → higher score
-            return (sport_bonus, market_bonus, strength_score)
+            return (qualifier_count, sport_bonus, market_bonus, strength_score)
         return max(eligible, key=score)
 
     def _format_teaser(self, signal: Signal) -> str:

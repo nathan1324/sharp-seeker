@@ -147,9 +147,39 @@ class DiscordAlerter:
         mst_hour = datetime.now(timezone.utc).astimezone(MST).hour
         return mst_hour in hours
 
+    def _count_qualifiers(self, sig: Signal) -> tuple[int, list[str]]:
+        """Count how many quality qualifiers a signal meets.
+
+        Qualifiers: best combo, best hour, sharp hold (<4.5%).
+        """
+        tags: list[str] = []
+        if self._best_combos and self._is_best_combo(sig):
+            tags.append("Best Combo")
+        if self._is_best_hour(sig):
+            tags.append("Best Hour")
+        details = sig.details or {}
+        us_hold = details.get("us_hold")
+        if us_hold is not None and us_hold < 0.045:
+            tags.append("Sharp Hold")
+        return len(tags), tags
+
     async def send_signals(self, signals: list[Signal]) -> None:
-        """Send each signal as a Discord embed and record it."""
+        """Send each signal as a Discord embed and record it.
+
+        Signals with 0 qualifiers are suppressed (not sent to Discord).
+        """
         for signal in signals:
+            q_count, q_tags = self._count_qualifiers(signal)
+            signal.details["qualifier_count"] = q_count
+            signal.details["qualifier_tags"] = q_tags
+            if q_count == 0:
+                log.info(
+                    "signal_suppressed",
+                    signal_type=signal.signal_type.value,
+                    event_id=signal.event_id,
+                    reason="zero_qualifiers",
+                )
+                continue
             try:
                 self._send_embed(signal)
                 await self._repo.record_alert(
@@ -163,6 +193,7 @@ class DiscordAlerter:
                     "alert_sent",
                     signal_type=signal.signal_type.value,
                     event_id=signal.event_id,
+                    qualifier_count=q_count,
                 )
             except Exception:
                 log.exception("alert_send_failed", event_id=signal.event_id)
@@ -192,11 +223,23 @@ class DiscordAlerter:
             name="Strength", value=_strength_bar(sig.strength), inline=False
         )
 
-        # Top performer badge for high-confidence combos or hours
-        if (self._best_combos and self._is_best_combo(sig)) or self._is_best_hour(sig):
+        # Tiered badge based on qualifier count
+        q_count = sig.details.get("qualifier_count", 0)
+        q_tags = sig.details.get("qualifier_tags", [])
+        if q_count >= 3:
+            tag_str = " + ".join(q_tags)
+            embed.add_embed_field(
+                name="\U0001f525 2U PLAY", value=tag_str, inline=False,
+            )
+        elif q_count >= 2:
+            tag_str = " + ".join(q_tags)
+            embed.add_embed_field(
+                name="\U0001f3c6 Elite Signal", value=tag_str, inline=False,
+            )
+        elif q_count == 1:
             embed.add_embed_field(
                 name="\u2b50 Top Performer",
-                value="High-confidence combo",
+                value=q_tags[0] if q_tags else "High-confidence combo",
                 inline=False,
             )
 

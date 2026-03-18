@@ -833,8 +833,38 @@ def test_pick_best_free_play_scoring(settings, repo):
 
     # Without any preferences, lowest strength wins
     poster._free_play_markets = []
-    # s2: (0, 0, 0.50)  vs  s3: (0, 0, 0.40)  vs  s1: (0, 0, 0.25)
+    # s2: (0, 0, 0, 0.50)  vs  s3: (0, 0, 0, 0.40)  vs  s1: (0, 0, 0, 0.25)
     assert poster._pick_best_free_play([s1, s2, s3]) is s2
+
+
+def test_pick_best_free_play_prefers_elite(settings, repo):
+    """Free play should prefer signal with higher qualifier_count."""
+    poster = XPoster(settings, repo)
+    poster._free_play_sports = ["basketball_nba"]
+    poster._free_play_markets = ["h2h"]
+
+    # Elite signal (2 qualifiers) — NCAAB spreads (no sport/market bonus)
+    elite = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.60,
+        sport_key="basketball_ncaab", market_key="spreads",
+        details={"qualifier_count": 2},
+    )
+    # Regular signal (0 qualifiers) — NBA h2h (has sport+market bonus)
+    regular = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.50,
+        sport_key="basketball_nba", market_key="h2h",
+        details={"qualifier_count": 0},
+    )
+    # Elite wins despite no sport/market bonus
+    assert poster._pick_best_free_play([elite, regular]) is elite
+
+    # 2U play (3 qualifiers) beats Elite (2 qualifiers)
+    two_u = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.70,
+        sport_key="basketball_ncaab", market_key="totals",
+        details={"qualifier_count": 3},
+    )
+    assert poster._pick_best_free_play([elite, two_u, regular]) is two_u
 
 
 # ── Same-game free play dedup ──────────────────────────────────
