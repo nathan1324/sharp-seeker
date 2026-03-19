@@ -166,9 +166,9 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `DISCORD_WEBHOOK_REVERSE_LINE` | — | Channel for reverse line movement alerts |
 | `DISCORD_WEBHOOK_EXCHANGE_SHIFT` | — | Channel for exchange shift alerts |
 | `DISCORD_WEBHOOK_OVERRIDES` | `{}` | Per-sport+signal webhook routing (JSON, see below) |
-| `ODDS_API_MONTHLY_CREDITS` | `500` | Monthly API credit budget |
+| `ODDS_API_MONTHLY_CREDITS` | `100000` | Monthly API credit budget |
 | `SPORTS` | `["basketball_nba"]` | Sports to track (JSON array) |
-| `BOOKMAKERS` | `["draftkings","fanduel","betmgm","pinnacle"]` | Bookmakers to monitor (JSON array) |
+| `BOOKMAKERS` | `["draftkings","fanduel","betmgm","pinnacle","williamhill_us","betrivers"]` | Bookmakers to monitor (JSON array) |
 | `POLL_INTERVAL_MINUTES` | `12` | Minutes between polls |
 | `QUIET_HOURS_START` | `5` | UTC hour to stop polling |
 | `QUIET_HOURS_END` | `14` | UTC hour to resume polling |
