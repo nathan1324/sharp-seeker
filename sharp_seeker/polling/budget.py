@@ -24,12 +24,12 @@ class BudgetTracker:
         self._low_budget_warned = False
 
     async def should_poll(self) -> bool:
-        """Check if we have enough budget to poll. Returns False if below 20% threshold."""
+        """Check if we have enough budget to poll. Returns False if below 10% threshold."""
         remaining = await self._repo.get_credits_remaining()
         if remaining is None:
             return True  # no data yet, assume OK
 
-        threshold = self._settings.odds_api_monthly_credits * 0.20
+        threshold = self._settings.odds_api_monthly_credits * 0.10
         if remaining <= threshold:
             log.warning(
                 "budget_low",
