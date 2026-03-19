@@ -181,7 +181,7 @@ def test_format_free_play_with_value_books(settings, repo):
     assert "Spread" in text
     assert "Lakers" in text
     assert "-3.5" in text
-    assert "Draftkings" in text
+    assert "DraftKings" in text
     assert "85%" in text
     assert "discord.gg/test" in text
 
@@ -206,7 +206,7 @@ def test_format_free_play_moneyline(settings, repo):
     assert "FREE PLAY" in text
     assert "Moneyline" in text
     assert "+150" in text
-    assert "Fanduel" in text
+    assert "FanDuel" in text
 
 
 def test_format_free_play_no_value_books(settings, repo):
@@ -952,7 +952,7 @@ async def test_digest_includes_free_plays(settings, repo):
     assert "2 alerts" in call_text
     # Free plays section with header
     assert "\U0001f3af Free Plays" in call_text
-    assert "Draftkings" in call_text
+    assert "DraftKings" in call_text
     assert "-3.5" in call_text
     # Signals section with header
     assert "\U0001f525 Discord Signals" in call_text
@@ -982,7 +982,7 @@ async def test_digest_only_free_plays(settings, repo):
     call_text = poster._client.create_tweet.call_args.kwargs["text"]
     assert "1 alert" in call_text
     assert "\U0001f3af Free Plays" in call_text
-    assert "Fanduel" in call_text
+    assert "FanDuel" in call_text
     assert "+150" in call_text
     # No signals section when there are no teasers
     assert "\U0001f525 Discord Signals" not in call_text

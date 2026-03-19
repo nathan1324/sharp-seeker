@@ -9,6 +9,7 @@ import structlog
 import tweepy
 from discord_webhook import DiscordWebhook
 
+from sharp_seeker.alerts.models import display_book
 from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
 from sharp_seeker.engine.base import Signal, SignalType
@@ -201,7 +202,7 @@ class XPoster:
         value_books = d.get("value_books", [])
         if value_books:
             best = value_books[0]
-            bm = best["bookmaker"].title()
+            bm = display_book(best["bookmaker"])
             odds = _format_odds(signal.market_key, best.get("price"), best.get("point"))
             bet_line = f"\U0001f4b0 Bet {signal.outcome_name} {odds} @ {bm}"
         else:
@@ -260,7 +261,7 @@ class XPoster:
                 value_books = d.get("value_books", [])
                 if value_books:
                     best = value_books[0]
-                    bm = best["bookmaker"].title()
+                    bm = display_book(best["bookmaker"])
                     odds = _format_odds(sig.market_key, best.get("price"), best.get("point"))
                     pick = f"{sig.outcome_name} {odds} @ {bm}"
                 else:

@@ -13,6 +13,20 @@ SIGNAL_COLORS: dict[SignalType, int] = {
     SignalType.EXCHANGE_SHIFT: 0x2ECC71,   # green
 }
 
+_BOOK_DISPLAY: dict[str, str] = {
+    "williamhill_us": "Caesars",
+    "betrivers": "BetRivers",
+    "draftkings": "DraftKings",
+    "fanduel": "FanDuel",
+    "betmgm": "BetMGM",
+}
+
+
+def display_book(key: str) -> str:
+    """Convert an API bookmaker key to a user-friendly display name."""
+    return _BOOK_DISPLAY.get(key, key.title())
+
+
 SIGNAL_LABELS: dict[SignalType, str] = {
     SignalType.STEAM_MOVE: "Steam Move",
     SignalType.RAPID_CHANGE: "Rapid Line Change",

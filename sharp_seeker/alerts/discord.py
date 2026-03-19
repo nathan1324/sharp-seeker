@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import structlog
 from discord_webhook import DiscordEmbed, DiscordWebhook
 
-from sharp_seeker.alerts.models import SIGNAL_COLORS, SIGNAL_LABELS
+from sharp_seeker.alerts.models import SIGNAL_COLORS, SIGNAL_LABELS, display_book
 from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
 from sharp_seeker.engine.base import Signal, SignalType
@@ -102,7 +102,7 @@ def _bet_recommendation(sig: Signal, market_name: str) -> str | None:
     if not value_books:
         return None
     best = value_books[0]
-    bm = best["bookmaker"].title()
+    bm = display_book(best["bookmaker"])
     odds = _format_odds(sig.market_key, best.get("price"), best.get("point"))
     text = f"Bet {sig.outcome_name} {odds} @ {bm}"
     link = best.get("deep_link")
@@ -269,7 +269,7 @@ class DiscordAlerter:
         bet_line = _bet_recommendation(sig, market_name)
 
         if sig.signal_type == SignalType.RAPID_CHANGE:
-            bm = d.get("bookmaker", "?").title()
+            bm = display_book(d.get("bookmaker", "?"))
             old_val = _format_line_value(d.get("old_point"), d.get("old_price"), sig.market_key)
             new_val = _format_line_value(d.get("new_point"), d.get("new_price"), sig.market_key)
             delta = d.get("delta", 0)
@@ -286,7 +286,7 @@ class DiscordAlerter:
             lines.append(f"**Avg delta: {avg_delta:+.1f}**")
 
         elif sig.signal_type == SignalType.PINNACLE_DIVERGENCE:
-            us_book = d.get("us_book", "?").title()
+            us_book = display_book(d.get("us_book", "?"))
             us_val = d.get("us_value", "?")
             pin_val = d.get("pinnacle_value", "?")
             delta = d.get("delta", 0)
@@ -351,7 +351,7 @@ class DiscordAlerter:
             if book_details:
                 lines = []
                 for b in book_details:
-                    bm = b["bookmaker"].title()
+                    bm = display_book(b["bookmaker"])
                     odds = _format_odds(sig.market_key, b.get("price"), b.get("point"))
                     link = b.get("deep_link")
                     if link:
@@ -368,7 +368,7 @@ class DiscordAlerter:
         if remaining:
             lines = []
             for vb in remaining:
-                bm = vb["bookmaker"].title()
+                bm = display_book(vb["bookmaker"])
                 odds = _format_odds(sig.market_key, vb.get("price"), vb.get("point"))
                 link = vb.get("deep_link")
                 if link:
@@ -386,7 +386,7 @@ class DiscordAlerter:
         if context_books:
             lines = []
             for cb in context_books:
-                bm = cb["bookmaker"].title()
+                bm = display_book(cb["bookmaker"])
                 odds = _format_odds(sig.market_key, cb.get("price"), cb.get("point"))
                 link = cb.get("deep_link")
                 if link:
