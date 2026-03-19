@@ -13,6 +13,7 @@ class SignalType(str, Enum):
     PINNACLE_DIVERGENCE = "pinnacle_divergence"
     REVERSE_LINE = "reverse_line"
     EXCHANGE_SHIFT = "exchange_shift"
+    ARBITRAGE = "arbitrage"
 
 
 @dataclass

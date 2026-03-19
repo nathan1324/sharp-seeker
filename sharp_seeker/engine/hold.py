@@ -67,3 +67,87 @@ def compute_hold_for_book(
         return None
 
     return compute_hold(this_side["price"], other_side["price"])
+
+
+def compute_cross_book_hold(
+    side_a_prices: list[float],
+    side_b_prices: list[float],
+) -> float | None:
+    """Synthetic hold using best odds from each side across all books.
+
+    Takes a list of American odds prices for each side of a market
+    (collected from multiple bookmakers). Returns the hold computed
+    from the best (lowest implied probability) price on each side.
+
+    Lower = tighter market consensus. Negative = arbitrage opportunity.
+    """
+    if not side_a_prices or not side_b_prices:
+        return None
+    best_a = min(_implied_prob(p) for p in side_a_prices)
+    best_b = min(_implied_prob(p) for p in side_b_prices)
+    return best_a + best_b - 1.0
+
+
+def collect_market_prices(
+    current_lines: dict[tuple[str, str, str], dict],
+    market_key: str,
+    outcome_name: str,
+) -> tuple[list[float], list[float], str | None]:
+    """Collect prices from all books for both sides of a market.
+
+    Returns (side_a_prices, side_b_prices, other_outcome_name).
+    Uses the current_lines structure keyed by (market, outcome, book).
+    """
+    # Find opposite outcome
+    if market_key == "totals":
+        other = "Under" if outcome_name == "Over" else "Over"
+    else:
+        other = None
+        for (mk, on, _bm) in current_lines:
+            if mk == market_key and on != outcome_name:
+                other = on
+                break
+        if other is None:
+            return [], [], None
+
+    side_a: list[float] = []
+    side_b: list[float] = []
+    for (mk, on, _bm), row in current_lines.items():
+        if mk != market_key:
+            continue
+        if on == outcome_name:
+            side_a.append(row["price"])
+        elif on == other:
+            side_b.append(row["price"])
+
+    return side_a, side_b, other
+
+
+def collect_market_prices_by_market(
+    by_market: dict[tuple[str, str], dict[str, dict]],
+    market_key: str,
+    outcome_name: str,
+) -> tuple[list[float], list[float], str | None]:
+    """Collect prices from all books for both sides of a market.
+
+    Returns (side_a_prices, side_b_prices, other_outcome_name).
+    Uses the by_market structure keyed by (market, outcome) → {book → row}.
+    """
+    if market_key == "totals":
+        other = "Under" if outcome_name == "Over" else "Over"
+    else:
+        other = None
+        for (mk, on) in by_market:
+            if mk == market_key and on != outcome_name:
+                other = on
+                break
+        if other is None:
+            return [], [], None
+
+    side_a_books = by_market.get((market_key, outcome_name), {})
+    side_b_books = by_market.get((market_key, other), {})
+
+    side_a = [row["price"] for row in side_a_books.values()]
+    side_b = [row["price"] for row in side_b_books.values()]
+
+    return side_a, side_b, other

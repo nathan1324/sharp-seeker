@@ -13,6 +13,7 @@ Sharp Seeker polls [The Odds API](https://the-odds-api.com) on an interval, stor
 | **Pinnacle Divergence** | US book offers better value than Pinnacle (the sharpest global book) |
 | **Reverse Line Movement** | US consensus moves opposite to Pinnacle — public vs sharp money |
 | **Exchange Monitor** | Betfair exchange implied probability shifts by 5%+ |
+| **Arbitrage** | Cross-book hold goes negative — guaranteed profit betting both sides at different books |
 
 Every detector also identifies **value bets** — sportsbooks that haven't adjusted to the detected movement yet, showing the outcome and current odds you can still bet at.
 
@@ -77,6 +78,8 @@ sharp_seeker/
 │   ├── pinnacle_divergence.py   # Pinnacle divergence detector
 │   ├── reverse_line.py          # Reverse line movement detector
 │   ├── exchange_monitor.py      # Exchange monitor detector
+│   ├── arbitrage.py             # Arbitrage detector (negative cross-book hold)
+│   ├── hold.py                  # Shared hold/vig calculations
 │   └── pipeline.py              # Orchestrator + deduplication
 ├── alerts/
 │   ├── discord.py               # Webhook formatting + sending
@@ -165,6 +168,7 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `DISCORD_WEBHOOK_PINNACLE_DIVERGENCE` | — | Channel for Pinnacle divergence alerts |
 | `DISCORD_WEBHOOK_REVERSE_LINE` | — | Channel for reverse line movement alerts |
 | `DISCORD_WEBHOOK_EXCHANGE_SHIFT` | — | Channel for exchange shift alerts |
+| `DISCORD_WEBHOOK_ARBITRAGE` | — | Channel for arbitrage alerts |
 | `DISCORD_WEBHOOK_OVERRIDES` | `{}` | Per-sport+signal webhook routing (JSON, see below) |
 | `ODDS_API_MONTHLY_CREDITS` | `100000` | Monthly API credit budget |
 | `SPORTS` | `["basketball_nba"]` | Sports to track (JSON array) |

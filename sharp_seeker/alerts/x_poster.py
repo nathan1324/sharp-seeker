@@ -27,6 +27,7 @@ _SIGNAL_LABELS: dict[SignalType, str] = {
     SignalType.PINNACLE_DIVERGENCE: "Pinnacle Divergence",
     SignalType.REVERSE_LINE: "Reverse Line Movement",
     SignalType.EXCHANGE_SHIFT: "Exchange Shift",
+    SignalType.ARBITRAGE: "Arbitrage",
 }
 
 

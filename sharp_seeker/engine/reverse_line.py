@@ -10,6 +10,10 @@ import structlog
 from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
 from sharp_seeker.engine.base import BaseDetector, Signal, SignalType
+from sharp_seeker.engine.hold import (
+    collect_market_prices,
+    compute_cross_book_hold,
+)
 from sharp_seeker.engine.pinnacle_divergence import _us_has_better_value
 
 log = structlog.get_logger()
@@ -131,6 +135,11 @@ class ReverseLineDetector(BaseDetector):
                     else:
                         value_books.append(entry)
 
+                cb_a, cb_b, _ = collect_market_prices(
+                    current_lines, market_key, outcome_name,
+                )
+                cross_hold = compute_cross_book_hold(cb_a, cb_b)
+
                 signals.append(
                     Signal(
                         signal_type=SignalType.REVERSE_LINE,
@@ -156,6 +165,9 @@ class ReverseLineDetector(BaseDetector):
                             "pinnacle_price": pin_current["price"] if pin_current else None,
                             "pinnacle_point": pin_current.get("point") if pin_current else None,
                             "bet_direction": pin_dir,
+                            "cross_book_hold": (
+                                round(cross_hold, 4) if cross_hold is not None else None
+                            ),
                             "value_books": value_books,
                             "context_books": context_books,
                         },

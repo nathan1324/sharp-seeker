@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     discord_webhook_pinnacle_divergence: str | None = None
     discord_webhook_reverse_line: str | None = None
     discord_webhook_exchange_shift: str | None = None
+    discord_webhook_arbitrage: str | None = None
 
     # Per-sport+signal webhook overrides (JSON object in .env)
     # Keys: "signal_type:sport_key", values: webhook URL

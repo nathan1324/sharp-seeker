@@ -10,6 +10,7 @@ import structlog
 from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
 from sharp_seeker.engine.base import BaseDetector, Signal, SignalType
+from sharp_seeker.engine.arbitrage import ArbitrageDetector
 from sharp_seeker.engine.exchange_monitor import ExchangeMonitorDetector
 from sharp_seeker.engine.pinnacle_divergence import PinnacleDivergenceDetector
 from sharp_seeker.engine.rapid_change import RapidChangeDetector
@@ -85,6 +86,7 @@ class DetectionPipeline:
             PinnacleDivergenceDetector(settings, repo),
             ReverseLineDetector(settings, repo),
             ExchangeMonitorDetector(settings, repo),
+            ArbitrageDetector(settings, repo),
         ]
         self._blocklist: frozenset[str] = frozenset(settings.signal_blocklist)
 
@@ -238,7 +240,11 @@ class DetectionPipeline:
                 )
 
         # Require actionable bet: every signal must have value books
-        actionable = [s for s in deduped_signals if s.details.get("value_books")]
+        # Arb signals are always actionable (they have side_a/side_b instead)
+        actionable = [
+            s for s in deduped_signals
+            if s.details.get("value_books") or s.signal_type == SignalType.ARBITRAGE
+        ]
         log.info(
             "value_filter",
             before=len(deduped_signals),
