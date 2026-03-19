@@ -100,27 +100,17 @@ class XPoster:
         if not self._enabled:
             return
 
-        tweetable = [s for s in signals if s.signal_type.value in self._tweet_types]
-        if not tweetable:
-            return
-
-        # Filter by strength cap — eligible signals are below the max
-        eligible = [s for s in tweetable if s.strength < self._max_strength]
-        if not eligible:
-            log.info("x_batch_skipped", reason="all_above_strength_cap", cap=self._max_strength)
-            return
-
         now_utc = datetime.now(timezone.utc)
         now_hour = now_utc.hour
 
-        # Free plays: Elite (2+) and 2U (3+) signals become free plays.
+        # Free plays: any signal type with 2+ qualifiers (Elite/2U).
         # Daily cap applies to Elite; 2U always punches through.
         past_fp_events = await self._repo.get_free_play_event_ids()
         today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         today_fp_count = await self._repo.count_free_plays_since(today_start)
 
         free_play_picks: list[Signal] = []
-        for s in eligible:
+        for s in signals:
             q_count = (s.details or {}).get("qualifier_count", 0)
             if q_count < 2:
                 continue
@@ -155,7 +145,9 @@ class XPoster:
             except Exception:
                 log.exception("x_tweet_failed", event_id=pick.event_id)
 
-        # Collect teaser-eligible signals (exclude free play picks)
+        # Teasers: only tweetable types, filtered by strength cap
+        tweetable = [s for s in signals if s.signal_type.value in self._tweet_types]
+        eligible = [s for s in tweetable if s.strength < self._max_strength]
         fp_set = set(id(s) for s in free_play_picks)
         teasers = [s for s in eligible if id(s) not in fp_set]
 

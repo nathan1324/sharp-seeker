@@ -145,6 +145,33 @@ async def test_one_qualifier_no_free_play(settings, repo):
 
 
 @pytest.mark.asyncio
+async def test_non_tweetable_type_elite_becomes_free_play(settings, repo):
+    """Elite steam move should become free play even though SM isn't in tweet_types."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._digest_mode = False
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+    poster._tweet_types = {"pinnacle_divergence"}  # SM not included
+
+    sig = _make_signal(
+        signal_type=SignalType.STEAM_MOVE,
+        details={
+            "qualifier_count": 2,
+            "qualifier_tags": ["Best Combo", "Best Hour"],
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
+        },
+    )
+
+    await poster.post_signals([sig])
+
+    poster._client.create_tweet.assert_called_once()
+    call_text = poster._client.create_tweet.call_args.kwargs["text"]
+    assert "FREE PLAY" in call_text
+    assert "Steam Move" in call_text
+
+
+@pytest.mark.asyncio
 async def test_elite_capped_but_2u_punches_through(settings, repo):
     """Elite signals respect daily cap; 2U signals always fire."""
     poster = XPoster(settings, repo)
