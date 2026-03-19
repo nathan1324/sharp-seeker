@@ -15,7 +15,7 @@ from sharp_seeker.engine.pinnacle_divergence import _us_has_better_value
 log = structlog.get_logger()
 
 PINNACLE_KEY = "pinnacle"
-US_BOOKS = {"draftkings", "fanduel", "betmgm", "caesars", "williamhill_us"}
+US_BOOKS = {"draftkings", "fanduel", "betmgm", "caesars", "williamhill_us", "betrivers"}
 
 
 class ReverseLineDetector(BaseDetector):

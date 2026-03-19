@@ -24,9 +24,9 @@ async def test_should_poll_plenty_credits(settings, repo):
 
 @pytest.mark.asyncio
 async def test_should_poll_low_budget(settings, repo):
-    """Below 20% threshold should block polling."""
-    # 500 monthly, 20% = 100. Recording 90 remaining should block.
-    await repo.record_api_usage("/sports/nba/odds", 410, 90)
+    """Below 10% threshold should block polling."""
+    # 500 monthly, 10% = 50. Recording 40 remaining should block.
+    await repo.record_api_usage("/sports/nba/odds", 460, 40)
     tracker = BudgetTracker(settings, repo)
     assert await tracker.should_poll() is False
 

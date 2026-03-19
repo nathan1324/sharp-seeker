@@ -19,6 +19,8 @@ class Settings(BaseSettings):
             "fanduel",
             "betmgm",
             "pinnacle",
+            "williamhill_us",
+            "betrivers",
         ]
     )
 

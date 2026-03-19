@@ -13,7 +13,7 @@ from sharp_seeker.engine.hold import compute_hold_boost
 log = structlog.get_logger()
 
 PINNACLE_KEY = "pinnacle"
-US_BOOKS = {"draftkings", "fanduel", "betmgm", "caesars", "williamhill_us"}
+US_BOOKS = {"draftkings", "fanduel", "betmgm", "caesars", "williamhill_us", "betrivers"}
 
 
 def _compute_hold(
