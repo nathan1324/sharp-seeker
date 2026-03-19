@@ -200,13 +200,10 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `X_ACCESS_TOKEN` | — | X OAuth 1.0a access token (optional) |
 | `X_ACCESS_TOKEN_SECRET` | — | X OAuth 1.0a access token secret (optional) |
 | `X_CTA_URL` | `""` | Link in tweet CTA (Discord invite / landing page) |
-| `X_FREE_PLAY_INTERVAL` | `10` | Every Nth eligible signal = free play (weekdays) |
-| `X_FREE_PLAY_WEEKEND_INTERVAL` | `0` | Weekend free play interval (0 = use weekday) |
+| `X_FREE_PLAY_DAILY_CAP` | `3` | Max Elite (2+ qualifier) free plays per day. 2U (3+) always fires. |
 | `X_TEASER_HOURS` | `[]` | UTC hours to allow teaser tweets (JSON array, empty = always) |
 | `X_MAX_STRENGTH` | `1.0` | Skip PD signals >= this strength for X tweets (0.0–1.0) |
 | `X_TWEET_SIGNAL_TYPES` | `["pinnacle_divergence", "rapid_change"]` | Signal types eligible for X tweets (JSON array) |
-| `X_FREE_PLAY_SPORTS` | `[]` | Preferred sports for free play selection (JSON array) |
-| `X_FREE_PLAY_MARKETS` | `[]` | Preferred markets for free play selection (JSON array) |
 | `X_EXCLUDED_BOOKS` | `[]` | Books excluded from X free play selection (JSON array) |
 | `X_DIGEST_INTERVAL_HOURS` | `2` | Batch teasers into one digest tweet every N hours (0 = per-signal) |
 | `LOG_LEVEL` | `INFO` | Logging level |
@@ -348,7 +345,7 @@ X_CONSUMER_SECRET=your_consumer_secret
 X_ACCESS_TOKEN=your_access_token
 X_ACCESS_TOKEN_SECRET=your_access_token_secret
 X_CTA_URL=https://discord.gg/your-invite-link
-X_FREE_PLAY_INTERVAL=10
+X_FREE_PLAY_DAILY_CAP=3
 ```
 
 **Daily recap tweet (12:45 UTC / 5:45 AM MT):** Each morning after grading, a recap of the previous day's free plays is posted to X with results (won/lost/pending), a running record, and an attached results card image (1080x1080 branded PNG with YTD profit, monthly record, and streak).

@@ -60,8 +60,6 @@ class XPoster:
         self._free_play_daily_cap = settings.x_free_play_daily_cap
         self._teaser_hours: list[int] = settings.x_teaser_hours
         self._max_strength = settings.x_max_strength
-        self._free_play_sports: list[str] = settings.x_free_play_sports
-        self._free_play_markets: list[str] = settings.x_free_play_markets
         self._tweet_types: set[str] = set(settings.x_tweet_signal_types)
         self._excluded_books: set[str] = set(settings.x_excluded_books)
         self._digest_mode: bool = settings.x_digest_interval_hours > 0
