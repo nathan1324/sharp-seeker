@@ -123,6 +123,7 @@ class DiscordAlerter:
             SignalType.PINNACLE_DIVERGENCE: settings.discord_webhook_pinnacle_divergence,
             SignalType.REVERSE_LINE: settings.discord_webhook_reverse_line,
             SignalType.EXCHANGE_SHIFT: settings.discord_webhook_exchange_shift,
+            SignalType.ARBITRAGE: settings.discord_webhook_arbitrage,
         }
         for sig_type, url in _mapping.items():
             if url:
@@ -172,7 +173,7 @@ class DiscordAlerter:
             q_count, q_tags = self._count_qualifiers(signal)
             signal.details["qualifier_count"] = q_count
             signal.details["qualifier_tags"] = q_tags
-            if q_count == 0:
+            if q_count == 0 and signal.signal_type != SignalType.ARBITRAGE:
                 log.info(
                     "signal_suppressed",
                     signal_type=signal.signal_type.value,
@@ -312,6 +313,28 @@ class DiscordAlerter:
             lines.append(f"## US {us_dir} ({us_avg:+.1f})  vs  Pinnacle {pin_dir} ({pin_delta:+.1f})")
             lines.append(f"**Pinnacle line: {pin_odds}**")
 
+        elif sig.signal_type == SignalType.ARBITRAGE:
+            profit = d.get("profit_pct", 0)
+            side_a = d.get("side_a", {})
+            side_b = d.get("side_b", {})
+            bm_a = display_book(side_a.get("bookmaker", "?"))
+            bm_b = display_book(side_b.get("bookmaker", "?"))
+            odds_a = _format_odds(sig.market_key, side_a.get("price"), side_a.get("point"))
+            odds_b = _format_odds(sig.market_key, side_b.get("price"), side_b.get("point"))
+            out_a = side_a.get("outcome", "?")
+            out_b = side_b.get("outcome", "?")
+            lines.append(f"## {profit:.2f}% guaranteed profit")
+            link_a = side_a.get("deep_link")
+            link_b = side_b.get("deep_link")
+            if link_a:
+                lines.append(f"[**{bm_a}**]({link_a}) — {out_a} **{odds_a}**")
+            else:
+                lines.append(f"**{bm_a}** — {out_a} **{odds_a}**")
+            if link_b:
+                lines.append(f"[**{bm_b}**]({link_b}) — {out_b} **{odds_b}**")
+            else:
+                lines.append(f"**{bm_b}** — {out_b} **{odds_b}**")
+
         elif sig.signal_type == SignalType.EXCHANGE_SHIFT:
             direction = d.get("direction", "?")
             shift = d.get("shift", 0)
@@ -337,6 +360,24 @@ class DiscordAlerter:
             lines.append(
                 "-# Hold: {pct:.1f}% ({label})".format(
                     pct=hold_pct, label=hold_label
+                )
+            )
+
+        # Cross-book hold: synthetic hold from best odds across all books
+        cross_hold = d.get("cross_book_hold")
+        if cross_hold is not None:
+            cross_pct = cross_hold * 100
+            if cross_pct < 0:
+                cross_label = "Arb"
+            elif cross_pct < 2.0:
+                cross_label = "Tight"
+            elif cross_pct < 4.0:
+                cross_label = "Normal"
+            else:
+                cross_label = "Wide"
+            lines.append(
+                "-# Market: {pct:.1f}% ({label})".format(
+                    pct=cross_pct, label=cross_label
                 )
             )
 

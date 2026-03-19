@@ -356,3 +356,78 @@ async def test_qualifier_count_annotated_in_details(mock_webhook_cls, mock_dt):
 
     assert sig.details["qualifier_count"] == 3
     assert set(sig.details["qualifier_tags"]) == {"Best Combo", "Best Hour", "Sharp Hold"}
+
+
+@pytest.mark.asyncio
+@patch("sharp_seeker.alerts.discord.DiscordWebhook")
+async def test_arb_bypasses_zero_qualifier_suppression(mock_webhook_cls):
+    """Arb signals should be sent even with 0 qualifiers."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_instance = MagicMock()
+    mock_instance.execute.return_value = mock_resp
+    mock_webhook_cls.return_value = mock_instance
+
+    settings = _make_settings(
+        signal_best_combos=[],
+        signal_best_hours={},
+    )
+    repo = MagicMock()
+    repo.record_alert = AsyncMock()
+    alerter = DiscordAlerter(settings, repo=repo)
+    sig = Signal(
+        signal_type=SignalType.ARBITRAGE,
+        event_id="evt_arb",
+        sport_key="basketball_nba",
+        home_team="Lakers",
+        away_team="Celtics",
+        market_key="h2h",
+        outcome_name="Lakers",
+        strength=0.5,
+        description="Arb found",
+        commence_time="2099-01-15T00:00:00Z",
+        details={
+            "cross_book_hold": -0.02,
+            "profit_pct": 2.0,
+            "side_a": {
+                "outcome": "Lakers",
+                "bookmaker": "draftkings",
+                "price": 115,
+                "point": None,
+            },
+            "side_b": {
+                "outcome": "Celtics",
+                "bookmaker": "fanduel",
+                "price": 115,
+                "point": None,
+            },
+        },
+    )
+
+    await alerter.send_signals([sig])
+
+    # Should still be sent despite 0 qualifiers
+    mock_webhook_cls.assert_called_once()
+    repo.record_alert.assert_called_once()
+
+
+@patch("sharp_seeker.alerts.discord.DiscordWebhook")
+def test_cross_book_hold_display(mock_webhook_cls):
+    """Cross-book hold should be displayed in the embed description."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_instance = MagicMock()
+    mock_instance.execute.return_value = mock_resp
+    mock_webhook_cls.return_value = mock_instance
+
+    settings = _make_settings()
+    alerter = DiscordAlerter(settings, repo=MagicMock())
+    sig = _make_signal(details={"cross_book_hold": 0.015})
+    sig.details["qualifier_count"] = 1
+    sig.details["qualifier_tags"] = ["Best Combo"]
+
+    alerter._send_embed(sig)
+
+    embed = mock_instance.add_embed.call_args[0][0]
+    assert "Market: 1.5%" in embed.description
+    assert "Tight" in embed.description

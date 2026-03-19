@@ -8,7 +8,11 @@ from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
 from sharp_seeker.engine.base import BaseDetector, Signal, SignalType
 from sharp_seeker.engine.exchange_monitor import american_to_implied_prob
-from sharp_seeker.engine.hold import compute_hold_boost
+from sharp_seeker.engine.hold import (
+    collect_market_prices_by_market,
+    compute_cross_book_hold,
+    compute_hold_boost,
+)
 
 log = structlog.get_logger()
 
@@ -151,6 +155,12 @@ class PinnacleDivergenceDetector(BaseDetector):
                 pin_hold = _compute_hold(by_market, market_key, outcome_name, PINNACLE_KEY)
                 hold_boost = compute_hold_boost(us_hold)
 
+                # Cross-book hold: synthetic hold from best prices across all books
+                cb_prices_a, cb_prices_b, _ = collect_market_prices_by_market(
+                    by_market, market_key, outcome_name,
+                )
+                cross_hold = compute_cross_book_hold(cb_prices_a, cb_prices_b)
+
                 strength = min(1.0, base_strength + hold_boost)
 
                 details: dict = {
@@ -160,6 +170,7 @@ class PinnacleDivergenceDetector(BaseDetector):
                     "delta": round(delta, 4 if market_key == "h2h" else 2),
                     "us_hold": round(us_hold, 4) if us_hold is not None else None,
                     "pinnacle_hold": round(pin_hold, 4) if pin_hold is not None else None,
+                    "cross_book_hold": round(cross_hold, 4) if cross_hold is not None else None,
                     "hold_boost": round(hold_boost, 2),
                     "value_books": [{
                         "bookmaker": bm_key,
