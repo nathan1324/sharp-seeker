@@ -70,7 +70,7 @@ async def test_non_tweetable_signals_skipped(settings, repo):
     poster._client.create_tweet.assert_not_called()
 
 
-# ── Free play logic (2U = qualifier_count >= 3) ───────────────
+# ── Free play logic (Elite 2+ / 2U 3+ with daily cap) ─────────
 
 
 @pytest.mark.asyncio
@@ -98,8 +98,8 @@ async def test_2u_signal_becomes_free_play(settings, repo):
 
 
 @pytest.mark.asyncio
-async def test_non_2u_signal_no_free_play(settings, repo):
-    """Signals with fewer than 3 qualifiers should NOT become free plays."""
+async def test_elite_signal_becomes_free_play(settings, repo):
+    """An Elite signal (2 qualifiers) should become a free play."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
@@ -116,9 +116,75 @@ async def test_non_2u_signal_no_free_play(settings, repo):
 
     await poster.post_signals([sig])
 
-    # Should get a teaser, not a free play
+    poster._client.create_tweet.assert_called_once()
+    call_text = poster._client.create_tweet.call_args.kwargs["text"]
+    assert "FREE PLAY" in call_text
+
+
+@pytest.mark.asyncio
+async def test_one_qualifier_no_free_play(settings, repo):
+    """Signals with fewer than 2 qualifiers should NOT become free plays."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._digest_mode = False
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    sig = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        details={
+            "qualifier_count": 1,
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
+        },
+    )
+
+    await poster.post_signals([sig])
+
     calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
-    assert all("FREE PLAY" not in t for t in calls)  # only seq 5
+    assert all("FREE PLAY" not in t for t in calls)
+
+
+@pytest.mark.asyncio
+async def test_elite_capped_but_2u_punches_through(settings, repo):
+    """Elite signals respect daily cap; 2U signals always fire."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._digest_mode = False
+    poster._free_play_daily_cap = 2
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    # Pre-record 2 free plays today to hit the cap
+    for i in range(2):
+        await repo.record_alert(
+            event_id="fp_{}".format(i), alert_type="pinnacle_divergence",
+            market_key="spreads", outcome_name="Lakers", is_free_play=True,
+        )
+
+    # Elite signal (2q) should be capped
+    elite_sig = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        details={
+            "qualifier_count": 2,
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
+        },
+    )
+    # 2U signal (3q) should punch through
+    two_u_sig = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        details={
+            "qualifier_count": 3,
+            "value_books": [{"bookmaker": "fanduel", "price": -105, "point": -4.5}],
+        },
+    )
+    two_u_sig.event_id = "evt_2u"
+
+    await poster.post_signals([elite_sig, two_u_sig])
+
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    free_plays = [t for t in calls if "FREE PLAY" in t]
+    assert len(free_plays) == 1  # only 2U, not elite
+    assert "FanDuel" in free_plays[0]
 
 
 # ── Tweet formatting ─────────────────────────────────────────────

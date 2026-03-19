@@ -145,6 +145,13 @@ class Repository:
         rows = await cursor.fetchall()
         return {row[0] for row in rows}
 
+    async def count_free_plays_since(self, since: str) -> int:
+        """Count free plays sent since the given ISO timestamp."""
+        sql = "SELECT COUNT(*) FROM sent_alerts WHERE is_free_play = 1 AND sent_at >= ?"
+        cursor = await self._db.execute(sql, (since,))
+        row = await cursor.fetchone()
+        return row[0] if row else 0
+
     async def mark_alert_free_play(
         self, event_id: str, market_key: str, outcome_name: str,
     ) -> None:

@@ -131,8 +131,7 @@ class Settings(BaseSettings):
     x_access_token: str | None = None
     x_access_token_secret: str | None = None
     x_cta_url: str = ""  # Discord invite or landing page link
-    x_free_play_interval: int = 7  # every Nth eligible signal = free play (weekdays)
-    x_free_play_weekend_interval: int = 0  # weekend override (0 = use weekday interval)
+    x_free_play_daily_cap: int = 3  # max Elite free plays per day (2U always punches through)
     # UTC hours when teaser tweets are allowed (JSON array in .env)
     # Free play tweets are always sent regardless of this setting.
     x_teaser_hours: list[int] = Field(default_factory=list)

@@ -57,6 +57,7 @@ class XPoster:
         self._repo = repo
         self._card_gen = card_gen
         self._cta_url = settings.x_cta_url
+        self._free_play_daily_cap = settings.x_free_play_daily_cap
         self._teaser_hours: list[int] = settings.x_teaser_hours
         self._max_strength = settings.x_max_strength
         self._free_play_sports: list[str] = settings.x_free_play_sports
@@ -114,16 +115,24 @@ class XPoster:
         now_utc = datetime.now(timezone.utc)
         now_hour = now_utc.hour
 
-        # Free plays: every 2U signal (3+ qualifiers) becomes a free play
+        # Free plays: Elite (2+) and 2U (3+) signals become free plays.
+        # Daily cap applies to Elite; 2U always punches through.
         past_fp_events = await self._repo.get_free_play_event_ids()
+        today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        today_fp_count = await self._repo.count_free_plays_since(today_start)
+
         free_play_picks: list[Signal] = []
         for s in eligible:
             q_count = (s.details or {}).get("qualifier_count", 0)
-            if q_count < 3:
+            if q_count < 2:
                 continue
             if s.event_id in past_fp_events:
                 continue
             if self._excluded_books and self._get_book(s) in self._excluded_books:
+                continue
+            is_2u = q_count >= 3
+            if not is_2u and (today_fp_count + len(free_play_picks)) >= self._free_play_daily_cap:
+                log.info("x_free_play_capped", event_id=s.event_id, today_count=today_fp_count)
                 continue
             free_play_picks.append(s)
 
@@ -143,7 +152,7 @@ class XPoster:
                     signal_type=pick.signal_type.value,
                     event_id=pick.event_id,
                     free_play=True,
-                    qualifier_count=3,
+                    qualifier_count=(pick.details or {}).get("qualifier_count", 0),
                 )
             except Exception:
                 log.exception("x_tweet_failed", event_id=pick.event_id)
