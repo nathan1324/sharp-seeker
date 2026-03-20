@@ -12,6 +12,21 @@ MARKET_NAMES = {"spreads": "Spread", "totals": "Total", "h2h": "Moneyline"}
 RESULT_EMOJI = {"won": "W", "lost": "L", "push": "P"}
 
 
+def compute_units(price, result):
+    """Compute units won/lost assuming bet-to-win-1u."""
+    if result == "push" or price is None:
+        return 0.0
+    if price < 0:
+        risk = abs(price) / 100.0
+    else:
+        risk = 100.0 / price if price > 0 else 1.0
+    if result == "won":
+        return 1.0
+    elif result == "lost":
+        return -risk
+    return 0.0
+
+
 def main():
     conn = sqlite3.connect(DB)
     conn.row_factory = sqlite3.Row
@@ -35,6 +50,7 @@ def main():
     losses = 0
     pushes = 0
     pending = 0
+    total_units = 0.0
     total = len(rows)
 
     print(f"=== FREE PLAY HISTORY ({total} picks) ===\n")
@@ -69,6 +85,14 @@ def main():
         market = row["market_key"]
         market_name = MARKET_NAMES.get(market, market)
 
+        # Compute units for this pick
+        pick_units = compute_units(price, result)
+        total_units += pick_units
+        if result in ("won", "lost"):
+            unit_str = f"{pick_units:+.2f}u"
+        else:
+            unit_str = "     "
+
         # Format odds
         if market == "h2h" and price is not None:
             odds_str = f"{price:+.0f}"
@@ -92,13 +116,15 @@ def main():
         matchup = f"{away} @ {home}" if home and away else row["event_id"][:20]
 
         print(
-            f"[{tag:7s}] {date_str:16s} | {sport:25s} | {signal_type:25s} | "
+            f"[{tag:7s}] {unit_str:7s} {date_str:16s} | {sport:25s} | {signal_type:25s} | "
             f"{market_name:10s} | {row['outcome_name']:20s} | "
             f"{odds_str:15s} @ {book:15s} | {matchup}"
         )
 
     print(f"\n=== SUMMARY ===")
     print(f"Record: {wins}-{losses} (W-L)")
+    sign = "+" if total_units >= 0 else ""
+    print(f"Units: {sign}{total_units:.2f}u (to-win-1u)")
     if pushes:
         print(f"Pushes: {pushes}")
     if pending:
@@ -133,6 +159,12 @@ def main():
                 cur_streak = 0
         print(f"Best win streak: {best_streak}")
 
+    # Helper to extract price from a row
+    def _get_price(row):
+        details = json.loads(row["details_json"]) if row.get("details_json") else {}
+        vb = details.get("value_books", [])
+        return vb[0].get("price") if vb else None
+
     # By signal type
     print(f"\n=== BY SIGNAL TYPE ===")
     type_stats = {}
@@ -140,18 +172,20 @@ def main():
         row = dict(r)
         st = row["alert_type"]
         if st not in type_stats:
-            type_stats[st] = {"won": 0, "lost": 0, "push": 0, "pending": 0}
+            type_stats[st] = {"won": 0, "lost": 0, "push": 0, "pending": 0, "units": 0.0}
         result = row["result"]
-        if result in type_stats[st]:
+        if result in ("won", "lost", "push"):
             type_stats[st][result] += 1
+            type_stats[st]["units"] += compute_units(_get_price(row), result)
         else:
             type_stats[st]["pending"] += 1
 
     for st, stats in sorted(type_stats.items()):
         w, l = stats["won"], stats["lost"]
+        u = stats["units"]
         resolved = w + l
         pct = f"{w/resolved*100:.0f}%" if resolved else "N/A"
-        print(f"  {st:30s} {w}-{l} ({pct})")
+        print(f"  {st:30s} {w}-{l} ({pct})  {u:+.2f}u")
 
     # By sport
     print(f"\n=== BY SPORT ===")
@@ -160,18 +194,20 @@ def main():
         row = dict(r)
         sp = row.get("sport_key") or "unknown"
         if sp not in sport_stats:
-            sport_stats[sp] = {"won": 0, "lost": 0, "push": 0, "pending": 0}
+            sport_stats[sp] = {"won": 0, "lost": 0, "push": 0, "pending": 0, "units": 0.0}
         result = row["result"]
-        if result in sport_stats[sp]:
+        if result in ("won", "lost", "push"):
             sport_stats[sp][result] += 1
+            sport_stats[sp]["units"] += compute_units(_get_price(row), result)
         else:
             sport_stats[sp]["pending"] += 1
 
     for sp, stats in sorted(sport_stats.items()):
         w, l = stats["won"], stats["lost"]
+        u = stats["units"]
         resolved = w + l
         pct = f"{w/resolved*100:.0f}%" if resolved else "N/A"
-        print(f"  {sp:30s} {w}-{l} ({pct})")
+        print(f"  {sp:30s} {w}-{l} ({pct})  {u:+.2f}u")
 
     # By market
     print(f"\n=== BY MARKET ===")
@@ -180,19 +216,21 @@ def main():
         row = dict(r)
         mk = row["market_key"]
         if mk not in mkt_stats:
-            mkt_stats[mk] = {"won": 0, "lost": 0, "push": 0, "pending": 0}
+            mkt_stats[mk] = {"won": 0, "lost": 0, "push": 0, "pending": 0, "units": 0.0}
         result = row["result"]
-        if result in mkt_stats[mk]:
+        if result in ("won", "lost", "push"):
             mkt_stats[mk][result] += 1
+            mkt_stats[mk]["units"] += compute_units(_get_price(row), result)
         else:
             mkt_stats[mk]["pending"] += 1
 
     for mk, stats in sorted(mkt_stats.items()):
         w, l = stats["won"], stats["lost"]
+        u = stats["units"]
         resolved = w + l
         pct = f"{w/resolved*100:.0f}%" if resolved else "N/A"
         name = MARKET_NAMES.get(mk, mk)
-        print(f"  {name:30s} {w}-{l} ({pct})")
+        print(f"  {name:30s} {w}-{l} ({pct})  {u:+.2f}u")
 
     # Recent 10
     print(f"\n=== LAST 10 RESOLVED ===")
@@ -204,7 +242,9 @@ def main():
         away = details.get("away_team", "")
         matchup = f"{away} @ {home}" if home and away else r["event_id"][:20]
         market_name = MARKET_NAMES.get(r["market_key"], r["market_key"])
-        print(f"  [{tag}] {matchup} — {market_name} {r['outcome_name']}")
+        price = _get_price(r)
+        u = compute_units(price, r["result"])
+        print(f"  [{tag}] {u:+.2f}u  {matchup} — {market_name} {r['outcome_name']}")
 
     conn.close()
 

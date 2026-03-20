@@ -68,13 +68,38 @@ def connect():
     raise SystemExit("ERROR: Could not acquire DB lock after 10 attempts.")
 
 
-def fmt(wins, losses, pushes):
+def compute_units(price, result):
+    """Compute units won/lost assuming bet-to-win-1u.
+
+    Risk depends on odds:
+      - Negative odds (e.g. -150): risk 1.50u to win 1.00u
+      - Positive odds (e.g. +150): risk 0.667u to win 1.00u
+    """
+    if result == "push" or price is None:
+        return 0.0
+    if price < 0:
+        risk = abs(price) / 100.0
+    else:
+        risk = 100.0 / price if price > 0 else 1.0
+    if result == "won":
+        return 1.0
+    elif result == "lost":
+        return -risk
+    return 0.0
+
+
+def fmt(wins, losses, pushes, units=None):
     n = wins + losses + pushes
     decided = wins + losses
     if decided == 0:
-        return f"(n={n:4d})  {wins}W-{losses}L-{pushes}P  (--)"
-    rate = wins / decided
-    return f"(n={n:4d})  {wins}W-{losses}L-{pushes}P  ({rate:.0%})"
+        base = f"(n={n:4d})  {wins}W-{losses}L-{pushes}P  (--)"
+    else:
+        r = wins / decided
+        base = f"(n={n:4d})  {wins}W-{losses}L-{pushes}P  ({r:.0%})"
+    if units is not None:
+        sign = "+" if units >= 0 else ""
+        base += f"  [{sign}{units:.1f}u]"
+    return base
 
 
 def rate(wins, losses):
@@ -106,12 +131,13 @@ def mst_label(utc_hour):
 
 
 def tally(rows, key_fn):
-    """Group rows by key_fn and tally W/L/P."""
-    buckets = defaultdict(lambda: {"won": 0, "lost": 0, "push": 0})
+    """Group rows by key_fn and tally W/L/P + units."""
+    buckets = defaultdict(lambda: {"won": 0, "lost": 0, "push": 0, "units": 0.0})
     for row in rows:
         k = key_fn(row)
         if k is not None:
             buckets[k][row["result"]] += 1
+            buckets[k]["units"] += compute_units(row.get("best_price"), row["result"])
     return buckets
 
 
@@ -125,7 +151,7 @@ def print_buckets(buckets, key_order=None, label_fn=None, indent=2):
             continue
         d = buckets[k]
         label = label_fn(k) if label_fn else str(k)
-        print(f"{pad}{label:42s} {fmt(d['won'], d['lost'], d['push'])}")
+        print(f"{pad}{label:42s} {fmt(d['won'], d['lost'], d['push'], d['units'])}")
 
 
 def tier_label(row):
@@ -292,7 +318,7 @@ def run():
             k = (st, slabel)
             if k in by_type_str:
                 d = by_type_str[k]
-                print(f"    {slabel:10s}  {fmt(d['won'], d['lost'], d['push'])}")
+                print(f"    {slabel:10s}  {fmt(d['won'], d['lost'], d['push'], d['units'])}")
 
     # ── 6. Signal type × hour (MST) ────────────────────────
     section("6. SIGNAL TYPE x HOUR (MST)")
@@ -306,10 +332,7 @@ def run():
             k = (st, utc_h)
             if k in by_type_hour:
                 d = by_type_hour[k]
-                n = d["won"] + d["lost"] + d["push"]
-                decided = d["won"] + d["lost"]
-                pct = f"{d['won']/decided:.0%}" if decided else "--"
-                print(f"    {mst_label(utc_h):10s}  (n={n:3d})  {d['won']}W-{d['lost']}L  ({pct})")
+                print(f"    {mst_label(utc_h):10s}  {fmt(d['won'], d['lost'], d['push'], d['units'])}")
 
     # ── 7. Ranked combos (min N sample) ─────────────────────
     section(f"7. BEST & WORST COMBOS (n >= {MIN_SAMPLE})")
@@ -325,19 +348,21 @@ def run():
                 "won": d["won"],
                 "lost": d["lost"],
                 "push": d["push"],
+                "units": d["units"],
                 "n": decided + d["push"],
                 "rate": rate(d["won"], d["lost"]),
             })
 
     if combos:
-        combos.sort(key=lambda c: c["rate"], reverse=True)
-        print("\n  BEST:")
+        combos.sort(key=lambda c: c["units"], reverse=True)
+        print("\n  BEST (by units):")
         for c in combos[:8]:
-            print(f"    {c['label']:35s} {fmt(c['won'], c['lost'], c['push'])}  {'***' if c['rate'] >= 0.55 else ''}")
+            print(f"    {c['label']:35s} {fmt(c['won'], c['lost'], c['push'], c['units'])}")
 
-        print("\n  WORST:")
-        for c in combos[-5:]:
-            print(f"    {c['label']:35s} {fmt(c['won'], c['lost'], c['push'])}  {'!!!' if c['rate'] < 0.45 else ''}")
+        combos.sort(key=lambda c: c["units"])
+        print("\n  WORST (by units):")
+        for c in combos[:5]:
+            print(f"    {c['label']:35s} {fmt(c['won'], c['lost'], c['push'], c['units'])}")
     else:
         print(f"  No combos with n >= {MIN_SAMPLE}")
 
@@ -352,18 +377,20 @@ def run():
                 "won": d["won"],
                 "lost": d["lost"],
                 "push": d["push"],
+                "units": d["units"],
                 "n": decided + d["push"],
                 "rate": rate(d["won"], d["lost"]),
             })
 
     if str_combos:
-        str_combos.sort(key=lambda c: c["rate"], reverse=True)
-        print("\n  BEST:")
+        str_combos.sort(key=lambda c: c["units"], reverse=True)
+        print("\n  BEST (by units):")
         for c in str_combos[:6]:
-            print(f"    {c['label']:30s} {fmt(c['won'], c['lost'], c['push'])}  {'***' if c['rate'] >= 0.55 else ''}")
-        print("\n  WORST:")
-        for c in str_combos[-4:]:
-            print(f"    {c['label']:30s} {fmt(c['won'], c['lost'], c['push'])}  {'!!!' if c['rate'] < 0.45 else ''}")
+            print(f"    {c['label']:30s} {fmt(c['won'], c['lost'], c['push'], c['units'])}")
+        str_combos.sort(key=lambda c: c["units"])
+        print("\n  WORST (by units):")
+        for c in str_combos[:4]:
+            print(f"    {c['label']:30s} {fmt(c['won'], c['lost'], c['push'], c['units'])}")
     else:
         print(f"  No combos with n >= {MIN_SAMPLE}")
 
@@ -378,18 +405,20 @@ def run():
                 "won": d["won"],
                 "lost": d["lost"],
                 "push": d["push"],
+                "units": d["units"],
                 "n": decided + d["push"],
                 "rate": rate(d["won"], d["lost"]),
             })
 
     if hour_combos:
-        hour_combos.sort(key=lambda c: c["rate"], reverse=True)
-        print("\n  BEST:")
+        hour_combos.sort(key=lambda c: c["units"], reverse=True)
+        print("\n  BEST (by units):")
         for c in hour_combos[:8]:
-            print(f"    {c['label']:30s} {fmt(c['won'], c['lost'], c['push'])}  {'***' if c['rate'] >= 0.55 else ''}")
-        print("\n  WORST:")
-        for c in hour_combos[-5:]:
-            print(f"    {c['label']:30s} {fmt(c['won'], c['lost'], c['push'])}  {'!!!' if c['rate'] < 0.45 else ''}")
+            print(f"    {c['label']:30s} {fmt(c['won'], c['lost'], c['push'], c['units'])}")
+        hour_combos.sort(key=lambda c: c["units"])
+        print("\n  WORST (by units):")
+        for c in hour_combos[:5]:
+            print(f"    {c['label']:30s} {fmt(c['won'], c['lost'], c['push'], c['units'])}")
     else:
         print(f"  No combos with n >= {MIN_SAMPLE}")
 
@@ -458,11 +487,13 @@ def run():
         rw = sum(1 for r in recent if r["result"] == "won")
         rl = sum(1 for r in recent if r["result"] == "lost")
         rp = sum(1 for r in recent if r["result"] == "push")
+        ru = sum(compute_units(r.get("best_price"), r["result"]) for r in recent)
         pw = sum(1 for r in prior if r["result"] == "won")
         pl = sum(1 for r in prior if r["result"] == "lost")
         pp = sum(1 for r in prior if r["result"] == "push")
-        print(f"  Last 7 days:  {fmt(rw, rl, rp)}")
-        print(f"  Prior:        {fmt(pw, pl, pp)}")
+        pu = sum(compute_units(r.get("best_price"), r["result"]) for r in prior)
+        print(f"  Last 7 days:  {fmt(rw, rl, rp, ru)}")
+        print(f"  Prior:        {fmt(pw, pl, pp, pu)}")
 
         # Recent by sport
         print("\n  Last 7d by Sport:")
@@ -475,30 +506,34 @@ def run():
             rfw = sum(1 for r in recent_fp if r["result"] == "won")
             rfl = sum(1 for r in recent_fp if r["result"] == "lost")
             rfp = sum(1 for r in recent_fp if r["result"] == "push")
-            print(f"\n  Last 7d Free Plays: {fmt(rfw, rfl, rfp)}")
+            rfu = sum(compute_units(r.get("best_price"), r["result"]) for r in recent_fp)
+            print(f"\n  Last 7d Free Plays: {fmt(rfw, rfl, rfp, rfu)}")
     else:
         print("  Not enough data for trend comparison.")
 
     # ── 12. Summary ──────────────────────────────────────────
     section("12. ACTIONABLE SUMMARY")
     print()
-    print("  Signal types ranked by hit rate:")
+    total_units = sum(compute_units(r.get("best_price"), r["result"]) for r in rows)
+    print("  Signal types ranked by units:")
     type_ranked = []
     for st in sig_types:
         d = by_type[st]
         decided = d["won"] + d["lost"]
         if decided > 0:
-            type_ranked.append((st, rate(d["won"], d["lost"]), decided))
-    type_ranked.sort(key=lambda x: x[1], reverse=True)
-    for st, r, n in type_ranked:
-        flag = " <-- strong" if r >= 0.55 else " <-- weak" if r < 0.47 else ""
-        print(f"    {SIGNAL_LABELS.get(st, st):12s} {r:.0%}  (n={n}){flag}")
+            type_ranked.append((st, rate(d["won"], d["lost"]), decided, d["units"]))
+    type_ranked.sort(key=lambda x: x[3], reverse=True)
+    for st, r, n, u in type_ranked:
+        sign = "+" if u >= 0 else ""
+        flag = " <-- profitable" if u > 0 else " <-- losing" if u < -5 else ""
+        print(f"    {SIGNAL_LABELS.get(st, st):12s} {r:.0%}  (n={n})  {sign}{u:.1f}u{flag}")
 
     print()
     print(f"  Total graded: {total}")
     all_won = sum(1 for r in rows if r["result"] == "won")
     all_lost = sum(1 for r in rows if r["result"] == "lost")
-    print(f"  Overall: {all_won}W-{all_lost}L ({rate(all_won, all_lost):.0%})")
+    sign = "+" if total_units >= 0 else ""
+    print(f"  Overall: {all_won}W-{all_lost}L ({rate(all_won, all_lost):.0%})  {sign}{total_units:.1f}u")
     print()
     print("Done.")
 
