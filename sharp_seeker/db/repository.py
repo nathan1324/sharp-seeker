@@ -292,7 +292,11 @@ class Repository:
         self, since: str | None = None, sport_key: str | None = None,
         exclude_sports: list[str] | None = None,
     ) -> dict[str, dict[str, int]]:
-        """Get win/loss/push counts grouped by signal type."""
+        """Get win/loss/push counts grouped by signal type.
+
+        Deduplicates by (event_id, signal_type, market_key, outcome_name),
+        counting each unique play only once.
+        """
         where = "WHERE result IS NOT NULL"
         params: list[str] = []
         if since:
@@ -308,8 +312,16 @@ class Repository:
 
         sql = f"""
             SELECT signal_type, result, COUNT(*) AS cnt
-            FROM signal_results
-            {where}
+            FROM (
+                SELECT event_id, signal_type, market_key, outcome_name, result,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY event_id, signal_type, market_key, outcome_name
+                           ORDER BY signal_at DESC
+                       ) AS rn
+                FROM signal_results
+                {where}
+            )
+            WHERE rn = 1
             GROUP BY signal_type, result
         """
         cursor = await self._db.execute(sql, tuple(params))
@@ -330,7 +342,10 @@ class Repository:
         sport_key: str | None = None,
         exclude_sports: list[str] | None = None,
     ) -> dict[str, dict[str, int]]:
-        """Get win/loss/push counts grouped by market_key."""
+        """Get win/loss/push counts grouped by market_key.
+
+        Deduplicates by (event_id, signal_type, market_key, outcome_name).
+        """
         where = "WHERE result IS NOT NULL"
         params: list[str] = []
         if since:
@@ -349,8 +364,16 @@ class Repository:
 
         sql = f"""
             SELECT market_key, result, COUNT(*) AS cnt
-            FROM signal_results
-            {where}
+            FROM (
+                SELECT event_id, signal_type, market_key, outcome_name, result,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY event_id, signal_type, market_key, outcome_name
+                           ORDER BY signal_at DESC
+                       ) AS rn
+                FROM signal_results
+                {where}
+            )
+            WHERE rn = 1
             GROUP BY market_key, result
         """
         cursor = await self._db.execute(sql, tuple(params))
@@ -417,7 +440,12 @@ class Repository:
         sport_key: str | None = None,
         exclude_sports: list[str] | None = None,
     ) -> list[aiosqlite.Row]:
-        """Get resolved signals since a timestamp, optionally filtered by type/sport."""
+        """Get resolved signals since a timestamp, optionally filtered by type/sport.
+
+        Deduplicates by (event_id, signal_type, market_key, outcome_name),
+        keeping only the latest signal_at per group to avoid repeated entries
+        from multiple poll cycles.
+        """
         where = "WHERE result IS NOT NULL AND signal_at >= ?"
         params: list[str] = [since]
         if signal_type:
@@ -433,6 +461,14 @@ class Repository:
         sql = f"""
             SELECT * FROM signal_results
             {where}
+              AND signal_at = (
+                SELECT MAX(s2.signal_at) FROM signal_results s2
+                WHERE s2.event_id = signal_results.event_id
+                  AND s2.signal_type = signal_results.signal_type
+                  AND s2.market_key = signal_results.market_key
+                  AND s2.outcome_name = signal_results.outcome_name
+                  AND s2.result IS NOT NULL
+              )
             ORDER BY resolved_at DESC
         """
         cursor = await self._db.execute(sql, tuple(params))
