@@ -68,8 +68,8 @@ def connect():
     raise SystemExit("ERROR: Could not acquire DB lock after 10 attempts.")
 
 
-def compute_units(price, result):
-    """Compute units won/lost assuming bet-to-win-1u.
+def compute_units(price, result, multiplier=1):
+    """Compute units won/lost. Multiplier = 2 for 2U plays.
 
     Risk depends on odds:
       - Negative odds (e.g. -150): risk 1.50u to win 1.00u
@@ -82,9 +82,9 @@ def compute_units(price, result):
     else:
         risk = 100.0 / price if price > 0 else 1.0
     if result == "won":
-        return 1.0
+        return 1.0 * multiplier
     elif result == "lost":
-        return -risk
+        return -risk * multiplier
     return 0.0
 
 
@@ -131,13 +131,15 @@ def mst_label(utc_hour):
 
 
 def tally(rows, key_fn):
-    """Group rows by key_fn and tally W/L/P + units."""
+    """Group rows by key_fn and tally W/L/P + units (2x for 2U plays)."""
     buckets = defaultdict(lambda: {"won": 0, "lost": 0, "push": 0, "units": 0.0})
     for row in rows:
         k = key_fn(row)
         if k is not None:
             buckets[k][row["result"]] += 1
-            buckets[k]["units"] += compute_units(row.get("best_price"), row["result"])
+            buckets[k]["units"] += compute_units(
+                row.get("best_price"), row["result"], row.get("multiplier", 1),
+            )
     return buckets
 
 
@@ -255,15 +257,18 @@ def run():
         row["is_free_play"] = (
             row["event_id"], row["market_key"], row["outcome_name"]
         ) in free_play_keys
-        # Parse best price for odds analysis
+        # Parse best price and qualifier count for odds/unit analysis
         details_raw = row.get("details_json")
         row["best_price"] = None
+        row["multiplier"] = 1
         if details_raw:
             try:
                 details = json.loads(details_raw) if isinstance(details_raw, str) else details_raw
                 vb = details.get("value_books", [])
                 if vb:
                     row["best_price"] = vb[0].get("price")
+                if details.get("qualifier_count", 0) >= 2:
+                    row["multiplier"] = 2
             except (json.JSONDecodeError, TypeError):
                 pass
 
@@ -487,11 +492,11 @@ def run():
         rw = sum(1 for r in recent if r["result"] == "won")
         rl = sum(1 for r in recent if r["result"] == "lost")
         rp = sum(1 for r in recent if r["result"] == "push")
-        ru = sum(compute_units(r.get("best_price"), r["result"]) for r in recent)
+        ru = sum(compute_units(r.get("best_price"), r["result"], r.get("multiplier", 1)) for r in recent)
         pw = sum(1 for r in prior if r["result"] == "won")
         pl = sum(1 for r in prior if r["result"] == "lost")
         pp = sum(1 for r in prior if r["result"] == "push")
-        pu = sum(compute_units(r.get("best_price"), r["result"]) for r in prior)
+        pu = sum(compute_units(r.get("best_price"), r["result"], r.get("multiplier", 1)) for r in prior)
         print(f"  Last 7 days:  {fmt(rw, rl, rp, ru)}")
         print(f"  Prior:        {fmt(pw, pl, pp, pu)}")
 
@@ -506,7 +511,7 @@ def run():
             rfw = sum(1 for r in recent_fp if r["result"] == "won")
             rfl = sum(1 for r in recent_fp if r["result"] == "lost")
             rfp = sum(1 for r in recent_fp if r["result"] == "push")
-            rfu = sum(compute_units(r.get("best_price"), r["result"]) for r in recent_fp)
+            rfu = sum(compute_units(r.get("best_price"), r["result"], r.get("multiplier", 1)) for r in recent_fp)
             print(f"\n  Last 7d Free Plays: {fmt(rfw, rfl, rfp, rfu)}")
     else:
         print("  Not enough data for trend comparison.")
@@ -514,7 +519,7 @@ def run():
     # ── 12. Summary ──────────────────────────────────────────
     section("12. ACTIONABLE SUMMARY")
     print()
-    total_units = sum(compute_units(r.get("best_price"), r["result"]) for r in rows)
+    total_units = sum(compute_units(r.get("best_price"), r["result"], r.get("multiplier", 1)) for r in rows)
     print("  Signal types ranked by units:")
     type_ranked = []
     for st in sig_types:

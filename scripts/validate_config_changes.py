@@ -55,7 +55,7 @@ SPORT_SHORT = {
 MARKET_SHORT = {"h2h": "ML", "spreads": "Spread", "totals": "Total"}
 
 
-def compute_units(price, result):
+def compute_units(price, result, multiplier=1):
     if result == "push" or price is None:
         return 0.0
     if price < 0:
@@ -63,10 +63,14 @@ def compute_units(price, result):
     else:
         risk = 100.0 / price if price > 0 else 1.0
     if result == "won":
-        return 1.0
+        return 1.0 * multiplier
     elif result == "lost":
-        return -risk
+        return -risk * multiplier
     return 0.0
+
+
+def get_multiplier(row):
+    return 2 if get_qualifier_count(row) >= 2 else 1
 
 
 def get_price(row):
@@ -117,7 +121,7 @@ def tally_rows(rows):
     w = sum(1 for r in rows if r["result"] == "won")
     l = sum(1 for r in rows if r["result"] == "lost")
     p = sum(1 for r in rows if r["result"] == "push")
-    u = sum(compute_units(get_price(r), r["result"]) for r in rows)
+    u = sum(compute_units(get_price(r), r["result"], get_multiplier(r)) for r in rows)
     return w, l, p, u
 
 

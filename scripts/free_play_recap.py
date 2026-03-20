@@ -12,8 +12,8 @@ MARKET_NAMES = {"spreads": "Spread", "totals": "Total", "h2h": "Moneyline"}
 RESULT_EMOJI = {"won": "W", "lost": "L", "push": "P"}
 
 
-def compute_units(price, result):
-    """Compute units won/lost assuming bet-to-win-1u."""
+def compute_units(price, result, multiplier=1):
+    """Compute units won/lost. Multiplier = 2 for 2U plays."""
     if result == "push" or price is None:
         return 0.0
     if price < 0:
@@ -21,10 +21,16 @@ def compute_units(price, result):
     else:
         risk = 100.0 / price if price > 0 else 1.0
     if result == "won":
-        return 1.0
+        return 1.0 * multiplier
     elif result == "lost":
-        return -risk
+        return -risk * multiplier
     return 0.0
+
+
+def get_multiplier(row):
+    """Return 2 for 2U plays (qualifier_count >= 2), else 1."""
+    details = json.loads(row["details_json"]) if row.get("details_json") else {}
+    return 2 if details.get("qualifier_count", 0) >= 2 else 1
 
 
 def main():
@@ -85,9 +91,11 @@ def main():
         market = row["market_key"]
         market_name = MARKET_NAMES.get(market, market)
 
-        # Compute units for this pick
-        pick_units = compute_units(price, result)
+        # Compute units for this pick (2x for 2U plays)
+        mult = 2 if details.get("qualifier_count", 0) >= 2 else 1
+        pick_units = compute_units(price, result, mult)
         total_units += pick_units
+        tier_tag = "2U" if mult == 2 else "  "
         if result in ("won", "lost"):
             unit_str = f"{pick_units:+.2f}u"
         else:
@@ -116,7 +124,7 @@ def main():
         matchup = f"{away} @ {home}" if home and away else row["event_id"][:20]
 
         print(
-            f"[{tag:7s}] {unit_str:7s} {date_str:16s} | {sport:25s} | {signal_type:25s} | "
+            f"[{tag:7s}] {unit_str:7s} {tier_tag} {date_str:16s} | {sport:25s} | {signal_type:25s} | "
             f"{market_name:10s} | {row['outcome_name']:20s} | "
             f"{odds_str:15s} @ {book:15s} | {matchup}"
         )
@@ -176,7 +184,7 @@ def main():
         result = row["result"]
         if result in ("won", "lost", "push"):
             type_stats[st][result] += 1
-            type_stats[st]["units"] += compute_units(_get_price(row), result)
+            type_stats[st]["units"] += compute_units(_get_price(row), result, get_multiplier(row))
         else:
             type_stats[st]["pending"] += 1
 
@@ -198,7 +206,7 @@ def main():
         result = row["result"]
         if result in ("won", "lost", "push"):
             sport_stats[sp][result] += 1
-            sport_stats[sp]["units"] += compute_units(_get_price(row), result)
+            sport_stats[sp]["units"] += compute_units(_get_price(row), result, get_multiplier(row))
         else:
             sport_stats[sp]["pending"] += 1
 
@@ -220,7 +228,7 @@ def main():
         result = row["result"]
         if result in ("won", "lost", "push"):
             mkt_stats[mk][result] += 1
-            mkt_stats[mk]["units"] += compute_units(_get_price(row), result)
+            mkt_stats[mk]["units"] += compute_units(_get_price(row), result, get_multiplier(row))
         else:
             mkt_stats[mk]["pending"] += 1
 
@@ -243,7 +251,7 @@ def main():
         matchup = f"{away} @ {home}" if home and away else r["event_id"][:20]
         market_name = MARKET_NAMES.get(r["market_key"], r["market_key"])
         price = _get_price(r)
-        u = compute_units(price, r["result"])
+        u = compute_units(price, r["result"], get_multiplier(r))
         print(f"  [{tag}] {u:+.2f}u  {matchup} — {market_name} {r['outcome_name']}")
 
     conn.close()

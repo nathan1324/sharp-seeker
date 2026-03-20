@@ -28,8 +28,8 @@ MARKET_NAMES = {"spreads": "Spread", "totals": "Total", "h2h": "Moneyline"}
 RESULT_EMOJI = {"won": "W", "lost": "L", "push": "P"}
 
 
-def compute_units(price, result):
-    """Compute units won/lost assuming bet-to-win-1u."""
+def compute_units(price, result, multiplier=1):
+    """Compute units won/lost. Multiplier = 2 for 2U plays."""
     if result == "push" or price is None:
         return 0.0
     if price < 0:
@@ -37,10 +37,22 @@ def compute_units(price, result):
     else:
         risk = 100.0 / price if price > 0 else 1.0
     if result == "won":
-        return 1.0
+        return 1.0 * multiplier
     elif result == "lost":
-        return -risk
+        return -risk * multiplier
     return 0.0
+
+
+def _get_multiplier(row):
+    """Return 2 for 2U plays (qualifier_count >= 2), else 1."""
+    details_raw = row.get("details_json")
+    if not details_raw:
+        return 1
+    try:
+        details = json.loads(details_raw) if isinstance(details_raw, str) else details_raw
+        return 2 if details.get("qualifier_count", 0) >= 2 else 1
+    except (json.JSONDecodeError, TypeError):
+        return 1
 
 
 def _get_price(row):
@@ -127,7 +139,7 @@ def main():
     tagged_w = sum(1 for r in tagged if r["result"] == "won")
     tagged_l = sum(1 for r in tagged if r["result"] == "lost")
     tagged_p = sum(1 for r in tagged if r["result"] == "push")
-    tagged_u = sum(compute_units(_get_price(r), r["result"]) for r in tagged)
+    tagged_u = sum(compute_units(_get_price(r), r["result"], _get_multiplier(r)) for r in tagged)
     tagged_resolved = tagged_w + tagged_l
     tagged_pct = tagged_w / tagged_resolved * 100 if tagged_resolved else 0
 
@@ -135,15 +147,15 @@ def main():
     untagged_w = sum(1 for r in untagged if r["result"] == "won")
     untagged_l = sum(1 for r in untagged if r["result"] == "lost")
     untagged_p = sum(1 for r in untagged if r["result"] == "push")
-    untagged_u = sum(compute_units(_get_price(r), r["result"]) for r in untagged)
+    untagged_u = sum(compute_units(_get_price(r), r["result"], _get_multiplier(r)) for r in untagged)
     untagged_resolved = untagged_w + untagged_l
     untagged_pct = untagged_w / untagged_resolved * 100 if untagged_resolved else 0
 
     # Sub-group units
     combo_rows = [r for r in tagged if r["_tp_reason"] == "combo"]
     hour_rows = [r for r in tagged if r["_tp_reason"] == "hour"]
-    combo_u = sum(compute_units(_get_price(r), r["result"]) for r in combo_rows)
-    hour_u = sum(compute_units(_get_price(r), r["result"]) for r in hour_rows)
+    combo_u = sum(compute_units(_get_price(r), r["result"], _get_multiplier(r)) for r in combo_rows)
+    hour_u = sum(compute_units(_get_price(r), r["result"], _get_multiplier(r)) for r in hour_rows)
 
     since_label = f" (since {since})" if since else ""
     print(f"=== TOP PERFORMER BADGE RECAP{since_label} ===")
@@ -174,7 +186,7 @@ def main():
         if key not in combo_stats:
             combo_stats[key] = {"won": 0, "lost": 0, "push": 0, "units": 0.0}
         combo_stats[key][r["result"]] += 1
-        combo_stats[key]["units"] += compute_units(_get_price(r), r["result"])
+        combo_stats[key]["units"] += compute_units(_get_price(r), r["result"], _get_multiplier(r))
 
     if combo_stats:
         for key in sorted(combo_stats):
@@ -200,7 +212,7 @@ def main():
         if key not in hour_stats:
             hour_stats[key] = {"won": 0, "lost": 0, "push": 0, "units": 0.0}
         hour_stats[key][r["result"]] += 1
-        hour_stats[key]["units"] += compute_units(_get_price(r), r["result"])
+        hour_stats[key]["units"] += compute_units(_get_price(r), r["result"], _get_multiplier(r))
 
     if hour_stats:
         for key in sorted(hour_stats):
@@ -222,7 +234,7 @@ def main():
                 type_stats[st] = {"won": 0, "lost": 0, "units": 0.0}
             if r["result"] in ("won", "lost"):
                 type_stats[st][r["result"]] += 1
-                type_stats[st]["units"] += compute_units(_get_price(r), r["result"])
+                type_stats[st]["units"] += compute_units(_get_price(r), r["result"], _get_multiplier(r))
         print(f"  {label}:")
         for st in sorted(type_stats):
             s = type_stats[st]
@@ -241,7 +253,7 @@ def main():
                 sport_stats[sp] = {"won": 0, "lost": 0, "units": 0.0}
             if r["result"] in ("won", "lost"):
                 sport_stats[sp][r["result"]] += 1
-                sport_stats[sp]["units"] += compute_units(_get_price(r), r["result"])
+                sport_stats[sp]["units"] += compute_units(_get_price(r), r["result"], _get_multiplier(r))
         print(f"  {label}:")
         for sp in sorted(sport_stats):
             s = sport_stats[sp]
@@ -255,7 +267,7 @@ def main():
     for r in tagged[-15:]:
         tag = RESULT_EMOJI.get(r["result"], "?")
         price = _get_price(r)
-        u = compute_units(price, r["result"])
+        u = compute_units(price, r["result"], _get_multiplier(r))
         unit_str = f"{u:+.2f}u" if r["result"] in ("won", "lost") else "     "
         market_name = MARKET_NAMES.get(r["market_key"], r["market_key"])
         dt = datetime.fromisoformat(r["signal_at"])
