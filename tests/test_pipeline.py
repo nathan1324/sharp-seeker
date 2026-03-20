@@ -49,11 +49,11 @@ async def test_deduplication(settings, repo):
         _snap(event, "draftkings", "spreads", "Lakers", -110, -3.5, t1),
         _snap(event, "fanduel", "spreads", "Lakers", -110, -3.5, t1),
         _snap(event, "betmgm", "spreads", "Lakers", -110, -3.5, t1),
-        _snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1),
+        _snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t1),
         _snap(event, "draftkings", "spreads", "Lakers", -110, -4.0, t2),
         _snap(event, "fanduel", "spreads", "Lakers", -110, -4.0, t2),
         _snap(event, "betmgm", "spreads", "Lakers", -110, -4.0, t2),
-        _snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2),
+        _snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t2),
     ]
     await repo.insert_snapshots(snapshots)
 
@@ -96,10 +96,10 @@ async def test_market_side_dedup(settings, repo):
         snapshots.append(_snap(event, bm, "spreads", "Celtics", -110, 3.5, t1))
         snapshots.append(_snap(event, bm, "spreads", "Celtics", -110, 4.0, t2))
     # Caesars doesn't move (stale line)
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
-    snapshots.append(_snap(event, "caesars", "spreads", "Celtics", -110, 3.5, t1))
-    snapshots.append(_snap(event, "caesars", "spreads", "Celtics", -110, 3.5, t2))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t2))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Celtics", -110, 3.5, t1))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Celtics", -110, 3.5, t2))
 
     await repo.insert_snapshots(snapshots)
 
@@ -131,10 +131,10 @@ async def test_mirror_side_suppressed_by_cooldown(settings, repo):
         snapshots.append(_snap(event, bm, "h2h", "Wizards", 130, None, t1))
         snapshots.append(_snap(event, bm, "h2h", "Wizards", 150, None, t2))
     # Caesars doesn't move (stale line = value book)
-    snapshots.append(_snap(event, "caesars", "h2h", "Pacers", -150, None, t1))
-    snapshots.append(_snap(event, "caesars", "h2h", "Pacers", -150, None, t2))
-    snapshots.append(_snap(event, "caesars", "h2h", "Wizards", 130, None, t1))
-    snapshots.append(_snap(event, "caesars", "h2h", "Wizards", 130, None, t2))
+    snapshots.append(_snap(event, "williamhill_us", "h2h", "Pacers", -150, None, t1))
+    snapshots.append(_snap(event, "williamhill_us", "h2h", "Pacers", -150, None, t2))
+    snapshots.append(_snap(event, "williamhill_us", "h2h", "Wizards", 130, None, t1))
+    snapshots.append(_snap(event, "williamhill_us", "h2h", "Wizards", 130, None, t2))
     await repo.insert_snapshots(snapshots)
 
     pipeline = DetectionPipeline(settings, repo)
@@ -354,8 +354,8 @@ async def test_strength_override_filters_weak_signal(repo):
     for bm in ("draftkings", "fanduel", "betmgm"):
         snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
         snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t2))
     await repo.insert_snapshots(snapshots)
 
     # Without override — signals should pass (global min is 0.5)
@@ -402,8 +402,8 @@ async def test_signal_quiet_hours_suppresses(repo):
     for bm in ("draftkings", "fanduel", "betmgm"):
         snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
         snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t2))
     await repo.insert_snapshots(snapshots)
 
     # Configure quiet hours for steam_move at hour 14
@@ -438,8 +438,8 @@ async def test_signal_quiet_hours_no_config(repo):
     for bm in ("draftkings", "fanduel", "betmgm"):
         snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
         snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t2))
     await repo.insert_snapshots(snapshots)
 
     settings_empty = Settings(
@@ -515,8 +515,8 @@ async def test_max_strength_cap_drops_trap_signal(repo):
     for bm in ("draftkings", "fanduel", "betmgm"):
         snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
         snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t2))
     await repo.insert_snapshots(snapshots)
 
     # First run without cap — find the signal's strength
@@ -555,8 +555,8 @@ async def test_max_strength_cap_no_config_passthrough(repo):
     for bm in ("draftkings", "fanduel", "betmgm"):
         snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
         snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t2))
     await repo.insert_snapshots(snapshots)
 
     settings_empty = Settings(
@@ -582,8 +582,8 @@ async def test_max_strength_cap_boundary(repo):
     for bm in ("draftkings", "fanduel", "betmgm"):
         snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
         snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t2))
     await repo.insert_snapshots(snapshots)
 
     # Find the signal's exact strength
@@ -627,8 +627,8 @@ async def test_blocklist_two_key(repo):
     for bm in ("draftkings", "fanduel", "betmgm"):
         snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
         snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t2))
     await repo.insert_snapshots(snapshots)
 
     # Block steam_move:h2h — should NOT affect spreads
@@ -669,8 +669,8 @@ async def test_blocklist_three_key(repo):
     for bm in ("draftkings", "fanduel", "betmgm"):
         snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
         snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t2))
     await repo.insert_snapshots(snapshots)
 
     # Block steam_move:basketball_ncaab:spreads — should NOT affect basketball_nba
@@ -709,8 +709,8 @@ async def test_blocklist_empty(repo):
     for bm in ("draftkings", "fanduel", "betmgm"):
         snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -3.5, t1))
         snapshots.append(_snap(event, bm, "spreads", "Lakers", -110, -4.0, t2))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1))
-    snapshots.append(_snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t1))
+    snapshots.append(_snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t2))
     await repo.insert_snapshots(snapshots)
 
     settings_empty = Settings(

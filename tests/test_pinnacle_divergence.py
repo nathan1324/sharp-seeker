@@ -455,8 +455,8 @@ async def test_hold_in_signal_details(settings, repo):
 
 
 @pytest.mark.asyncio
-async def test_hold_boost_sharp_pricing(settings, repo):
-    """Low hold at US book (< 4.5%) should boost strength above base."""
+async def test_hold_tracked_but_no_strength_boost(settings, repo):
+    """Hold is tracked for analytics but does NOT affect strength."""
     event = "evt_hold_sharp"
     t = "2025-01-15T12:00:00+00:00"
 
@@ -474,59 +474,11 @@ async def test_hold_boost_sharp_pricing(settings, repo):
     signals = await detector.detect(event, t)
 
     assert len(signals) == 1
-    # base = 0.5 / (0.5 * 3) ≈ 0.33, hold 2.44% → sharp boost +0.08
-    assert signals[0].strength > 0.40
-    assert signals[0].details["hold_boost"] == 0.08
-
-
-@pytest.mark.asyncio
-async def test_hold_boost_average_pricing(settings, repo):
-    """Below-average hold (4.5-5.0%) should get smaller boost."""
-    event = "evt_hold_avg"
-    t = "2025-01-15T12:00:00+00:00"
-
-    # DK at -110/-110 → hold = 4.76% → between 4.5% and 5.0% = average boost
-    snapshots = [
-        _snap(event, "pinnacle", "totals", "Over", -105, 6.0, t, sport_key="icehockey_nhl"),
-        _snap(event, "pinnacle", "totals", "Under", -105, 6.0, t, sport_key="icehockey_nhl"),
-        _snap(event, "draftkings", "totals", "Over", -110, 5.5, t, sport_key="icehockey_nhl"),
-        _snap(event, "draftkings", "totals", "Under", -110, 5.5, t, sport_key="icehockey_nhl"),
-    ]
-    await repo.insert_snapshots(snapshots)
-
-    settings.pd_sport_totals_overrides = {"icehockey_nhl": 0.5}
-    detector = PinnacleDivergenceDetector(settings, repo)
-    signals = await detector.detect(event, t)
-
-    assert len(signals) == 1
-    # DK hold at -110/-110 = 4.76% → between 4.5% and 5.0% = average boost +0.04
-    assert signals[0].details["hold_boost"] == 0.04
-    # base ≈ 0.33 + 0.04 = 0.37
-    assert 0.35 < signals[0].strength < 0.40
-
-
-@pytest.mark.asyncio
-async def test_no_hold_boost_wide_pricing(settings, repo):
-    """High hold (>= 5.0%) should get no boost."""
-    event = "evt_hold_wide"
-    t = "2025-01-15T12:00:00+00:00"
-
-    # Wide pricing: -115/-115 → hold ≈ 6.52%
-    snapshots = [
-        _snap(event, "pinnacle", "totals", "Over", -105, 6.0, t, sport_key="icehockey_nhl"),
-        _snap(event, "pinnacle", "totals", "Under", -105, 6.0, t, sport_key="icehockey_nhl"),
-        _snap(event, "draftkings", "totals", "Over", -115, 5.5, t, sport_key="icehockey_nhl"),
-        _snap(event, "draftkings", "totals", "Under", -115, 5.5, t, sport_key="icehockey_nhl"),
-    ]
-    await repo.insert_snapshots(snapshots)
-
-    settings.pd_sport_totals_overrides = {"icehockey_nhl": 0.5}
-    detector = PinnacleDivergenceDetector(settings, repo)
-    signals = await detector.detect(event, t)
-
-    assert len(signals) == 1
+    # Hold is tracked but doesn't boost strength
     assert signals[0].details["hold_boost"] == 0.0
-    # base ≈ 0.33, no boost
+    assert signals[0].details["us_hold"] is not None
+    assert signals[0].details["us_hold"] < 0.045  # sharp hold
+    # Strength is pure base: 0.5 / (0.5 * 3) ≈ 0.33
     assert 0.30 < signals[0].strength < 0.40
 
 

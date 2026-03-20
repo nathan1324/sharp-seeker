@@ -45,12 +45,12 @@ async def test_steam_move_detected(settings, repo):
         _snap(event, "draftkings", "spreads", "Lakers", -110, -3.5, t1),
         _snap(event, "fanduel", "spreads", "Lakers", -110, -3.5, t1),
         _snap(event, "betmgm", "spreads", "Lakers", -110, -3.5, t1),
-        _snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1),
+        _snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t1),
         # Time 2: 3 books move to -4.0
         _snap(event, "draftkings", "spreads", "Lakers", -110, -4.0, t2),
         _snap(event, "fanduel", "spreads", "Lakers", -110, -4.0, t2),
         _snap(event, "betmgm", "spreads", "Lakers", -110, -4.0, t2),
-        _snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2),  # didn't move
+        _snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t2),  # didn't move
     ]
     await repo.insert_snapshots(snapshots)
 
@@ -128,9 +128,9 @@ async def test_steam_hold_in_details(settings, repo):
         _snap(event, "fanduel", "spreads", "Lakers", -110, -4.0, t2),
         _snap(event, "betmgm", "spreads", "Lakers", -110, -4.0, t2),
         # Caesars didn't move — will be value book; add both sides for hold
-        _snap(event, "caesars", "spreads", "Lakers", -105, -3.5, t1),
-        _snap(event, "caesars", "spreads", "Lakers", -105, -3.5, t2),
-        _snap(event, "caesars", "spreads", "Celtics", -105, 3.5, t2),
+        _snap(event, "williamhill_us", "spreads", "Lakers", -105, -3.5, t1),
+        _snap(event, "williamhill_us", "spreads", "Lakers", -105, -3.5, t2),
+        _snap(event, "williamhill_us", "spreads", "Celtics", -105, 3.5, t2),
     ]
     await repo.insert_snapshots(snapshots)
 
@@ -139,7 +139,7 @@ async def test_steam_hold_in_details(settings, repo):
 
     assert len(signals) == 1
     sig = signals[0]
-    assert sig.details["value_books"][0]["bookmaker"] == "caesars"
+    assert sig.details["value_books"][0]["bookmaker"] == "williamhill_us"
     # -105/-105 hold ≈ 0.0244
     assert sig.details["us_hold"] is not None
     assert sig.details["us_hold"] < 0.03
@@ -160,8 +160,8 @@ async def test_steam_hold_none_when_other_side_missing(settings, repo):
         _snap(event, "fanduel", "spreads", "Lakers", -110, -4.0, t2),
         _snap(event, "betmgm", "spreads", "Lakers", -110, -4.0, t2),
         # Caesars value book — but no other side
-        _snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1),
-        _snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2),
+        _snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t1),
+        _snap(event, "williamhill_us", "spreads", "Lakers", -110, -3.5, t2),
     ]
     await repo.insert_snapshots(snapshots)
 

@@ -15,7 +15,7 @@ from sharp_seeker.engine.hold import (
 
 log = structlog.get_logger()
 
-US_BOOKS = {"draftkings", "fanduel", "betmgm", "caesars", "williamhill_us", "betrivers"}
+US_BOOKS = {"draftkings", "fanduel", "betmgm", "williamhill_us"}
 
 
 def _is_steepening(market_key: str, outcome_name: str, old: dict, new: dict) -> bool:

@@ -11,13 +11,12 @@ from sharp_seeker.engine.exchange_monitor import american_to_implied_prob
 from sharp_seeker.engine.hold import (
     collect_market_prices_by_market,
     compute_cross_book_hold,
-    compute_hold_boost,
 )
 
 log = structlog.get_logger()
 
 PINNACLE_KEY = "pinnacle"
-US_BOOKS = {"draftkings", "fanduel", "betmgm", "caesars", "williamhill_us", "betrivers"}
+US_BOOKS = {"draftkings", "fanduel", "betmgm", "williamhill_us"}
 
 
 def _compute_hold(
@@ -148,20 +147,17 @@ class PinnacleDivergenceDetector(BaseDetector):
                 if not _us_has_better_value(market_key, outcome_name, us_val, pin_val):
                     continue
 
-                base_strength = delta / (threshold * 3)
+                strength = min(1.0, delta / (threshold * 3))
 
-                # Hold boost: lower vig at US book = sharper pricing = cleaner edge
+                # Hold metrics: kept for analytics/display, NOT used in strength
                 us_hold = _compute_hold(by_market, market_key, outcome_name, bm_key)
                 pin_hold = _compute_hold(by_market, market_key, outcome_name, PINNACLE_KEY)
-                hold_boost = compute_hold_boost(us_hold)
 
                 # Cross-book hold: synthetic hold from best prices across all books
                 cb_prices_a, cb_prices_b, _ = collect_market_prices_by_market(
                     by_market, market_key, outcome_name,
                 )
                 cross_hold = compute_cross_book_hold(cb_prices_a, cb_prices_b)
-
-                strength = min(1.0, base_strength + hold_boost)
 
                 details: dict = {
                     "us_book": bm_key,
@@ -171,7 +167,7 @@ class PinnacleDivergenceDetector(BaseDetector):
                     "us_hold": round(us_hold, 4) if us_hold is not None else None,
                     "pinnacle_hold": round(pin_hold, 4) if pin_hold is not None else None,
                     "cross_book_hold": round(cross_hold, 4) if cross_hold is not None else None,
-                    "hold_boost": round(hold_boost, 2),
+                    "hold_boost": 0.0,
                     "value_books": [{
                         "bookmaker": bm_key,
                         "price": row["price"],
