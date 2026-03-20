@@ -149,3 +149,55 @@ async def test_arb_picks_best_book_each_side():
     assert sides["TeamA"]["price"] == 115
     assert sides["TeamB"]["bookmaker"] == "fanduel"
     assert sides["TeamB"]["price"] == 115
+
+
+@pytest.mark.asyncio
+async def test_arb_skips_mismatched_points():
+    """Totals at different points (Over 6.5 vs Under 5.5) are NOT arbs."""
+    rows = [
+        _row("draftkings", "totals", "Over", 116, point=6.5),
+        _row("fanduel", "totals", "Under", 114, point=5.5),
+        _row("draftkings", "totals", "Under", -136, point=6.5),
+        _row("fanduel", "totals", "Over", -134, point=5.5),
+    ]
+    repo = FakeRepo(rows)
+    det = ArbitrageDetector(FakeSettings(), repo)
+    signals = await det.detect("evt1", "2026-03-20T01:00:00Z")
+    assert signals == []
+
+
+@pytest.mark.asyncio
+async def test_arb_spreads_same_point():
+    """Spreads at the same point with negative hold IS a valid arb."""
+    # TeamA -1.5 (+225) at DK, TeamB +1.5 (+215) at FD
+    # implied_prob(+225) = 100/325 ≈ 0.3077
+    # implied_prob(+215) = 100/315 ≈ 0.3175
+    # cross_hold ≈ -0.375 (arb)
+    rows = [
+        _row("draftkings", "spreads", "TeamA", 225, point=-1.5),
+        _row("draftkings", "spreads", "TeamB", -275, point=1.5),
+        _row("fanduel", "spreads", "TeamA", -260, point=-1.5),
+        _row("fanduel", "spreads", "TeamB", 215, point=1.5),
+    ]
+    repo = FakeRepo(rows)
+    det = ArbitrageDetector(FakeSettings(), repo)
+    signals = await det.detect("evt1", "2026-03-20T01:00:00Z")
+    assert len(signals) == 1
+    assert signals[0].market_key == "spreads"
+    assert signals[0].details["profit_pct"] > 0
+
+
+@pytest.mark.asyncio
+async def test_arb_totals_same_point():
+    """Totals at the same point with negative hold IS a valid arb."""
+    rows = [
+        _row("draftkings", "totals", "Over", 200, point=6.5),
+        _row("draftkings", "totals", "Under", -300, point=6.5),
+        _row("fanduel", "totals", "Over", -300, point=6.5),
+        _row("fanduel", "totals", "Under", 200, point=6.5),
+    ]
+    repo = FakeRepo(rows)
+    det = ArbitrageDetector(FakeSettings(), repo)
+    signals = await det.detect("evt1", "2026-03-20T01:00:00Z")
+    assert len(signals) == 1
+    assert signals[0].market_key == "totals"
