@@ -151,17 +151,14 @@ class DiscordAlerter:
     def _count_qualifiers(self, sig: Signal) -> tuple[int, list[str]]:
         """Count how many quality qualifiers a signal meets.
 
-        Qualifiers: best combo, best hour, sharp hold (<4.5%).
+        Qualifiers: best combo, best hour.
+        Tiers: 2 = 2U PLAY, 1 = Elite, 0 = suppressed.
         """
         tags: list[str] = []
         if self._best_combos and self._is_best_combo(sig):
             tags.append("Best Combo")
         if self._is_best_hour(sig):
             tags.append("Best Hour")
-        details = sig.details or {}
-        us_hold = details.get("us_hold")
-        if us_hold is not None and us_hold < 0.045:
-            tags.append("Sharp Hold")
         return len(tags), tags
 
     async def send_signals(self, signals: list[Signal]) -> None:
@@ -227,21 +224,15 @@ class DiscordAlerter:
         # Tiered badge based on qualifier count
         q_count = sig.details.get("qualifier_count", 0)
         q_tags = sig.details.get("qualifier_tags", [])
-        if q_count >= 3:
+        if q_count >= 2:
             tag_str = " + ".join(q_tags)
             embed.add_embed_field(
                 name="\U0001f525 2U PLAY", value=tag_str, inline=False,
             )
-        elif q_count >= 2:
+        elif q_count == 1:
             tag_str = " + ".join(q_tags)
             embed.add_embed_field(
                 name="\U0001f3c6 Elite Signal", value=tag_str, inline=False,
-            )
-        elif q_count == 1:
-            embed.add_embed_field(
-                name="\u2b50 Top Performer",
-                value=q_tags[0] if q_tags else "High-confidence combo",
-                inline=False,
             )
 
         # Signal-type-specific details
