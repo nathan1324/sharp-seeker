@@ -122,8 +122,8 @@ async def test_elite_signal_becomes_free_play(settings, repo):
 
 
 @pytest.mark.asyncio
-async def test_one_qualifier_no_free_play(settings, repo):
-    """Signals with fewer than 2 qualifiers should NOT become free plays."""
+async def test_zero_qualifiers_no_free_play(settings, repo):
+    """Signals with 0 qualifiers should NOT become free plays."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
@@ -133,7 +133,7 @@ async def test_one_qualifier_no_free_play(settings, repo):
     sig = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
         details={
-            "qualifier_count": 1,
+            "qualifier_count": 0,
             "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
         },
     )
@@ -188,19 +188,19 @@ async def test_elite_capped_but_2u_punches_through(settings, repo):
             market_key="spreads", outcome_name="Lakers", is_free_play=True,
         )
 
-    # Elite signal (2q) should be capped
+    # Elite signal (1q) should be capped
     elite_sig = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
         details={
-            "qualifier_count": 2,
+            "qualifier_count": 1,
             "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
         },
     )
-    # 2U signal (3q) should punch through
+    # 2U signal (2q) should punch through
     two_u_sig = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
         details={
-            "qualifier_count": 3,
+            "qualifier_count": 2,
             "value_books": [{"bookmaker": "fanduel", "price": -105, "point": -4.5}],
         },
     )
