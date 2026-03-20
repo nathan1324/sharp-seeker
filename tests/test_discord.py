@@ -64,8 +64,8 @@ def _utc_for_mst_hour(hour: int) -> datetime:
 
 
 @patch("sharp_seeker.alerts.discord.DiscordWebhook")
-def test_best_combo_badge_shown(mock_webhook_cls):
-    """Signal matching a best combo gets the Elite badge (1 qualifier)."""
+def test_best_combo_no_badge(mock_webhook_cls):
+    """Signal with 1 qualifier (best combo only) shows no tier badge."""
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_instance = MagicMock()
@@ -84,7 +84,9 @@ def test_best_combo_badge_shown(mock_webhook_cls):
 
     embed = mock_instance.add_embed.call_args[0][0]
     field_names = [f["name"] for f in embed.fields]
-    assert "\U0001f3c6 Elite Signal" in field_names
+    # 1 qualifier = no badge (only 2U gets a badge)
+    assert "\U0001f525 2U PLAY" not in field_names
+    assert "\U0001f3c6 Elite Signal" not in field_names
 
 
 @patch("sharp_seeker.alerts.discord.DiscordWebhook")
@@ -140,8 +142,8 @@ def test_best_combo_empty_config(mock_webhook_cls):
 
 @patch("sharp_seeker.alerts.discord.datetime")
 @patch("sharp_seeker.alerts.discord.DiscordWebhook")
-def test_best_hour_badge_shown(mock_webhook_cls, mock_dt):
-    """Signal matching a best hour gets the Elite badge."""
+def test_best_hour_no_badge(mock_webhook_cls, mock_dt):
+    """Signal with 1 qualifier (best hour only) shows no tier badge."""
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_instance = MagicMock()
@@ -164,7 +166,8 @@ def test_best_hour_badge_shown(mock_webhook_cls, mock_dt):
 
     embed = mock_instance.add_embed.call_args[0][0]
     field_names = [f["name"] for f in embed.fields]
-    assert "\U0001f3c6 Elite Signal" in field_names
+    assert "\U0001f525 2U PLAY" not in field_names
+    assert "\U0001f3c6 Elite Signal" not in field_names
 
 
 @patch("sharp_seeker.alerts.discord.datetime")
@@ -198,8 +201,8 @@ def test_best_hour_badge_not_shown(mock_webhook_cls, mock_dt):
 
 @patch("sharp_seeker.alerts.discord.datetime")
 @patch("sharp_seeker.alerts.discord.DiscordWebhook")
-def test_best_hour_or_combo(mock_webhook_cls, mock_dt):
-    """Signal matches best hour but NOT best combo — still gets Elite."""
+def test_best_hour_only_no_badge(mock_webhook_cls, mock_dt):
+    """Signal matches best hour but NOT best combo — no badge (only 2U gets badge)."""
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_instance = MagicMock()
@@ -223,7 +226,8 @@ def test_best_hour_or_combo(mock_webhook_cls, mock_dt):
 
     embed = mock_instance.add_embed.call_args[0][0]
     field_names = [f["name"] for f in embed.fields]
-    assert "\U0001f3c6 Elite Signal" in field_names
+    assert "\U0001f525 2U PLAY" not in field_names
+    assert "\U0001f3c6 Elite Signal" not in field_names
 
 
 # ── Tiered badge tests ────────────────────────────────────────
@@ -253,8 +257,8 @@ def test_2u_badge_two_qualifiers(mock_webhook_cls):
 
 
 @patch("sharp_seeker.alerts.discord.DiscordWebhook")
-def test_elite_badge_one_qualifier(mock_webhook_cls):
-    """Signal with 1 qualifier gets Elite Signal badge."""
+def test_one_qualifier_no_badge(mock_webhook_cls):
+    """Signal with 1 qualifier shows no tier badge (only 2U gets badge)."""
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_instance = MagicMock()
@@ -271,7 +275,7 @@ def test_elite_badge_one_qualifier(mock_webhook_cls):
 
     embed = mock_instance.add_embed.call_args[0][0]
     field_names = [f["name"] for f in embed.fields]
-    assert "\U0001f3c6 Elite Signal" in field_names
+    assert "\U0001f3c6 Elite Signal" not in field_names
     assert "\U0001f525 2U PLAY" not in field_names
 
 
