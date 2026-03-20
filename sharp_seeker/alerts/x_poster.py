@@ -358,6 +358,7 @@ class XPoster:
             market = row_dict["market_key"]
 
             odds_str = ""
+            tier_badge = ""
             details_raw = row_dict.get("details_json")
             if details_raw:
                 try:
@@ -366,19 +367,24 @@ class XPoster:
                     if value_books:
                         best = value_books[0]
                         odds_str = " " + _format_odds(market, best.get("price"), best.get("point"))
+                    q_count = details.get("qualifier_count", 0)
+                    if q_count >= 3:
+                        tier_badge = " \U0001f525"  # 2U
+                    elif q_count >= 2:
+                        tier_badge = " \U0001f3c6"  # Elite
                 except (json.JSONDecodeError, TypeError):
                     pass
 
             if result:
                 emoji = _RESULT_EMOJI.get(result, "\u2753")
                 label = result.upper()
-                lines.append(f"{emoji} {outcome}{odds_str} \u2014 {label}")
+                lines.append(f"{emoji} {outcome}{odds_str}{tier_badge} \u2014 {label}")
                 if result == "won":
                     wins += 1
                 elif result == "lost":
                     losses += 1
             else:
-                lines.append(f"\u23f3 {outcome}{odds_str} \u2014 PENDING")
+                lines.append(f"\u23f3 {outcome}{odds_str}{tier_badge} \u2014 PENDING")
 
         # Fixed footer — always shown
         footer_parts: list[str] = []
@@ -421,8 +427,9 @@ class XPoster:
             outcome = row_dict["outcome_name"]
             market = row_dict["market_key"]
 
-            # Extract odds from details_json
+            # Extract odds and tier from details_json
             odds_str = ""
+            tier_badge = ""
             details_raw = row_dict.get("details_json")
             if details_raw:
                 try:
@@ -431,19 +438,24 @@ class XPoster:
                     if value_books:
                         best = value_books[0]
                         odds_str = " " + _format_odds(market, best.get("price"), best.get("point"))
+                    q_count = details.get("qualifier_count", 0)
+                    if q_count >= 3:
+                        tier_badge = " \U0001f525"  # 2U
+                    elif q_count >= 2:
+                        tier_badge = " \U0001f3c6"  # Elite
                 except (json.JSONDecodeError, TypeError):
                     pass
 
             if result:
                 emoji = _RESULT_EMOJI.get(result, "\u2753")
                 label = result.upper()
-                lines.append(f"{emoji} {outcome}{odds_str} \u2014 {label}")
+                lines.append(f"{emoji} {outcome}{odds_str}{tier_badge} \u2014 {label}")
                 if result == "won":
                     wins += 1
                 elif result == "lost":
                     losses += 1
             else:
-                lines.append(f"\u23f3 {outcome}{odds_str} \u2014 PENDING")
+                lines.append(f"\u23f3 {outcome}{odds_str}{tier_badge} \u2014 PENDING")
 
         decided = wins + losses
         if decided > 0:

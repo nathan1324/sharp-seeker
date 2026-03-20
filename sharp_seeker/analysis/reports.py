@@ -478,8 +478,6 @@ class ReportGenerator:
             return " \U0001f525"  # 2U PLAY
         if q_count >= 2:
             return " \U0001f3c6"  # Elite
-        if q_count >= 1:
-            return " \u2b50"  # Top Performer
         return ""
 
     @staticmethod
