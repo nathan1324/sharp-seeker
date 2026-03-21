@@ -221,13 +221,13 @@ class DiscordAlerter:
             name="Strength", value=_strength_bar(sig.strength), inline=False
         )
 
-        # Only show badge for 2U plays (both qualifiers match)
+        # Show Elite badge when both qualifiers match
         q_count = sig.details.get("qualifier_count", 0)
         q_tags = sig.details.get("qualifier_tags", [])
         if q_count >= 2:
             tag_str = " + ".join(q_tags)
             embed.add_embed_field(
-                name="\U0001f525 2U PLAY", value=tag_str, inline=False,
+                name="\U0001f3c6 Elite Signal", value=tag_str, inline=False,
             )
 
         # Signal-type-specific details

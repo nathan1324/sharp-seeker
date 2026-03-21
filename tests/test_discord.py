@@ -234,8 +234,8 @@ def test_best_hour_only_no_badge(mock_webhook_cls, mock_dt):
 
 
 @patch("sharp_seeker.alerts.discord.DiscordWebhook")
-def test_2u_badge_two_qualifiers(mock_webhook_cls):
-    """Signal with 2 qualifiers (combo + hour) gets 2U PLAY badge."""
+def test_elite_badge_two_qualifiers(mock_webhook_cls):
+    """Signal with 2 qualifiers (combo + hour) gets Elite Signal badge."""
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_instance = MagicMock()
@@ -252,8 +252,7 @@ def test_2u_badge_two_qualifiers(mock_webhook_cls):
 
     embed = mock_instance.add_embed.call_args[0][0]
     field_names = [f["name"] for f in embed.fields]
-    assert "\U0001f525 2U PLAY" in field_names
-    assert "\U0001f3c6 Elite Signal" not in field_names
+    assert "\U0001f3c6 Elite Signal" in field_names
 
 
 @patch("sharp_seeker.alerts.discord.DiscordWebhook")

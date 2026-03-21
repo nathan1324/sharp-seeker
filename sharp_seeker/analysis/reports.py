@@ -475,8 +475,6 @@ class ReportGenerator:
             return ""
         q_count = details.get("qualifier_count", 0)
         if q_count >= 2:
-            return " \U0001f525"  # 2U PLAY
-        if q_count >= 1:
             return " \U0001f3c6"  # Elite
         return ""
 

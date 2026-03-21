@@ -104,24 +104,17 @@ class XPoster:
         now_utc = datetime.now(timezone.utc)
         now_hour = now_utc.hour
 
-        # Free plays: any signal type with 2+ qualifiers (Elite/2U).
-        # Daily cap applies to Elite; 2U always punches through.
+        # Free plays: Elite signals only (2 qualifiers = Best Combo + Best Hour).
         past_fp_events = await self._repo.get_free_play_event_ids()
-        today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        today_fp_count = await self._repo.count_free_plays_since(today_start)
 
         free_play_picks: list[Signal] = []
         for s in signals:
             q_count = (s.details or {}).get("qualifier_count", 0)
-            if q_count < 1:
+            if q_count < 2:
                 continue
             if s.event_id in past_fp_events:
                 continue
             if self._excluded_books and self._get_book(s) in self._excluded_books:
-                continue
-            is_2u = q_count >= 2
-            if not is_2u and (today_fp_count + len(free_play_picks)) >= self._free_play_daily_cap:
-                log.info("x_free_play_capped", event_id=s.event_id, today_count=today_fp_count)
                 continue
             free_play_picks.append(s)
 
@@ -369,8 +362,6 @@ class XPoster:
                         odds_str = " " + _format_odds(market, best.get("price"), best.get("point"))
                     q_count = details.get("qualifier_count", 0)
                     if q_count >= 2:
-                        tier_badge = " \U0001f525"  # 2U
-                    elif q_count >= 1:
                         tier_badge = " \U0001f3c6"  # Elite
                 except (json.JSONDecodeError, TypeError):
                     pass
@@ -440,8 +431,6 @@ class XPoster:
                         odds_str = " " + _format_odds(market, best.get("price"), best.get("point"))
                     q_count = details.get("qualifier_count", 0)
                     if q_count >= 2:
-                        tier_badge = " \U0001f525"  # 2U
-                    elif q_count >= 1:
                         tier_badge = " \U0001f3c6"  # Elite
                 except (json.JSONDecodeError, TypeError):
                     pass
