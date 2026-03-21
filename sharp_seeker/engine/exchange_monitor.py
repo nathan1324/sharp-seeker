@@ -11,7 +11,7 @@ from sharp_seeker.engine.base import BaseDetector, Signal, SignalType
 log = structlog.get_logger()
 
 BETFAIR_KEY = "betfair_ex_eu"
-US_BOOKS = {"draftkings", "fanduel", "betmgm", "williamhill_us"}
+US_BOOKS = {"draftkings", "fanduel", "betmgm", "williamhill_us", "caesars", "betrivers"}
 
 
 def american_to_implied_prob(price: float) -> float:
