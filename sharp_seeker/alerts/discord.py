@@ -13,6 +13,7 @@ from sharp_seeker.alerts.models import SIGNAL_COLORS, SIGNAL_LABELS, display_boo
 from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
 from sharp_seeker.engine.base import Signal, SignalType
+from sharp_seeker.engine.exchange_monitor import american_to_implied_prob
 
 log = structlog.get_logger()
 
@@ -310,16 +311,33 @@ class DiscordAlerter:
             out_a = side_a.get("outcome", "?")
             out_b = side_b.get("outcome", "?")
             lines.append(f"## {profit:.2f}% guaranteed profit")
+
+            # Compute stake sizing for guaranteed equal payout
+            price_a = side_a.get("price")
+            price_b = side_b.get("price")
+            stake_a_label = ""
+            stake_b_label = ""
+            if price_a is not None and price_b is not None:
+                prob_a = american_to_implied_prob(price_a)
+                prob_b = american_to_implied_prob(price_b)
+                total_prob = prob_a + prob_b
+                pct_a = prob_b / total_prob * 100
+                pct_b = prob_a / total_prob * 100
+                lines.append(f"**Stake split: {pct_a:.1f}% / {pct_b:.1f}%**")
+                lines.append(f"-# Per $100: ${pct_a:.2f} + ${pct_b:.2f}")
+                stake_a_label = f" ({pct_a:.1f}%)"
+                stake_b_label = f" ({pct_b:.1f}%)"
+
             link_a = side_a.get("deep_link")
             link_b = side_b.get("deep_link")
             if link_a:
-                lines.append(f"[**{bm_a}**]({link_a}) — {out_a} **{odds_a}**")
+                lines.append(f"[**{bm_a}**]({link_a}) — {out_a} **{odds_a}**{stake_a_label}")
             else:
-                lines.append(f"**{bm_a}** — {out_a} **{odds_a}**")
+                lines.append(f"**{bm_a}** — {out_a} **{odds_a}**{stake_a_label}")
             if link_b:
-                lines.append(f"[**{bm_b}**]({link_b}) — {out_b} **{odds_b}**")
+                lines.append(f"[**{bm_b}**]({link_b}) — {out_b} **{odds_b}**{stake_b_label}")
             else:
-                lines.append(f"**{bm_b}** — {out_b} **{odds_b}**")
+                lines.append(f"**{bm_b}** — {out_b} **{odds_b}**{stake_b_label}")
 
         elif sig.signal_type == SignalType.EXCHANGE_SHIFT:
             direction = d.get("direction", "?")
