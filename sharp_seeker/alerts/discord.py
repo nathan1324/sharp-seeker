@@ -370,11 +370,13 @@ class DiscordAlerter:
             )
 
         # Cross-book hold: synthetic hold from best odds across all books
+        # Note: for PD signals, this compares best prices regardless of point
+        # value, so negative hold doesn't always mean a real arb (points may differ).
         cross_hold = d.get("cross_book_hold")
         if cross_hold is not None:
             cross_pct = cross_hold * 100
             if cross_pct < 0:
-                cross_label = "Arb"
+                cross_label = "Very Sharp"
             elif cross_pct < 2.0:
                 cross_label = "Tight"
             elif cross_pct < 4.0:
