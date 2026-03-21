@@ -323,10 +323,12 @@ class DiscordAlerter:
                 total_prob = prob_a + prob_b
                 pct_a = prob_b / total_prob * 100
                 pct_b = prob_a / total_prob * 100
-                lines.append(f"**Stake split: {pct_a:.1f}% / {pct_b:.1f}%**")
-                lines.append(f"-# Per $100: ${pct_a:.2f} + ${pct_b:.2f}")
-                stake_a_label = f" ({pct_a:.1f}%)"
-                stake_b_label = f" ({pct_b:.1f}%)"
+                lines.append(f"**Per $100:**")
+                stake_a_label = f" (${pct_a:.2f})"
+                stake_b_label = f" (${pct_b:.2f})"
+            else:
+                stake_a_label = ""
+                stake_b_label = ""
 
             link_a = side_a.get("deep_link")
             link_b = side_b.get("deep_link")
