@@ -44,11 +44,11 @@ async def test_backtest_finds_signals(settings, repo):
         _snap(event, "draftkings", "spreads", "Lakers", -110, -3.5, t1),
         _snap(event, "fanduel", "spreads", "Lakers", -110, -3.5, t1),
         _snap(event, "betmgm", "spreads", "Lakers", -110, -3.5, t1),
-        _snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1),
+        _snap(event, "betrivers", "spreads", "Lakers", -110, -3.5, t1),
         _snap(event, "draftkings", "spreads", "Lakers", -110, -4.0, t2),
         _snap(event, "fanduel", "spreads", "Lakers", -110, -4.0, t2),
         _snap(event, "betmgm", "spreads", "Lakers", -110, -4.0, t2),
-        _snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2),
+        _snap(event, "betrivers", "spreads", "Lakers", -110, -3.5, t2),
     ]
     await repo.insert_snapshots(snapshots)
 
@@ -82,11 +82,11 @@ async def test_backtest_summary_output(settings, repo):
         _snap(event, "draftkings", "spreads", "Lakers", -110, -3.5, t1),
         _snap(event, "fanduel", "spreads", "Lakers", -110, -3.5, t1),
         _snap(event, "betmgm", "spreads", "Lakers", -110, -3.5, t1),
-        _snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t1),
+        _snap(event, "betrivers", "spreads", "Lakers", -110, -3.5, t1),
         _snap(event, "draftkings", "spreads", "Lakers", -110, -4.0, t2),
         _snap(event, "fanduel", "spreads", "Lakers", -110, -4.0, t2),
         _snap(event, "betmgm", "spreads", "Lakers", -110, -4.0, t2),
-        _snap(event, "caesars", "spreads", "Lakers", -110, -3.5, t2),
+        _snap(event, "betrivers", "spreads", "Lakers", -110, -3.5, t2),
     ]
     await repo.insert_snapshots(snapshots)
 

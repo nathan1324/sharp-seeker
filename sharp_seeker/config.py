@@ -20,7 +20,6 @@ class Settings(BaseSettings):
             "betmgm",
             "pinnacle",
             "williamhill_us",
-            "caesars",
             "betrivers",
         ]
     )
