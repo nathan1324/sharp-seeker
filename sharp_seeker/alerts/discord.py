@@ -166,6 +166,12 @@ class DiscordAlerter:
             cbh = (sig.details or {}).get("cross_book_hold")
             if cbh is not None and cbh >= 0.02:
                 tags.append("Edge Hold")
+
+        # Efficient market (negative cross-book hold) = cap at 1 qualifier max
+        cbh = (sig.details or {}).get("cross_book_hold")
+        if cbh is not None and cbh < 0 and len(tags) > 1:
+            tags = tags[:1]
+
         return len(tags), tags
 
     async def send_signals(self, signals: list[Signal]) -> None:
