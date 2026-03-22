@@ -133,6 +133,31 @@ class SteamMoveDetector(BaseDetector):
             cb_a, cb_b, _ = collect_market_prices(current_lines, market_key, outcome_name)
             cross_hold = compute_cross_book_hold(cb_a, cb_b)
 
+            # Price dispersion on the signaled side
+            if market_key == "h2h":
+                from sharp_seeker.engine.exchange_monitor import american_to_implied_prob
+                us_probs = [
+                    american_to_implied_prob(e["price"])
+                    for e in book_details if "price" in e
+                ]
+                for vb in value_books:
+                    if "price" in vb:
+                        us_probs.append(american_to_implied_prob(vb["price"]))
+                dispersion = (max(us_probs) - min(us_probs)) if len(us_probs) >= 2 else 0.0
+            else:
+                us_pts = [
+                    e["point"] for e in book_details if e.get("point") is not None
+                ]
+                for vb in value_books:
+                    if vb.get("point") is not None:
+                        us_pts.append(vb["point"])
+                dispersion = (max(us_pts) - min(us_pts)) if len(us_pts) >= 2 else 0.0
+
+            # Skip signals where all books are at the same price (no dispersion)
+            all_prices = len(us_probs if market_key == "h2h" else us_pts)
+            if dispersion == 0 and all_prices >= 2:
+                continue
+
             signals.append(
                 Signal(
                     signal_type=SignalType.STEAM_MOVE,
@@ -156,6 +181,7 @@ class SteamMoveDetector(BaseDetector):
                         "value_books": value_books,
                         "us_hold": round(us_hold, 4) if us_hold is not None else None,
                         "cross_book_hold": round(cross_hold, 4) if cross_hold is not None else None,
+                        "dispersion": round(dispersion, 4),
                     },
                 )
             )

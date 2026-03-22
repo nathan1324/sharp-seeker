@@ -389,6 +389,15 @@ class DiscordAlerter:
                 )
             )
 
+        # Price dispersion: how spread out are books on this side
+        dispersion = d.get("dispersion")
+        if dispersion is not None and dispersion > 0:
+            if sig.market_key == "h2h":
+                lines.append("-# Dispersion: {d:.1%}".format(d=dispersion))
+            else:
+                disp_str = "{d:.1f}".format(d=dispersion) if dispersion != int(dispersion) else "{d:.0f}".format(d=dispersion)
+                lines.append("-# Dispersion: {d}pts".format(d=disp_str))
+
         return "\n".join(lines)
 
     def _add_details(self, embed: DiscordEmbed, sig: Signal, market_name: str) -> None:

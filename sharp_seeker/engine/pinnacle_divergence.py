@@ -159,6 +159,29 @@ class PinnacleDivergenceDetector(BaseDetector):
                 )
                 cross_hold = compute_cross_book_hold(cb_prices_a, cb_prices_b)
 
+                # Price dispersion: how spread out are US books on this side?
+                # High dispersion = value book is a real outlier = better signal.
+                # Low dispersion = books agree = less reliable.
+                same_side_books = by_market.get((market_key, outcome_name), {})
+                if market_key == "h2h":
+                    us_probs = [
+                        american_to_implied_prob(b["price"])
+                        for bk, b in same_side_books.items()
+                        if bk in US_BOOKS and bk not in excluded
+                    ]
+                    dispersion = (max(us_probs) - min(us_probs)) if len(us_probs) >= 2 else 0.0
+                else:
+                    us_points = [
+                        b["point"] for bk, b in same_side_books.items()
+                        if bk in US_BOOKS and bk not in excluded and b.get("point") is not None
+                    ]
+                    dispersion = (max(us_points) - min(us_points)) if len(us_points) >= 2 else 0.0
+
+                # Skip signals where all US books agree (no real outlier)
+                n_us = len(us_probs if market_key == "h2h" else us_points)
+                if dispersion == 0 and n_us >= 2:
+                    continue
+
                 details: dict = {
                     "us_book": bm_key,
                     "us_value": us_val,
@@ -167,6 +190,7 @@ class PinnacleDivergenceDetector(BaseDetector):
                     "us_hold": round(us_hold, 4) if us_hold is not None else None,
                     "pinnacle_hold": round(pin_hold, 4) if pin_hold is not None else None,
                     "cross_book_hold": round(cross_hold, 4) if cross_hold is not None else None,
+                    "dispersion": round(dispersion, 4),
                     "hold_boost": 0.0,
                     "value_books": [{
                         "bookmaker": bm_key,
