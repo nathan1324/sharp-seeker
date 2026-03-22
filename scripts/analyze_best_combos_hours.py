@@ -224,10 +224,9 @@ def main():
 
     hold_buckets = [
         (None, 0.0, "Negative (Efficient)"),
-        (0.0, 0.015, "0-1.5% (Tight)"),
-        (0.015, 0.03, "1.5-3% (Edge)"),
-        (0.03, 0.05, "3-5% (Wide Edge)"),
-        (0.05, 1.0, "5%+ (Very Wide)"),
+        (0.0, 0.02, "0-2% (Tight)"),
+        (0.02, 0.03, "2-3% (Edge)"),
+        (0.03, 1.0, "3%+ (Wide Edge)"),
     ]
 
     # Parse cross_book_hold from details
