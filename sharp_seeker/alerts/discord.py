@@ -377,9 +377,9 @@ class DiscordAlerter:
             cross_pct = cross_hold * 100
             if cross_pct < 0:
                 cross_label = "Efficient"
-            elif cross_pct < 2.0:
+            elif cross_pct < 1.5:
                 cross_label = "Tight"
-            elif cross_pct < 4.0:
+            elif cross_pct < 3.0:
                 cross_label = "Edge"
             else:
                 cross_label = "Wide Edge"
