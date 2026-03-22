@@ -376,13 +376,13 @@ class DiscordAlerter:
         if cross_hold is not None:
             cross_pct = cross_hold * 100
             if cross_pct < 0:
-                cross_label = "Very Sharp"
+                cross_label = "Efficient"
             elif cross_pct < 2.0:
                 cross_label = "Tight"
             elif cross_pct < 4.0:
-                cross_label = "Normal"
+                cross_label = "Edge"
             else:
-                cross_label = "Wide"
+                cross_label = "Wide Edge"
             lines.append(
                 "-# Market: {pct:.1f}% ({label})".format(
                     pct=cross_pct, label=cross_label
