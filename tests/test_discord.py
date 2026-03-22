@@ -408,4 +408,4 @@ def test_cross_book_hold_display(mock_webhook_cls):
 
     embed = mock_instance.add_embed.call_args[0][0]
     assert "Market: 1.5%" in embed.description
-    assert "Edge" in embed.description
+    assert "Tight" in embed.description
