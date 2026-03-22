@@ -174,41 +174,32 @@ async def test_elite_capped_but_2u_punches_through(settings, repo):
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
-    poster._free_play_daily_cap = 2
+    poster._free_play_sport_cap = 1  # cap at 1 per sport
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
 
-    # Pre-record 2 free plays today to hit the cap
-    for i in range(2):
-        await repo.record_alert(
-            event_id="fp_{}".format(i), alert_type="pinnacle_divergence",
-            market_key="spreads", outcome_name="Lakers", is_free_play=True,
-        )
-
-    # Elite signal (1q) should be capped
-    elite_sig = _make_signal(
+    # Two Elite PD signals for the same sport — second should be sport-capped
+    sig1 = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
         details={
-            "qualifier_count": 1,
+            "qualifier_count": 2,
             "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
         },
     )
-    # 2U signal (2q) should punch through
-    two_u_sig = _make_signal(
+    sig2 = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
         details={
             "qualifier_count": 2,
             "value_books": [{"bookmaker": "fanduel", "price": -105, "point": -4.5}],
         },
     )
-    two_u_sig.event_id = "evt_2u"
+    sig2.event_id = "evt_2"
 
-    await poster.post_signals([elite_sig, two_u_sig])
+    await poster.post_signals([sig1, sig2])
 
     calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
     free_plays = [t for t in calls if "FREE PLAY" in t]
-    assert len(free_plays) == 1  # only 2U, not elite
-    assert "FanDuel" in free_plays[0]
+    assert len(free_plays) == 1  # second one sport-capped
 
 
 # ── Tweet formatting ─────────────────────────────────────────────
@@ -702,11 +693,13 @@ async def test_strength_cap_boundary(settings, repo):
 
 
 @pytest.mark.asyncio
-async def test_multiple_2u_signals_all_become_free_plays(settings, repo):
-    """All 2U signals in a batch should become free plays."""
+async def test_hourly_cap_limits_free_plays(settings, repo):
+    """Only 1 free play per hour — second Elite PD should be hourly-capped."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
+    poster._free_play_hourly_cap = 1
+    poster._free_play_sport_cap = 5  # not the limiting factor
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
 
@@ -717,7 +710,7 @@ async def test_multiple_2u_signals_all_become_free_plays(settings, repo):
         market_key="totals", outcome_name="Over", strength=0.60,
         description="Test", commence_time="2099-01-15T00:00:00Z",
         details={
-            "qualifier_count": 3,
+            "qualifier_count": 2,
             "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 220.5}],
         },
     )
@@ -728,7 +721,7 @@ async def test_multiple_2u_signals_all_become_free_plays(settings, repo):
         market_key="spreads", outcome_name="Warriors", strength=0.55,
         description="Test", commence_time="2099-01-15T00:00:00Z",
         details={
-            "qualifier_count": 3,
+            "qualifier_count": 2,
             "value_books": [{"bookmaker": "fanduel", "price": -105, "point": -3.5}],
         },
     )
@@ -737,7 +730,7 @@ async def test_multiple_2u_signals_all_become_free_plays(settings, repo):
 
     calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
     free_play_count = sum(1 for t in calls if "FREE PLAY" in t)
-    assert free_play_count == 2
+    assert free_play_count == 1  # second one hourly-capped
 
 
 # ── Same-game free play dedup ──────────────────────────────────
@@ -778,10 +771,12 @@ async def test_free_play_skips_repeat_game(settings, repo):
 
 @pytest.mark.asyncio
 async def test_free_play_picks_different_game(settings, repo):
-    """When one game already has a free play, the other 2U game gets picked."""
+    """When one game already has a free play, the other Elite game gets picked."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
+    poster._free_play_sport_cap = 10
+    poster._free_play_hourly_cap = 10
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
 

@@ -152,6 +152,27 @@ class Repository:
         row = await cursor.fetchone()
         return row[0] if row else 0
 
+    async def get_free_play_details_since(self, since: str) -> list[dict]:
+        """Get sport_key for each free play since the given timestamp.
+
+        Extracts sport from the event's snapshots since sent_alerts doesn't
+        store sport_key directly.
+        """
+        sql = """
+            SELECT sa.event_id, sr.sport_key
+            FROM sent_alerts sa
+            LEFT JOIN signal_results sr
+              ON sa.event_id = sr.event_id
+             AND sa.alert_type = sr.signal_type
+             AND sa.market_key = sr.market_key
+             AND sa.outcome_name = sr.outcome_name
+            WHERE sa.is_free_play = 1 AND sa.sent_at >= ?
+            GROUP BY sa.event_id
+        """
+        cursor = await self._db.execute(sql, (since,))
+        rows = await cursor.fetchall()
+        return [{"event_id": r[0], "sport_key": r[1] or ""} for r in rows]
+
     async def mark_alert_free_play(
         self, event_id: str, market_key: str, outcome_name: str,
     ) -> None:

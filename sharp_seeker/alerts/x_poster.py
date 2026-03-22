@@ -58,7 +58,8 @@ class XPoster:
         self._repo = repo
         self._card_gen = card_gen
         self._cta_url = settings.x_cta_url
-        self._free_play_daily_cap = settings.x_free_play_daily_cap
+        self._free_play_sport_cap = settings.x_free_play_sport_cap
+        self._free_play_hourly_cap = settings.x_free_play_hourly_cap
         self._teaser_hours: list[int] = settings.x_teaser_hours
         self._max_strength = settings.x_max_strength
         self._tweet_types: set[str] = set(settings.x_tweet_signal_types)
@@ -105,7 +106,18 @@ class XPoster:
         now_hour = now_utc.hour
 
         # Free plays: Elite PD signals only (2 qualifiers = Best Combo + Best Hour).
+        # Caps: per sport per day, per hour, unique event.
         past_fp_events = await self._repo.get_free_play_event_ids()
+        today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        hour_start = now_utc.replace(minute=0, second=0, microsecond=0).isoformat()
+        hour_fp_count = await self._repo.count_free_plays_since(hour_start)
+
+        # Count today's free plays by sport
+        today_fp_rows = await self._repo.get_free_play_details_since(today_start)
+        sport_fp_counts: dict[str, int] = {}
+        for fp_row in today_fp_rows:
+            fp_sport = fp_row.get("sport_key", "")
+            sport_fp_counts[fp_sport] = sport_fp_counts.get(fp_sport, 0) + 1
 
         free_play_picks: list[Signal] = []
         for s in signals:
@@ -117,6 +129,17 @@ class XPoster:
             if s.event_id in past_fp_events:
                 continue
             if self._excluded_books and self._get_book(s) in self._excluded_books:
+                continue
+            # Hourly cap
+            if (hour_fp_count + len(free_play_picks)) >= self._free_play_hourly_cap:
+                log.info("x_free_play_hourly_capped", event_id=s.event_id)
+                continue
+            # Per-sport daily cap
+            sport_count = sport_fp_counts.get(s.sport_key, 0) + sum(
+                1 for p in free_play_picks if p.sport_key == s.sport_key
+            )
+            if sport_count >= self._free_play_sport_cap:
+                log.info("x_free_play_sport_capped", event_id=s.event_id, sport=s.sport_key)
                 continue
             free_play_picks.append(s)
 
