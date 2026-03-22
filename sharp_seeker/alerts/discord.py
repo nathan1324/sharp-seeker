@@ -152,14 +152,20 @@ class DiscordAlerter:
     def _count_qualifiers(self, sig: Signal) -> tuple[int, list[str]]:
         """Count how many quality qualifiers a signal meets.
 
-        Qualifiers: best combo, best hour.
-        Tiers: 2 = 2U PLAY, 1 = Elite, 0 = suppressed.
+        Qualifiers: best combo, best hour, and for Rapid Change only,
+        edge hold (cross-book hold >= 2%) which confirms the stale line.
+        Tiers: 2+ = Elite, 1 = regular, 0 = suppressed.
         """
         tags: list[str] = []
         if self._best_combos and self._is_best_combo(sig):
             tags.append("Best Combo")
         if self._is_best_hour(sig):
             tags.append("Best Hour")
+        # Rapid Change: wide cross-book hold confirms stale line
+        if sig.signal_type == SignalType.RAPID_CHANGE:
+            cbh = (sig.details or {}).get("cross_book_hold")
+            if cbh is not None and cbh >= 0.02:
+                tags.append("Edge Hold")
         return len(tags), tags
 
     async def send_signals(self, signals: list[Signal]) -> None:
