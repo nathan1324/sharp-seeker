@@ -105,7 +105,7 @@ class XPoster:
         now_utc = datetime.now(timezone.utc)
         now_hour = now_utc.hour
 
-        # Free plays: Elite PD signals only (2 qualifiers = Best Combo + Best Hour).
+        # Free plays: Elite signals (2 qualifiers = Best Combo + Best Hour).
         # Caps: per sport per day, per hour, unique event.
         past_fp_events = await self._repo.get_free_play_event_ids()
         today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
@@ -121,8 +121,6 @@ class XPoster:
 
         free_play_picks: list[Signal] = []
         for s in signals:
-            if s.signal_type != SignalType.PINNACLE_DIVERGENCE:
-                continue
             q_count = (s.details or {}).get("qualifier_count", 0)
             if q_count < 2:
                 continue

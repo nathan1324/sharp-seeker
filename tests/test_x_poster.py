@@ -145,8 +145,8 @@ async def test_zero_qualifiers_no_free_play(settings, repo):
 
 
 @pytest.mark.asyncio
-async def test_steam_move_elite_not_free_play(settings, repo):
-    """Steam move with 2 qualifiers should NOT become a free play — PD only."""
+async def test_steam_move_elite_becomes_free_play(settings, repo):
+    """Steam move with 2 qualifiers should become a free play."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
@@ -164,8 +164,9 @@ async def test_steam_move_elite_not_free_play(settings, repo):
 
     await poster.post_signals([sig])
 
-    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
-    assert all("FREE PLAY" not in t for t in calls)
+    poster._client.create_tweet.assert_called_once()
+    call_text = poster._client.create_tweet.call_args.kwargs["text"]
+    assert "FREE PLAY" in call_text
 
 
 @pytest.mark.asyncio
@@ -867,8 +868,9 @@ async def test_rapid_change_not_free_play(settings, repo):
 
     await poster.post_signals([sig])
 
-    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
-    assert all("FREE PLAY" not in t for t in calls)
+    poster._client.create_tweet.assert_called_once()
+    call_text = poster._client.create_tweet.call_args.kwargs["text"]
+    assert "FREE PLAY" in call_text
 
 
 @pytest.mark.asyncio
