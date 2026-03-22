@@ -145,14 +145,13 @@ async def test_zero_qualifiers_no_free_play(settings, repo):
 
 
 @pytest.mark.asyncio
-async def test_non_tweetable_type_elite_becomes_free_play(settings, repo):
-    """Elite steam move should become free play even though SM isn't in tweet_types."""
+async def test_steam_move_elite_not_free_play(settings, repo):
+    """Steam move with 2 qualifiers should NOT become a free play — PD only."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
-    poster._tweet_types = {"pinnacle_divergence"}  # SM not included
 
     sig = _make_signal(
         signal_type=SignalType.STEAM_MOVE,
@@ -165,10 +164,8 @@ async def test_non_tweetable_type_elite_becomes_free_play(settings, repo):
 
     await poster.post_signals([sig])
 
-    poster._client.create_tweet.assert_called_once()
-    call_text = poster._client.create_tweet.call_args.kwargs["text"]
-    assert "FREE PLAY" in call_text
-    assert "Steam Move" in call_text
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    assert all("FREE PLAY" not in t for t in calls)
 
 
 @pytest.mark.asyncio
@@ -856,8 +853,8 @@ async def test_rapid_change_gets_teaser(settings, repo):
 
 
 @pytest.mark.asyncio
-async def test_rapid_change_2u_gets_free_play(settings, repo):
-    """Rapid change signal with 3+ qualifiers becomes a free play."""
+async def test_rapid_change_not_free_play(settings, repo):
+    """Rapid change signal should NOT become a free play — PD only."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
@@ -868,17 +865,15 @@ async def test_rapid_change_2u_gets_free_play(settings, repo):
         signal_type=SignalType.RAPID_CHANGE,
         details={
             "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
-            "qualifier_count": 3,
-            "qualifier_tags": ["Best Combo", "Best Hour", "Sharp Hold"],
+            "qualifier_count": 2,
+            "qualifier_tags": ["Best Combo", "Best Hour"],
         },
     )
 
     await poster.post_signals([sig])
 
-    poster._client.create_tweet.assert_called_once()
-    call_text = poster._client.create_tweet.call_args.kwargs["text"]
-    assert "FREE PLAY" in call_text
-    assert "Rapid Change" in call_text
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    assert all("FREE PLAY" not in t for t in calls)
 
 
 @pytest.mark.asyncio
