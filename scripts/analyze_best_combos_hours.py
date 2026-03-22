@@ -219,8 +219,133 @@ def main():
                 d=display, ap=ampm, f=fmt(w, l, p, u), flag=flag,
             ))
 
-    # ── 3. Recommended config ────────────────────────────────
-    section("3. RECOMMENDED CONFIG")
+    # ── 3. Cross-book hold vs performance ────────────────────
+    section("3. CROSS-BOOK HOLD vs PERFORMANCE")
+
+    hold_buckets = [
+        (None, 0.0, "Negative (Efficient)"),
+        (0.0, 0.015, "0-1.5% (Tight)"),
+        (0.015, 0.03, "1.5-3% (Edge)"),
+        (0.03, 0.05, "3-5% (Wide Edge)"),
+        (0.05, 1.0, "5%+ (Very Wide)"),
+    ]
+
+    # Parse cross_book_hold from details
+    for r in rows:
+        r["_cbh"] = None
+        details_raw = r.get("details_json")
+        if details_raw:
+            try:
+                details = json.loads(details_raw) if isinstance(details_raw, str) else details_raw
+                r["_cbh"] = details.get("cross_book_hold")
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+    has_hold = [r for r in rows if r["_cbh"] is not None]
+    print("  Signals with cross-book hold data: {n}/{t}".format(n=len(has_hold), t=len(rows)))
+
+    print("\n  All signal types:")
+    for lo, hi, label in hold_buckets:
+        if lo is None:
+            bucket_rows = [r for r in has_hold if r["_cbh"] < 0]
+        else:
+            bucket_rows = [r for r in has_hold if lo <= r["_cbh"] < hi]
+        if not bucket_rows:
+            continue
+        w, l, p, u = tally(bucket_rows)
+        print("    {label:25s} {f}".format(label=label, f=fmt(w, l, p, u)))
+
+    # By signal type
+    for st in types:
+        st_hold = [r for r in has_hold if r["signal_type"] == st]
+        if not st_hold:
+            continue
+        sl = SIGNAL_LABELS.get(st, st)
+        print("\n  {l}:".format(l=sl))
+        for lo, hi, label in hold_buckets:
+            if lo is None:
+                bucket_rows = [r for r in st_hold if r["_cbh"] < 0]
+            else:
+                bucket_rows = [r for r in st_hold if lo <= r["_cbh"] < hi]
+            if not bucket_rows:
+                continue
+            w, l, p, u = tally(bucket_rows)
+            print("    {label:25s} {f}".format(label=label, f=fmt(w, l, p, u)))
+
+    # ── 4. Dispersion vs performance ─────────────────────────
+    section("4. PRICE DISPERSION vs PERFORMANCE")
+
+    # Parse dispersion from details
+    for r in rows:
+        r["_disp"] = None
+        details_raw = r.get("details_json")
+        if details_raw:
+            try:
+                details = json.loads(details_raw) if isinstance(details_raw, str) else details_raw
+                r["_disp"] = details.get("dispersion")
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+    has_disp = [r for r in rows if r["_disp"] is not None]
+    print("  Signals with dispersion data: {n}/{t}".format(n=len(has_disp), t=len(rows)))
+
+    if has_disp:
+        # Split into point-based (spreads/totals) and ML separately
+        point_rows = [r for r in has_disp if r["market_key"] in ("spreads", "totals")]
+        ml_rows = [r for r in has_disp if r["market_key"] == "h2h"]
+
+        if point_rows:
+            point_buckets = [
+                (0.0, 0.001, "0 (No dispersion)"),
+                (0.001, 0.5, "0-0.5 pts"),
+                (0.5, 1.0, "0.5-1 pts"),
+                (1.0, 2.0, "1-2 pts"),
+                (2.0, 100.0, "2+ pts"),
+            ]
+            print("\n  Spreads/Totals (point dispersion):")
+            for lo, hi, label in point_buckets:
+                bucket_rows = [r for r in point_rows if lo <= r["_disp"] < hi]
+                if not bucket_rows:
+                    continue
+                w, l, p, u = tally(bucket_rows)
+                print("    {label:25s} {f}".format(label=label, f=fmt(w, l, p, u)))
+
+        if ml_rows:
+            ml_buckets = [
+                (0.0, 0.001, "0 (No dispersion)"),
+                (0.001, 0.02, "0-2%"),
+                (0.02, 0.05, "2-5%"),
+                (0.05, 0.10, "5-10%"),
+                (0.10, 1.0, "10%+"),
+            ]
+            print("\n  Moneyline (implied prob dispersion):")
+            for lo, hi, label in ml_buckets:
+                bucket_rows = [r for r in ml_rows if lo <= r["_disp"] < hi]
+                if not bucket_rows:
+                    continue
+                w, l, p, u = tally(bucket_rows)
+                print("    {label:25s} {f}".format(label=label, f=fmt(w, l, p, u)))
+
+        # Dispersion by signal type (spreads/totals only since that's most data)
+        if point_rows:
+            print("\n  Spreads/Totals dispersion by signal type:")
+            for st in types:
+                st_disp = [r for r in point_rows if r["signal_type"] == st]
+                if not st_disp:
+                    continue
+                sl = SIGNAL_LABELS.get(st, st)
+                print("\n    {l}:".format(l=sl))
+                for lo, hi, label in point_buckets:
+                    bucket_rows = [r for r in st_disp if lo <= r["_disp"] < hi]
+                    if not bucket_rows:
+                        continue
+                    w, l, p, u = tally(bucket_rows)
+                    print("      {label:25s} {f}".format(label=label, f=fmt(w, l, p, u)))
+    else:
+        print("  (no dispersion data — this is a newer metric)")
+
+    # ── 5. Recommended config ────────────────────────────────
+    section("5. RECOMMENDED CONFIG")
     print()
     print("  SIGNAL_BEST_COMBOS:")
     if recommended_combos:
@@ -239,8 +364,8 @@ def main():
     else:
         print("    (no hours meet criteria)")
 
-    # ── 4. What Elite would look like with these settings ────
-    section("4. SIMULATED ELITE WITH RECOMMENDED CONFIG")
+    # ── 6. What Elite would look like with these settings ────
+    section("6. SIMULATED ELITE WITH RECOMMENDED CONFIG")
     rec_combos_set = set(recommended_combos)
     rec_hours_dict = {k: set(v) for k, v in recommended_hours.items()}
 
