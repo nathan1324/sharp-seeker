@@ -283,16 +283,11 @@ class DiscordAlerter:
             us_book = display_book(d.get("us_book", "?"))
             us_val = d.get("us_value", "?")
             pin_val = d.get("pinnacle_value", "?")
-            delta = d.get("delta", 0)
             lines.append(bet_line or f"💰 **{market_name}** — {sig.outcome_name}")
             if sig.market_key == "h2h":
                 lines.append(f"## {us_book}: {us_val:+.0f}  vs  Pinnacle: {pin_val:+.0f}")
             else:
                 lines.append(f"## {us_book}: {us_val}  vs  Pinnacle: {pin_val}")
-            if sig.market_key == "h2h":
-                lines.append(f"**Value edge: {delta:.1%}**")
-            else:
-                lines.append(f"**Value edge: {delta:+.1f}**")
 
         elif sig.signal_type == SignalType.REVERSE_LINE:
             us_dir = d.get("us_direction", "?")
