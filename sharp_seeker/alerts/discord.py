@@ -169,7 +169,7 @@ class DiscordAlerter:
 
         # Tight/efficient market (cross-book hold < 2%) = cap at 1 qualifier max
         cbh = (sig.details or {}).get("cross_book_hold")
-        if cbh is not None and cbh < 0.02 and len(tags) > 1:
+        if cbh is not None and cbh <= 0.02 and len(tags) > 1:
             tags = tags[:1]
 
         return len(tags), tags
