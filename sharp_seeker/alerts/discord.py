@@ -167,10 +167,14 @@ class DiscordAlerter:
             if cbh is not None and cbh >= 0.02:
                 tags.append("Edge Hold")
 
-        # Tight/efficient market (cross-book hold < 2%) = cap at 1 qualifier max
+        # Tight/efficient market = cap at 1 qualifier max (no Elite).
+        # NHL uses a lower threshold (-2%) because cross-book hold is naturally
+        # negative due to varying totals points across books (5.5 vs 6.0 vs 6.5).
         cbh = (sig.details or {}).get("cross_book_hold")
-        if cbh is not None and cbh <= 0.02 and len(tags) > 1:
-            tags = tags[:1]
+        if cbh is not None and len(tags) > 1:
+            elite_hold_min = -0.02 if sig.sport_key == "icehockey_nhl" else 0.02
+            if cbh <= elite_hold_min:
+                tags = tags[:1]
 
         return len(tags), tags
 
