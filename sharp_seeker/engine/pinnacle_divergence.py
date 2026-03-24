@@ -143,6 +143,11 @@ class PinnacleDivergenceDetector(BaseDetector):
                 if delta < threshold:
                     continue
 
+                # Cap large divergences on spreads/totals — consistently noise
+                # (stable period: 49% -10.1u, current: 18% -13.1u at delta 2.0+)
+                if market_key != "h2h" and delta >= 2.0:
+                    continue
+
                 # Only alert when US book has BETTER value than Pinnacle
                 if not _us_has_better_value(market_key, outcome_name, us_val, pin_val):
                     continue
@@ -158,6 +163,11 @@ class PinnacleDivergenceDetector(BaseDetector):
                     by_market, market_key, outcome_name,
                 )
                 cross_hold = compute_cross_book_hold(cb_prices_a, cb_prices_b)
+
+                # Suppress tight hold (0-2%) — market has converged, no real edge
+                # (current period: 25%, -19.4u). Negative hold is kept (can be valid).
+                if cross_hold is not None and 0 <= cross_hold <= 0.02:
+                    continue
 
                 # Price dispersion: how spread out are US books on this side?
                 # High dispersion = value book is a real outlier = better signal.
