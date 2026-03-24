@@ -132,7 +132,7 @@ class Settings(BaseSettings):
     x_access_token: str | None = None
     x_access_token_secret: str | None = None
     x_cta_url: str = ""  # Discord invite or landing page link
-    x_free_play_sport_cap: int = 2  # max free plays per sport per day
+    x_free_play_sport_cap: int = 3  # max free plays per sport per day
     x_free_play_hourly_cap: int = 1  # max free plays per UTC hour
     # UTC hours when teaser tweets are allowed (JSON array in .env)
     # Free play tweets are always sent regardless of this setting.
