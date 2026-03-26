@@ -168,11 +168,12 @@ class DiscordAlerter:
                 tags.append("Edge Hold")
 
         # Tight/efficient market = cap at 1 qualifier max (no Elite).
-        # NHL uses a lower threshold (-2%) because cross-book hold is naturally
+        # NHL/MLB use a lower threshold (-2%) because cross-book hold is naturally
         # negative due to varying totals points across books (5.5 vs 6.0 vs 6.5).
         cbh = (sig.details or {}).get("cross_book_hold")
+        tight_line_sports = {"icehockey_nhl", "baseball_mlb"}
         if cbh is not None and len(tags) > 1:
-            elite_hold_min = -0.02 if sig.sport_key == "icehockey_nhl" else 0.02
+            elite_hold_min = -0.02 if sig.sport_key in tight_line_sports else 0.02
             if cbh <= elite_hold_min:
                 tags = tags[:1]
 
