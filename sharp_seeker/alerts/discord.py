@@ -143,7 +143,12 @@ class DiscordAlerter:
         return key in self._best_combos
 
     def _is_best_hour(self, sig: Signal) -> bool:
-        hours = self._best_hours.get(sig.signal_type.value)
+        # Sport-specific key takes priority over global signal-type key
+        sport_key = f"{sig.signal_type.value}:{sig.sport_key}"
+        if sport_key in self._best_hours:
+            hours = self._best_hours[sport_key]
+        else:
+            hours = self._best_hours.get(sig.signal_type.value)
         if not hours:
             return False
         mst_hour = datetime.now(timezone.utc).astimezone(MST).hour
