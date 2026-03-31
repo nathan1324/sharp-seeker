@@ -178,13 +178,17 @@ class DetectionPipeline:
                 )
 
         # Suppress signal types during their configured quiet hours
+        # Supports sport-specific keys ("type:sport") with fallback to type-level
         quiet_map = self._settings.signal_quiet_hours
         if quiet_map:
             now_hour = datetime.now(timezone.utc).hour
             before_quiet = len(strong_signals)
             strong_signals = [
                 s for s in strong_signals
-                if now_hour not in quiet_map.get(s.signal_type.value, [])
+                if now_hour not in quiet_map.get(
+                    f"{s.signal_type.value}:{s.sport_key}",
+                    quiet_map.get(s.signal_type.value, []),
+                )
             ]
             if len(strong_signals) < before_quiet:
                 log.info(
