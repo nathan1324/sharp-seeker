@@ -264,7 +264,7 @@ def run():
         vb = details.get("value_books", [])
         if vb:
             row["best_price"] = vb[0].get("price")
-            row["best_book"] = vb[0].get("book", "unknown")
+            row["best_book"] = vb[0].get("bookmaker", vb[0].get("book", "unknown"))
         else:
             row["best_book"] = "unknown"
         if details.get("qualifier_count", 0) >= 2:
