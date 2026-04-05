@@ -60,6 +60,10 @@ class XPoster:
         self._cta_url = settings.x_cta_url
         self._free_play_sport_cap = settings.x_free_play_sport_cap
         self._free_play_hourly_cap = settings.x_free_play_hourly_cap
+        self._free_play_interval = settings.x_free_play_interval
+        self._free_play_combos: set[str] = set(settings.x_free_play_combos)
+        self._fp_eligible_count = 0
+        self._fp_eligible_date: str = ""
         self._teaser_hours: list[int] = settings.x_teaser_hours
         self._max_strength = settings.x_max_strength
         self._tweet_types: set[str] = set(settings.x_tweet_signal_types)
@@ -105,41 +109,61 @@ class XPoster:
         now_utc = datetime.now(timezone.utc)
         now_hour = now_utc.hour
 
-        # Free plays: Elite signals (2 qualifiers = Best Combo + Best Hour).
-        # Caps: per sport per day, per hour, unique event.
-        past_fp_events = await self._repo.get_free_play_event_ids()
-        today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        hour_start = now_utc.replace(minute=0, second=0, microsecond=0).isoformat()
-        hour_fp_count = await self._repo.count_free_plays_since(hour_start)
+        # Free plays: signals matching whitelisted type:sport:market combos.
+        # Every Nth eligible signal becomes a free play (interval).
+        # Additional caps: per sport per day, per hour, unique event.
+        if not self._free_play_combos:
+            free_play_picks: list[Signal] = []
+        else:
+            # Reset eligible counter at the start of each UTC day
+            today_str = now_utc.strftime("%Y-%m-%d")
+            if self._fp_eligible_date != today_str:
+                self._fp_eligible_count = 0
+                self._fp_eligible_date = today_str
 
-        # Count today's free plays by sport
-        today_fp_rows = await self._repo.get_free_play_details_since(today_start)
-        sport_fp_counts: dict[str, int] = {}
-        for fp_row in today_fp_rows:
-            fp_sport = fp_row.get("sport_key", "")
-            sport_fp_counts[fp_sport] = sport_fp_counts.get(fp_sport, 0) + 1
+            past_fp_events = await self._repo.get_free_play_event_ids()
+            today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+            hour_start = now_utc.replace(minute=0, second=0, microsecond=0).isoformat()
+            hour_fp_count = await self._repo.count_free_plays_since(hour_start)
 
-        free_play_picks: list[Signal] = []
-        for s in signals:
-            q_count = (s.details or {}).get("qualifier_count", 0)
-            if q_count < 2:
-                continue
-            if s.event_id in past_fp_events:
-                continue
-            if self._excluded_books and self._get_book(s) in self._excluded_books:
-                continue
-            # Hourly cap
-            if (hour_fp_count + len(free_play_picks)) >= self._free_play_hourly_cap:
-                log.info("x_free_play_hourly_capped", event_id=s.event_id)
-                continue
-            # Per-sport daily cap
-            sport_count = sport_fp_counts.get(s.sport_key, 0) + sum(
-                1 for p in free_play_picks if p.sport_key == s.sport_key
-            )
-            if sport_count >= self._free_play_sport_cap:
-                log.info("x_free_play_sport_capped", event_id=s.event_id, sport=s.sport_key)
-                continue
-            free_play_picks.append(s)
+            # Count today's free plays by sport
+            today_fp_rows = await self._repo.get_free_play_details_since(today_start)
+            sport_fp_counts: dict[str, int] = {}
+            for fp_row in today_fp_rows:
+                fp_sport = fp_row.get("sport_key", "")
+                sport_fp_counts[fp_sport] = sport_fp_counts.get(fp_sport, 0) + 1
+
+            free_play_picks: list[Signal] = []
+            for s in signals:
+                combo_key = f"{s.signal_type.value}:{s.sport_key}:{s.market_key}"
+                if combo_key not in self._free_play_combos:
+                    continue
+                if s.event_id in past_fp_events:
+                    continue
+                if self._excluded_books and self._get_book(s) in self._excluded_books:
+                    continue
+                # Count every eligible signal, but only post every Nth one
+                self._fp_eligible_count += 1
+                if self._fp_eligible_count % self._free_play_interval != 0:
+                    log.info(
+                        "x_free_play_interval_skip",
+                        event_id=s.event_id,
+                        eligible=self._fp_eligible_count,
+                        interval=self._free_play_interval,
+                    )
+                    continue
+                # Hourly cap
+                if (hour_fp_count + len(free_play_picks)) >= self._free_play_hourly_cap:
+                    log.info("x_free_play_hourly_capped", event_id=s.event_id)
+                    continue
+                # Per-sport daily cap
+                sport_count = sport_fp_counts.get(s.sport_key, 0) + sum(
+                    1 for p in free_play_picks if p.sport_key == s.sport_key
+                )
+                if sport_count >= self._free_play_sport_cap:
+                    log.info("x_free_play_sport_capped", event_id=s.event_id, sport=s.sport_key)
+                    continue
+                free_play_picks.append(s)
 
         for pick in free_play_picks:
             try:
