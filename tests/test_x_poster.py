@@ -80,6 +80,7 @@ async def test_whitelisted_combo_becomes_free_play(settings, repo):
     poster._enabled = True
     poster._digest_mode = False
     poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
+    poster._free_play_interval = 1
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
 
@@ -123,6 +124,36 @@ async def test_non_whitelisted_combo_no_free_play(settings, repo):
 
 
 @pytest.mark.asyncio
+async def test_interval_skips_early_signals(settings, repo):
+    """With interval=3, only every 3rd eligible signal becomes a free play."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+    poster._digest_mode = False
+    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
+    poster._free_play_interval = 3
+    poster._free_play_sport_cap = 10
+    poster._free_play_hourly_cap = 10
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    # Send 3 eligible signals one at a time (simulating 3 poll cycles)
+    for i in range(3):
+        sig = _make_signal(
+            signal_type=SignalType.PINNACLE_DIVERGENCE,
+            market_key="spreads",
+            details={
+                "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
+            },
+        )
+        sig.event_id = f"evt_{i}"
+        await poster.post_signals([sig])
+
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    free_plays = [t for t in calls if "FREE PLAY" in t]
+    assert len(free_plays) == 1  # only the 3rd one fires
+
+
+@pytest.mark.asyncio
 async def test_empty_combo_list_no_free_plays(settings, repo):
     """Empty free_play_combos list should produce no free plays."""
     poster = XPoster(settings, repo)
@@ -153,6 +184,7 @@ async def test_sport_cap_limits_free_plays(settings, repo):
     poster._enabled = True
     poster._digest_mode = False
     poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
+    poster._free_play_interval = 1
     poster._free_play_sport_cap = 1  # cap at 1 per sport
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
@@ -483,6 +515,7 @@ async def test_post_signals_marks_free_play_in_db(settings, repo):
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
+    poster._free_play_interval = 1
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
 
@@ -678,6 +711,7 @@ async def test_hourly_cap_limits_free_plays(settings, repo):
     poster._enabled = True
     poster._digest_mode = False
     poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
+    poster._free_play_interval = 1
     poster._free_play_hourly_cap = 1
     poster._free_play_sport_cap = 5  # not the limiting factor
     poster._client = MagicMock()
@@ -757,6 +791,7 @@ async def test_free_play_picks_different_game(settings, repo):
         "pinnacle_divergence:basketball_nba:h2h",
         "pinnacle_divergence:basketball_nba:spreads",
     }
+    poster._free_play_interval = 1
     poster._free_play_sport_cap = 10
     poster._free_play_hourly_cap = 10
     poster._client = MagicMock()
@@ -908,6 +943,7 @@ async def test_digest_posts_free_play_immediately(settings, repo):
     poster._enabled = True
     poster._digest_mode = True
     poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
+    poster._free_play_interval = 1
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
 

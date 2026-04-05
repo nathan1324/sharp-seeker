@@ -206,6 +206,7 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `X_CTA_URL` | `""` | Link in tweet CTA (Discord invite / landing page) |
 | `X_FREE_PLAY_SPORT_CAP` | `3` | Max free plays per sport per day |
 | `X_FREE_PLAY_HOURLY_CAP` | `1` | Max free plays per UTC hour |
+| `X_FREE_PLAY_INTERVAL` | `3` | Post a free play every Nth eligible signal (spreads picks throughout the day) |
 | `X_FREE_PLAY_COMBOS` | `[]` | Whitelist of `type:sport:market` combos eligible for free plays (JSON array, empty = none) |
 | `X_TEASER_HOURS` | `[]` | UTC hours to allow teaser tweets (JSON array, empty = always) |
 | `X_MAX_STRENGTH` | `1.0` | Skip PD signals >= this strength for X tweets (0.0–1.0) |
