@@ -204,7 +204,9 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `X_ACCESS_TOKEN` | — | X OAuth 1.0a access token (optional) |
 | `X_ACCESS_TOKEN_SECRET` | — | X OAuth 1.0a access token secret (optional) |
 | `X_CTA_URL` | `""` | Link in tweet CTA (Discord invite / landing page) |
-| `X_FREE_PLAY_DAILY_CAP` | `3` | Max Elite (2+ qualifier) free plays per day. 2U (3+) always fires. |
+| `X_FREE_PLAY_SPORT_CAP` | `3` | Max free plays per sport per day |
+| `X_FREE_PLAY_HOURLY_CAP` | `1` | Max free plays per UTC hour |
+| `X_FREE_PLAY_COMBOS` | `[]` | Whitelist of `type:sport:market` combos eligible for free plays (JSON array, empty = none) |
 | `X_TEASER_HOURS` | `[]` | UTC hours to allow teaser tweets (JSON array, empty = always) |
 | `X_MAX_STRENGTH` | `1.0` | Skip PD signals >= this strength for X tweets (0.0–1.0) |
 | `X_TWEET_SIGNAL_TYPES` | `["pinnacle_divergence", "rapid_change"]` | Signal types eligible for X tweets (JSON array) |
@@ -312,7 +314,7 @@ bash deploy/update.sh
 
 ## X (Twitter) Integration
 
-Sharp Seeker can automatically post to X when signals fire. By default, **Pinnacle Divergence** and **Rapid Change** signals are eligible (configurable via `X_TWEET_SIGNAL_TYPES`). Every Nth eligible signal is posted as a **free play** with full pick details revealed publicly — free plays always post immediately since they're time-sensitive.
+Sharp Seeker can automatically post to X when signals fire. By default, **Pinnacle Divergence** and **Rapid Change** signals are eligible (configurable via `X_TWEET_SIGNAL_TYPES`). Signals matching whitelisted `type:sport:market` combos (`X_FREE_PLAY_COMBOS`) are posted as **free plays** with full pick details — free plays always post immediately since they're time-sensitive.
 
 **Digest mode (default):** Teasers are batched in memory and posted as a single digest tweet every 2 hours (configurable via `X_DIGEST_INTERVAL_HOURS`). This prevents spamming followers during active periods. Set to `0` for legacy per-signal tweeting.
 
@@ -349,7 +351,7 @@ X_CONSUMER_SECRET=your_consumer_secret
 X_ACCESS_TOKEN=your_access_token
 X_ACCESS_TOKEN_SECRET=your_access_token_secret
 X_CTA_URL=https://discord.gg/your-invite-link
-X_FREE_PLAY_DAILY_CAP=3
+X_FREE_PLAY_COMBOS=["pinnacle_divergence:basketball_nba:spreads", "pinnacle_divergence:basketball_nba:h2h", "pinnacle_divergence:basketball_ncaab:h2h"]
 ```
 
 **Daily recap tweet (12:45 UTC / 5:45 AM MT):** Each morning after grading, a recap of the previous day's free plays is posted to X with results (won/lost/pending), a running record, and an attached results card image (1080x1080 branded PNG with YTD profit, monthly record, and streak).
@@ -359,7 +361,7 @@ X_FREE_PLAY_DAILY_CAP=3
 X tweets use additional filtering to maximize public credibility:
 
 - **Strength cap** (`X_MAX_STRENGTH`) — signals at or above this strength are skipped entirely. Analysis shows very high strength signals (0.90+) underperform, so capping at 0.80 filters out traps.
-- **Smart free play selection** — when a free play is due, the best candidate is chosen by scoring: preferred sport > preferred market > lower strength. Configure with `X_FREE_PLAY_SPORTS` and `X_FREE_PLAY_MARKETS`.
+- **Free play combo whitelist** (`X_FREE_PLAY_COMBOS`) — only signals matching specific `type:sport:market` patterns become free plays. Combos are data-driven: only patterns with positive unit returns and meaningful sample size are included. Empty list disables free plays entirely.
 - **Digest mode** — teasers are batched and posted as a single tweet every N hours (`X_DIGEST_INTERVAL_HOURS`). In legacy mode (0), teaser hours (`X_TEASER_HOURS`) gate per-signal tweets. Free plays always post immediately regardless of mode.
 
 X posting is **optional** — if credentials are not set, the poster disables itself with no errors.

@@ -70,22 +70,23 @@ async def test_non_tweetable_signals_skipped(settings, repo):
     poster._client.create_tweet.assert_not_called()
 
 
-# ── Free play logic (Elite 2+ / 2U 3+ with daily cap) ─────────
+# ── Free play logic (combo whitelist) ──────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_2u_signal_becomes_free_play(settings, repo):
-    """A 2U signal (3+ qualifiers) should automatically become a free play."""
+async def test_whitelisted_combo_becomes_free_play(settings, repo):
+    """A signal matching a whitelisted combo should become a free play."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
+    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
 
     sig = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="spreads",
         details={
-            "qualifier_count": 3,
             "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
         },
     )
@@ -98,42 +99,43 @@ async def test_2u_signal_becomes_free_play(settings, repo):
 
 
 @pytest.mark.asyncio
-async def test_elite_signal_becomes_free_play(settings, repo):
-    """An Elite signal (2 qualifiers) should become a free play."""
+async def test_non_whitelisted_combo_no_free_play(settings, repo):
+    """A signal NOT matching any whitelisted combo should not become a free play."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
+    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:h2h"}
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
 
     sig = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="totals",
         details={
-            "qualifier_count": 2,
-            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 220.5}],
         },
     )
 
     await poster.post_signals([sig])
 
-    poster._client.create_tweet.assert_called_once()
-    call_text = poster._client.create_tweet.call_args.kwargs["text"]
-    assert "FREE PLAY" in call_text
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    assert all("FREE PLAY" not in t for t in calls)
 
 
 @pytest.mark.asyncio
-async def test_zero_qualifiers_no_free_play(settings, repo):
-    """Signals with 0 qualifiers should NOT become free plays."""
+async def test_empty_combo_list_no_free_plays(settings, repo):
+    """Empty free_play_combos list should produce no free plays."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
+    poster._free_play_combos = set()
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
 
     sig = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="spreads",
         details={
-            "qualifier_count": 0,
             "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
         },
     )
@@ -145,52 +147,27 @@ async def test_zero_qualifiers_no_free_play(settings, repo):
 
 
 @pytest.mark.asyncio
-async def test_steam_move_elite_becomes_free_play(settings, repo):
-    """Steam move with 2 qualifiers should become a free play."""
+async def test_sport_cap_limits_free_plays(settings, repo):
+    """Sport cap should limit free plays from the same sport."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-
-    sig = _make_signal(
-        signal_type=SignalType.STEAM_MOVE,
-        details={
-            "qualifier_count": 2,
-            "qualifier_tags": ["Best Combo", "Best Hour"],
-            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
-        },
-    )
-
-    await poster.post_signals([sig])
-
-    poster._client.create_tweet.assert_called_once()
-    call_text = poster._client.create_tweet.call_args.kwargs["text"]
-    assert "FREE PLAY" in call_text
-
-
-@pytest.mark.asyncio
-async def test_elite_capped_but_2u_punches_through(settings, repo):
-    """Elite signals respect daily cap; 2U signals always fire."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._digest_mode = False
+    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
     poster._free_play_sport_cap = 1  # cap at 1 per sport
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
 
-    # Two Elite PD signals for the same sport — second should be sport-capped
     sig1 = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="spreads",
         details={
-            "qualifier_count": 2,
             "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
         },
     )
     sig2 = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="spreads",
         details={
-            "qualifier_count": 2,
             "value_books": [{"bookmaker": "fanduel", "price": -105, "point": -4.5}],
         },
     )
@@ -501,17 +478,18 @@ async def test_mark_alert_free_play(settings, repo):
 
 
 @pytest.mark.asyncio
-async def test_post_signals_marks_2u_free_play(settings, repo):
-    """post_signals should mark 2U signals as free plays in the DB."""
+async def test_post_signals_marks_free_play_in_db(settings, repo):
+    """post_signals should mark whitelisted combo signals as free plays in the DB."""
     poster = XPoster(settings, repo)
     poster._enabled = True
+    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
 
     sig = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="spreads",
         details={
-            "qualifier_count": 3,
             "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
         },
     )
@@ -695,10 +673,11 @@ async def test_strength_cap_boundary(settings, repo):
 
 @pytest.mark.asyncio
 async def test_hourly_cap_limits_free_plays(settings, repo):
-    """Only 1 free play per hour — second Elite PD should be hourly-capped."""
+    """Only 1 free play per hour — second whitelisted signal should be hourly-capped."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
+    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
     poster._free_play_hourly_cap = 1
     poster._free_play_sport_cap = 5  # not the limiting factor
     poster._client = MagicMock()
@@ -708,11 +687,10 @@ async def test_hourly_cap_limits_free_plays(settings, repo):
         signal_type=SignalType.PINNACLE_DIVERGENCE,
         event_id="evt_1", sport_key="basketball_nba",
         home_team="Lakers", away_team="Celtics",
-        market_key="totals", outcome_name="Over", strength=0.60,
+        market_key="spreads", outcome_name="Lakers", strength=0.60,
         description="Test", commence_time="2099-01-15T00:00:00Z",
         details={
-            "qualifier_count": 2,
-            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 220.5}],
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
         },
     )
     sig2 = Signal(
@@ -722,8 +700,7 @@ async def test_hourly_cap_limits_free_plays(settings, repo):
         market_key="spreads", outcome_name="Warriors", strength=0.55,
         description="Test", commence_time="2099-01-15T00:00:00Z",
         details={
-            "qualifier_count": 2,
-            "value_books": [{"bookmaker": "fanduel", "price": -105, "point": -3.5}],
+            "value_books": [{"bookmaker": "fanduel", "price": -105, "point": -4.5}],
         },
     )
 
@@ -739,10 +716,11 @@ async def test_hourly_cap_limits_free_plays(settings, repo):
 
 @pytest.mark.asyncio
 async def test_free_play_skips_repeat_game(settings, repo):
-    """2U free play should skip a game that already had a free play."""
+    """Free play should skip a game that already had a free play."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
+    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:h2h"}
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
 
@@ -752,13 +730,12 @@ async def test_free_play_skips_repeat_game(settings, repo):
         market_key="spreads", outcome_name="Lakers", is_free_play=True,
     )
 
-    # New batch: same game (evt_123) with 3 qualifiers — should be skipped for free play
+    # New batch: same game (evt_123), whitelisted combo — should be skipped
     sig = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
         outcome_name="Celtics",
         market_key="h2h",
         details={
-            "qualifier_count": 3,
             "value_books": [{"bookmaker": "draftkings", "price": 150}],
         },
     )
@@ -772,10 +749,14 @@ async def test_free_play_skips_repeat_game(settings, repo):
 
 @pytest.mark.asyncio
 async def test_free_play_picks_different_game(settings, repo):
-    """When one game already has a free play, the other Elite game gets picked."""
+    """When one game already has a free play, the other whitelisted game gets picked."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
+    poster._free_play_combos = {
+        "pinnacle_divergence:basketball_nba:h2h",
+        "pinnacle_divergence:basketball_nba:spreads",
+    }
     poster._free_play_sport_cap = 10
     poster._free_play_hourly_cap = 10
     poster._client = MagicMock()
@@ -787,7 +768,7 @@ async def test_free_play_picks_different_game(settings, repo):
         market_key="spreads", outcome_name="Lakers", is_free_play=True,
     )
 
-    # Batch: evt_123 (repeat, 2U) + evt_other (new, 2U)
+    # Batch: evt_123 (repeat) + evt_other (new) — both whitelisted
     repeat = Signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
         event_id="evt_123", sport_key="basketball_nba",
@@ -795,7 +776,6 @@ async def test_free_play_picks_different_game(settings, repo):
         market_key="h2h", outcome_name="Celtics", strength=0.50,
         description="Test", commence_time="2099-01-15T00:00:00Z",
         details={
-            "qualifier_count": 3,
             "value_books": [{"bookmaker": "draftkings", "price": 150}],
         },
     )
@@ -806,7 +786,6 @@ async def test_free_play_picks_different_game(settings, repo):
         market_key="spreads", outcome_name="Warriors", strength=0.70,
         description="Test", commence_time="2099-01-15T00:00:00Z",
         details={
-            "qualifier_count": 3,
             "value_books": [{"bookmaker": "fanduel", "price": -110, "point": -3.5}],
         },
     )
@@ -849,11 +828,12 @@ async def test_rapid_change_gets_teaser(settings, repo):
 
 
 @pytest.mark.asyncio
-async def test_rapid_change_not_free_play(settings, repo):
-    """Rapid change signal should NOT become a free play — PD only."""
+async def test_rapid_change_not_free_play_unless_whitelisted(settings, repo):
+    """Rapid change signal should NOT become a free play unless in combo whitelist."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = False
+    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
 
@@ -861,16 +841,13 @@ async def test_rapid_change_not_free_play(settings, repo):
         signal_type=SignalType.RAPID_CHANGE,
         details={
             "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
-            "qualifier_count": 2,
-            "qualifier_tags": ["Best Combo", "Best Hour"],
         },
     )
 
     await poster.post_signals([sig])
 
-    poster._client.create_tweet.assert_called_once()
-    call_text = poster._client.create_tweet.call_args.kwargs["text"]
-    assert "FREE PLAY" in call_text
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    assert all("FREE PLAY" not in t for t in calls)
 
 
 @pytest.mark.asyncio
@@ -926,19 +903,19 @@ async def test_digest_buffers_teasers(settings, repo):
 
 @pytest.mark.asyncio
 async def test_digest_posts_free_play_immediately(settings, repo):
-    """2U free plays still tweet right away in digest mode."""
+    """Whitelisted free plays still tweet right away in digest mode."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._digest_mode = True
+    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
 
     sig = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="spreads",
         details={
             "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
-            "qualifier_count": 3,
-            "qualifier_tags": ["Best Combo", "Best Hour", "Sharp Hold"],
         },
     )
 

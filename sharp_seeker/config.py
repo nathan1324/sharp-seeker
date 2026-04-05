@@ -135,6 +135,10 @@ class Settings(BaseSettings):
     x_cta_url: str = ""  # Discord invite or landing page link
     x_free_play_sport_cap: int = 3  # max free plays per sport per day
     x_free_play_hourly_cap: int = 1  # max free plays per UTC hour
+    # Whitelist of type:sport:market combos eligible for free plays (JSON array in .env)
+    # Only signals matching one of these patterns can become a free play.
+    # Empty list = no free plays posted.
+    x_free_play_combos: list[str] = Field(default_factory=list)
     # UTC hours when teaser tweets are allowed (JSON array in .env)
     # Free play tweets are always sent regardless of this setting.
     x_teaser_hours: list[int] = Field(default_factory=list)
