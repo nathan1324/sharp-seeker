@@ -208,7 +208,7 @@ def run():
         pnl = _unit_pnl(r["result"], price)
         running += pnl
         emoji = {"won": "W", "lost": "L", "push": "P"}.get(r["result"], "?")
-        odds_str = f"{price:+d}" if price else "n/a"
+        odds_str = f"{int(price):+d}" if price else "n/a"
         dt = r["sent_at"][:16]
         print(f"  {emoji} {pnl:+6.2f}u (run:{running:+6.2f}u) {dt} {r['alert_type'][:8]:8s} {sport:25s} {r['market_key']:8s} {r['outcome_name']:20s} {odds_str:>6s} [{tag_str}]")
 
