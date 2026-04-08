@@ -4,6 +4,7 @@ Usage:
     docker compose exec sharp-seeker python /app/scripts/diagnose_ytd.py
 """
 
+import json
 import sqlite3
 from datetime import datetime, timezone
 
@@ -13,32 +14,10 @@ now = datetime(2026, 4, 8, 11, 45, 0, tzinfo=timezone.utc)
 ytd_start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
 month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-print(f"ytd_start param: {ytd_start.isoformat()}")
-print(f"month_start param: {month_start.isoformat()}")
-print()
-
-conn = sqlite3.connect(DB)
-conn.row_factory = sqlite3.Row
-
-# 1. Total free play rows
-total = conn.execute("SELECT COUNT(*) FROM sent_alerts WHERE is_free_play = 1").fetchone()[0]
-print(f"Total free play rows (is_free_play=1): {total}")
-
-# 2. Free plays by month
-rows = conn.execute("""
-    SELECT substr(sent_at, 1, 7) AS month, COUNT(*) AS cnt
-    FROM sent_alerts WHERE is_free_play = 1
-    GROUP BY month ORDER BY month
-""").fetchall()
-print("\nFree plays by month:")
-for r in rows:
-    print(f"  {r['month']}: {r['cnt']}")
-
-# 3. Free plays with graded results by month
-rows = conn.execute("""
-    SELECT substr(sa.sent_at, 1, 7) AS month,
-           COUNT(*) AS total,
-           SUM(CASE WHEN sr.result IS NOT NULL THEN 1 ELSE 0 END) AS graded
+QUERY = """
+    SELECT sa.event_id, sa.market_key, sa.outcome_name, sa.sent_at,
+           sa.details_json,
+           sr.result, sr.signal_strength
     FROM sent_alerts sa
     LEFT JOIN signal_results sr
       ON sa.event_id = sr.event_id
@@ -46,51 +25,115 @@ rows = conn.execute("""
      AND sa.market_key = sr.market_key
      AND sa.outcome_name = sr.outcome_name
     WHERE sa.is_free_play = 1
-    GROUP BY month ORDER BY month
+      AND sa.sent_at >= ?
+    ORDER BY sa.sent_at ASC
+"""
+
+
+def compute_risk(price):
+    if price < 0:
+        return abs(price) / 100.0
+    elif price > 0:
+        return 100.0 / price
+    return 1.0
+
+
+def tally(rows):
+    """Replicate the card_generator _tally method (before 2U fix)."""
+    wins = losses = 0
+    units = 0.0
+    for row in rows:
+        r = dict(row)
+        result = r.get("result")
+        if result == "won":
+            wins += 1
+            units += 1.0
+        elif result == "lost":
+            losses += 1
+            details_raw = r.get("details_json")
+            if details_raw:
+                details = json.loads(details_raw) if isinstance(details_raw, str) else details_raw
+                vb = details.get("value_books", [])
+                price = vb[0].get("price") if vb else None
+                units -= compute_risk(price) if price else 1.0
+            else:
+                units -= 1.0
+    return wins, losses, round(units, 2)
+
+
+conn = sqlite3.connect(DB)
+conn.row_factory = sqlite3.Row
+
+# Run the exact same queries as _get_stats
+ytd_rows = conn.execute(QUERY, (ytd_start.isoformat(),)).fetchall()
+month_rows = conn.execute(QUERY, (month_start.isoformat(),)).fetchall()
+
+ytd_resolved = [r for r in ytd_rows if dict(r).get("result") is not None]
+month_resolved = [r for r in month_rows if dict(r).get("result") is not None]
+
+ytd_w, ytd_l, ytd_u = tally(ytd_resolved)
+m_w, m_l, m_u = tally(month_resolved)
+
+print("=== REPLICATING CARD GENERATOR LOGIC ===")
+print(f"YTD query rows: {len(ytd_rows)}, resolved: {len(ytd_resolved)}")
+print(f"Month query rows: {len(month_rows)}, resolved: {len(month_resolved)}")
+print(f"YTD tally:   {ytd_w}-{ytd_l}, {ytd_u:+.2f}u")
+print(f"Month tally: {m_w}-{m_l}, {m_u:+.2f}u")
+print(f"Match? {ytd_u == m_u}")
+
+# Break down YTD by month to find where units come from
+print("\n=== YTD TALLY BY MONTH ===")
+by_month = {}
+for row in ytd_resolved:
+    r = dict(row)
+    month = r["sent_at"][:7]
+    if month not in by_month:
+        by_month[month] = []
+    by_month[month].append(row)
+
+for month in sorted(by_month):
+    w, l, u = tally(by_month[month])
+    print(f"  {month}: {w}-{l}, {u:+.2f}u ({len(by_month[month])} resolved)")
+
+# Check for duplicate joins (sent_alert matching multiple signal_results)
+print("\n=== DUPLICATE JOIN CHECK ===")
+dup_check = conn.execute("""
+    SELECT sa.id, sa.event_id, sa.outcome_name, COUNT(*) as match_count
+    FROM sent_alerts sa
+    LEFT JOIN signal_results sr
+      ON sa.event_id = sr.event_id
+     AND sa.alert_type = sr.signal_type
+     AND sa.market_key = sr.market_key
+     AND sa.outcome_name = sr.outcome_name
+    WHERE sa.is_free_play = 1
+    GROUP BY sa.id
+    HAVING match_count > 1
+    ORDER BY match_count DESC
+    LIMIT 10
 """).fetchall()
-print("\nFree plays with graded results by month:")
-for r in rows:
-    print(f"  {r['month']}: {r['total']} total, {r['graded']} graded")
+if dup_check:
+    print(f"Found {len(dup_check)} free plays with multiple signal_results matches:")
+    for r in dup_check:
+        print(f"  sa.id={r['id']} event={r['event_id'][:30]} outcome={r['outcome_name']} matches={r['match_count']}")
+else:
+    print("No duplicate joins found")
 
-# 4. Sample sent_at values (first and last)
-first = conn.execute("SELECT sent_at FROM sent_alerts WHERE is_free_play = 1 ORDER BY sent_at ASC LIMIT 3").fetchall()
-last = conn.execute("SELECT sent_at FROM sent_alerts WHERE is_free_play = 1 ORDER BY sent_at DESC LIMIT 3").fetchall()
-print("\nFirst 3 free play sent_at values:")
-for r in first:
-    print(f"  {r['sent_at']}")
-print("Last 3 free play sent_at values:")
-for r in last:
-    print(f"  {r['sent_at']}")
-
-# 5. Test the actual YTD query
-ytd_count = conn.execute(
-    "SELECT COUNT(*) FROM sent_alerts WHERE is_free_play = 1 AND sent_at >= ?",
-    (ytd_start.isoformat(),)
-).fetchone()[0]
-month_count = conn.execute(
-    "SELECT COUNT(*) FROM sent_alerts WHERE is_free_play = 1 AND sent_at >= ?",
-    (month_start.isoformat(),)
-).fetchone()[0]
-print(f"\nYTD query (sent_at >= {ytd_start.isoformat()}): {ytd_count} rows")
-print(f"Month query (sent_at >= {month_start.isoformat()}): {month_count} rows")
-
-if ytd_count == month_count:
-    print("\n*** YTD and MONTH counts are IDENTICAL -- confirms the bug ***")
-    print("Checking if pre-April free plays exist but fail the >= comparison...")
-    pre_april = conn.execute(
-        "SELECT COUNT(*) FROM sent_alerts WHERE is_free_play = 1 AND sent_at < ?",
-        (month_start.isoformat(),)
-    ).fetchone()[0]
-    print(f"Free plays before April 1: {pre_april}")
-    if pre_april > 0:
-        samples = conn.execute(
-            "SELECT sent_at FROM sent_alerts WHERE is_free_play = 1 AND sent_at < ? ORDER BY sent_at DESC LIMIT 5",
-            (month_start.isoformat(),)
-        ).fetchall()
-        print("Sample pre-April sent_at values:")
-        for r in samples:
-            val = r['sent_at']
-            passes = val >= ytd_start.isoformat()
-            print(f"  {val}  (>= ytd_start? {passes})")
+# Check for NULL results in pre-April data
+print("\n=== NULL RESULTS CHECK ===")
+pre_april_null = conn.execute("""
+    SELECT sa.event_id, sa.outcome_name, sa.sent_at, sr.result
+    FROM sent_alerts sa
+    LEFT JOIN signal_results sr
+      ON sa.event_id = sr.event_id
+     AND sa.alert_type = sr.signal_type
+     AND sa.market_key = sr.market_key
+     AND sa.outcome_name = sr.outcome_name
+    WHERE sa.is_free_play = 1
+      AND sa.sent_at < ?
+      AND sr.result IS NULL
+""", (month_start.isoformat(),)).fetchall()
+print(f"Pre-April free plays with NULL result: {len(pre_april_null)}")
+for r in pre_april_null[:5]:
+    print(f"  {r['sent_at'][:16]} {r['outcome_name']} result={r['result']}")
 
 conn.close()
