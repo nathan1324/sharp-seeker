@@ -467,13 +467,24 @@ async def test_post_daily_recap_calls_tweepy(settings, repo):
     poster._client.create_tweet = MagicMock()
     poster._cta_url = "https://discord.gg/test"
 
-    # Insert a free play alert
+    # Insert a free play alert + resolved signal result
+    now = datetime.now(timezone.utc).isoformat()
     await repo.record_alert(
         event_id="evt_recap",
         alert_type="pinnacle_divergence",
         market_key="spreads",
         outcome_name="Lakers",
         is_free_play=True,
+    )
+    await repo.record_signal_result(
+        event_id="evt_recap", signal_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+        signal_direction="over", signal_strength=0.5, signal_at=now,
+    )
+    await repo.resolve_signal(
+        event_id="evt_recap", signal_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+        signal_at=now, result="won",
     )
 
     await poster.post_daily_recap()
@@ -1264,10 +1275,21 @@ async def test_daily_recap_attaches_card(settings, repo):
     mock_media.media_id = 12345
     poster._api.media_upload.return_value = mock_media
 
-    # Insert a free play alert
+    # Insert a free play alert + resolved signal result
+    now = datetime.now(timezone.utc).isoformat()
     await repo.record_alert(
         event_id="evt_card", alert_type="pinnacle_divergence",
         market_key="spreads", outcome_name="Lakers", is_free_play=True,
+    )
+    await repo.record_signal_result(
+        event_id="evt_card", signal_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+        signal_direction="over", signal_strength=0.5, signal_at=now,
+    )
+    await repo.resolve_signal(
+        event_id="evt_card", signal_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+        signal_at=now, result="won",
     )
 
     await poster.post_daily_recap()
@@ -1293,9 +1315,20 @@ async def test_daily_recap_text_fallback_on_upload_failure(settings, repo):
     poster._api = MagicMock()
     poster._api.media_upload.side_effect = Exception("upload failed")
 
+    now = datetime.now(timezone.utc).isoformat()
     await repo.record_alert(
         event_id="evt_fail", alert_type="pinnacle_divergence",
         market_key="spreads", outcome_name="Lakers", is_free_play=True,
+    )
+    await repo.record_signal_result(
+        event_id="evt_fail", signal_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+        signal_direction="over", signal_strength=0.5, signal_at=now,
+    )
+    await repo.resolve_signal(
+        event_id="evt_fail", signal_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+        signal_at=now, result="won",
     )
 
     await poster.post_daily_recap()
@@ -1314,9 +1347,20 @@ async def test_daily_recap_no_card_gen(settings, repo):
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
 
+    now = datetime.now(timezone.utc).isoformat()
     await repo.record_alert(
         event_id="evt_nocard", alert_type="pinnacle_divergence",
         market_key="spreads", outcome_name="Lakers", is_free_play=True,
+    )
+    await repo.record_signal_result(
+        event_id="evt_nocard", signal_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+        signal_direction="over", signal_strength=0.5, signal_at=now,
+    )
+    await repo.resolve_signal(
+        event_id="evt_nocard", signal_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+        signal_at=now, result="won",
     )
 
     await poster.post_daily_recap()

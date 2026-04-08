@@ -119,9 +119,10 @@ class CardGenerator:
         if not ytd_resolved:
             return None
 
-        # Yesterday: filter to rows sent in last 48h (already from query)
-        yesterday_rows = await self._repo.get_free_play_results_since(since_yesterday)
-        yesterday_resolved = [r for r in yesterday_rows if dict(r).get("result") is not None]
+        # Yesterday: plays graded in last 24h (resolved_at, not sent_at)
+        yesterday_resolved = await self._repo.get_free_play_results_resolved_since(
+            since_yesterday
+        )
 
         # Month: filter
         month_rows = await self._repo.get_free_play_results_since(since_month)

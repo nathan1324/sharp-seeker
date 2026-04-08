@@ -340,7 +340,7 @@ class XPoster:
             return
 
         since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-        results = await self._repo.get_free_play_results_since(since)
+        results = await self._repo.get_free_play_results_resolved_since(since)
         if not results:
             log.info("x_recap_skipped", reason="no_free_plays")
             return

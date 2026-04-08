@@ -528,3 +528,29 @@ class Repository:
         """
         cursor = await self._db.execute(sql, (since,))
         return await cursor.fetchall()
+
+    async def get_free_play_results_resolved_since(
+        self, since: str
+    ) -> list[aiosqlite.Row]:
+        """Get free play alerts resolved (graded) since the given timestamp.
+
+        Unlike get_free_play_results_since which filters on sent_at, this
+        filters on resolved_at — so a play shared Monday for a Tuesday game
+        appears in Tuesday's recap when it was graded, not Monday's.
+        """
+        sql = """
+            SELECT sa.event_id, sa.market_key, sa.outcome_name, sa.sent_at,
+                   sa.details_json,
+                   sr.result, sr.signal_strength, sr.resolved_at
+            FROM sent_alerts sa
+            JOIN signal_results sr
+              ON sa.event_id = sr.event_id
+             AND sa.alert_type = sr.signal_type
+             AND sa.market_key = sr.market_key
+             AND sa.outcome_name = sr.outcome_name
+            WHERE sa.is_free_play = 1
+              AND sr.resolved_at >= ?
+            ORDER BY sa.sent_at ASC
+        """
+        cursor = await self._db.execute(sql, (since,))
+        return await cursor.fetchall()
