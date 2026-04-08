@@ -31,6 +31,59 @@ _SIGNAL_LABELS: dict[SignalType, str] = {
 }
 
 
+_TEAM_ABBR: dict[str, str] = {
+    # NBA
+    "Atlanta Hawks": "ATL", "Boston Celtics": "BOS", "Brooklyn Nets": "BKN",
+    "Charlotte Hornets": "CHA", "Chicago Bulls": "CHI", "Cleveland Cavaliers": "CLE",
+    "Dallas Mavericks": "DAL", "Denver Nuggets": "DEN", "Detroit Pistons": "DET",
+    "Golden State Warriors": "GSW", "Houston Rockets": "HOU", "Indiana Pacers": "IND",
+    "Los Angeles Clippers": "LAC", "Los Angeles Lakers": "LAL", "LA Clippers": "LAC",
+    "Memphis Grizzlies": "MEM", "Miami Heat": "MIA", "Milwaukee Bucks": "MIL",
+    "Minnesota Timberwolves": "MIN", "New Orleans Pelicans": "NOP",
+    "New York Knicks": "NYK", "Oklahoma City Thunder": "OKC",
+    "Orlando Magic": "ORL", "Philadelphia 76ers": "PHI", "Phoenix Suns": "PHX",
+    "Portland Trail Blazers": "POR", "Sacramento Kings": "SAC",
+    "San Antonio Spurs": "SAS", "Toronto Raptors": "TOR", "Utah Jazz": "UTA",
+    "Washington Wizards": "WAS",
+    # NHL
+    "Anaheim Ducks": "ANA", "Arizona Coyotes": "ARI", "Boston Bruins": "BOS",
+    "Buffalo Sabres": "BUF", "Calgary Flames": "CGY", "Carolina Hurricanes": "CAR",
+    "Chicago Blackhawks": "CHI", "Colorado Avalanche": "COL",
+    "Columbus Blue Jackets": "CBJ", "Dallas Stars": "DAL", "Detroit Red Wings": "DET",
+    "Edmonton Oilers": "EDM", "Florida Panthers": "FLA", "Los Angeles Kings": "LAK",
+    "Minnesota Wild": "MIN", "Montreal Canadiens": "MTL", "Nashville Predators": "NSH",
+    "New Jersey Devils": "NJD", "New York Islanders": "NYI",
+    "New York Rangers": "NYR", "Ottawa Senators": "OTT",
+    "Philadelphia Flyers": "PHI", "Pittsburgh Penguins": "PIT",
+    "San Jose Sharks": "SJS", "Seattle Kraken": "SEA", "St. Louis Blues": "STL",
+    "St Louis Blues": "STL",
+    "Tampa Bay Lightning": "TBL", "Toronto Maple Leafs": "TOR",
+    "Utah Hockey Club": "UTA",
+    "Vancouver Canucks": "VAN", "Vegas Golden Knights": "VGK",
+    "Washington Capitals": "WSH", "Winnipeg Jets": "WPG",
+    # MLB
+    "Arizona Diamondbacks": "ARI", "Atlanta Braves": "ATL",
+    "Baltimore Orioles": "BAL", "Boston Red Sox": "BOS", "Chicago Cubs": "CHC",
+    "Chicago White Sox": "CWS", "Cincinnati Reds": "CIN",
+    "Cleveland Guardians": "CLE", "Colorado Rockies": "COL",
+    "Detroit Tigers": "DET", "Houston Astros": "HOU", "Kansas City Royals": "KC",
+    "Los Angeles Angels": "LAA", "Los Angeles Dodgers": "LAD",
+    "Miami Marlins": "MIA", "Milwaukee Brewers": "MIL",
+    "Minnesota Twins": "MIN", "New York Mets": "NYM", "New York Yankees": "NYY",
+    "Oakland Athletics": "OAK", "Philadelphia Phillies": "PHI",
+    "Pittsburgh Pirates": "PIT", "San Diego Padres": "SD",
+    "San Francisco Giants": "SF", "Seattle Mariners": "SEA",
+    "St. Louis Cardinals": "STL", "St Louis Cardinals": "STL",
+    "Tampa Bay Rays": "TB", "Texas Rangers": "TEX",
+    "Toronto Blue Jays": "TOR", "Washington Nationals": "WSH",
+}
+
+
+def _abbr(team: str) -> str:
+    """Return 2-4 letter team abbreviation, falling back to last word."""
+    return _TEAM_ABBR.get(team, team.split()[-1].upper()[:4])
+
+
 def _format_odds(market: str, price: float | None, point: float | None) -> str:
     """Format odds for tweet display: '-3.5 (-110)' or '+150'."""
     if market == "h2h":
@@ -465,9 +518,10 @@ class XPoster:
             outcome = row_dict["outcome_name"]
             market = row_dict["market_key"]
 
-            # Extract odds and tier from details_json
+            # Extract odds, tier, and matchup from details_json
             odds_str = ""
             tier_badge = ""
+            matchup_prefix = ""
             details_raw = row_dict.get("details_json")
             if details_raw:
                 try:
@@ -479,19 +533,31 @@ class XPoster:
                     q_count = details.get("qualifier_count", 0)
                     if q_count >= 2:
                         tier_badge = " \U0001f3c6"  # Elite
+                    # Build compact matchup prefix for totals: "LAL/BOS"
+                    home = details.get("home_team")
+                    away = details.get("away_team")
+                    if home and away and market == "totals":
+                        matchup_prefix = _abbr(away) + "/" + _abbr(home) + " "
                 except (json.JSONDecodeError, TypeError):
                     pass
+
+            # For totals, show "LAL/BOS O 215.5" instead of just "Over 215.5"
+            if market == "totals":
+                direction = "O" if outcome.lower() == "over" else "U"
+                pick_label = f"{matchup_prefix}{direction}{odds_str}"
+            else:
+                pick_label = f"{outcome}{odds_str}"
 
             if result:
                 emoji = _RESULT_EMOJI.get(result, "\u2753")
                 label = result.upper()
-                lines.append(f"{emoji} {outcome}{odds_str}{tier_badge} \u2014 {label}")
+                lines.append(f"{emoji} {pick_label}{tier_badge} \u2014 {label}")
                 if result == "won":
                     wins += 1
                 elif result == "lost":
                     losses += 1
             else:
-                lines.append(f"\u23f3 {outcome}{odds_str}{tier_badge} \u2014 PENDING")
+                lines.append(f"\u23f3 {pick_label}{tier_badge} \u2014 PENDING")
 
         decided = wins + losses
         if decided > 0:

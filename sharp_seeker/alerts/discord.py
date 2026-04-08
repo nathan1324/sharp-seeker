@@ -203,12 +203,15 @@ class DiscordAlerter:
                 continue
             try:
                 self._send_embed(signal)
+                alert_details = dict(signal.details)
+                alert_details["home_team"] = signal.home_team
+                alert_details["away_team"] = signal.away_team
                 await self._repo.record_alert(
                     event_id=signal.event_id,
                     alert_type=signal.signal_type.value,
                     market_key=signal.market_key,
                     outcome_name=signal.outcome_name,
-                    details_json=json.dumps(signal.details),
+                    details_json=json.dumps(alert_details),
                 )
                 log.info(
                     "alert_sent",
