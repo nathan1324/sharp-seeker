@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     # Per-sport Pinnacle spread threshold overrides (JSON object in .env)
     pd_sport_spread_overrides: dict[str, float] = Field(default_factory=dict)
 
+    # Detection — arbitrage
+    arb_excluded_books: list[str] = Field(default=["pinnacle"])
+
     # Detection — exchange monitor
     exchange_shift_threshold: float = 0.05  # 5% implied probability shift
 

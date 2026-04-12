@@ -9,7 +9,7 @@ from sharp_seeker.engine.base import SignalType
 
 
 class FakeSettings:
-    pass
+    arb_excluded_books: list[str] = []
 
 
 class FakeRepo:

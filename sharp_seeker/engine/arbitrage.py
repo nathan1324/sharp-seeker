@@ -30,8 +30,11 @@ class ArbitrageDetector(BaseDetector):
         by_market: dict[tuple[str, str], dict[str, dict]] = {}
         meta: tuple[str, str, str, str] | None = None
 
+        excluded = set(self._settings.arb_excluded_books)
         for _row in latest:
             row = dict(_row)
+            if row["bookmaker_key"] in excluded:
+                continue
             key = (row["market_key"], row["outcome_name"])
             by_market.setdefault(key, {})[row["bookmaker_key"]] = row
             if meta is None:
