@@ -341,8 +341,8 @@ class DiscordAlerter:
                 prob_a = american_to_implied_prob(price_a)
                 prob_b = american_to_implied_prob(price_b)
                 total_prob = prob_a + prob_b
-                pct_a = prob_b / total_prob * 100
-                pct_b = prob_a / total_prob * 100
+                pct_a = prob_a / total_prob * 100
+                pct_b = prob_b / total_prob * 100
                 lines.append(f"**Per $100:**")
                 stake_a_label = f" (${pct_a:.2f})"
                 stake_b_label = f" (${pct_b:.2f})"
