@@ -63,11 +63,17 @@ def run():
         ORDER BY sr.signal_at ASC
     """).fetchall()
 
+    # Count unresolved
+    unresolved = conn.execute("""
+        SELECT COUNT(*) FROM signal_results
+        WHERE sport_key = 'baseball_mlb' AND result IS NULL
+    """).fetchone()[0]
+
     if not rows:
-        print("No resolved MLB signals found.")
+        print(f"No resolved MLB signals found. ({unresolved} unresolved pending)")
         return
 
-    print(f"=== MLB SIGNAL ANALYSIS ({len(rows)} resolved) ===\n")
+    print(f"=== MLB SIGNAL ANALYSIS ({len(rows)} resolved, {unresolved} pending) ===\n")
 
     # Overall
     total_u, tw, tl, tp = 0.0, 0, 0, 0
@@ -160,6 +166,56 @@ def run():
             c = by_str[bucket]
             print(f"  {bucket}: {_fmt(c['u'], c['w'], c['l'], c['p'])}")
 
+    # By MST hour (for best_hours config)
+    print("\n=== BY MST HOUR ===")
+    from datetime import datetime as dt2, timezone as tz2
+    from zoneinfo import ZoneInfo
+    MST = ZoneInfo("America/Phoenix")
+    by_hour = defaultdict(lambda: {"u": 0.0, "w": 0, "l": 0, "p": 0})
+    for r in rows:
+        price = _get_price(r["details_json"])
+        sa = r["signal_at"] or ""
+        try:
+            sig_dt = dt2.fromisoformat(sa.replace("Z", "+00:00"))
+            mst_hour = sig_dt.astimezone(MST).hour
+        except Exception:
+            continue
+        by_hour[mst_hour]["u"] += _unit_pnl(r["result"], price)
+        if r["result"] == "won": by_hour[mst_hour]["w"] += 1
+        elif r["result"] == "lost": by_hour[mst_hour]["l"] += 1
+        else: by_hour[mst_hour]["p"] += 1
+    for h in sorted(by_hour.keys()):
+        c = by_hour[h]
+        decided = c["w"] + c["l"]
+        wr = f"{c['w']/decided:.0%}" if decided else "N/A"
+        sign = "+" if c["u"] >= 0 else ""
+        print(f"  {h:02d}:00 MST: {sign}{c['u']:.2f}u | {wr} ({c['w']}W/{c['l']}L/{c['p']}P)")
+
+    # By MST hour per signal type
+    print("\n=== BY MST HOUR PER TYPE ===")
+    by_type_hour = defaultdict(lambda: defaultdict(lambda: {"u": 0.0, "w": 0, "l": 0, "p": 0}))
+    for r in rows:
+        price = _get_price(r["details_json"])
+        sa = r["signal_at"] or ""
+        try:
+            sig_dt = dt2.fromisoformat(sa.replace("Z", "+00:00"))
+            mst_hour = sig_dt.astimezone(MST).hour
+        except Exception:
+            continue
+        stype = r["signal_type"]
+        by_type_hour[stype][mst_hour]["u"] += _unit_pnl(r["result"], price)
+        if r["result"] == "won": by_type_hour[stype][mst_hour]["w"] += 1
+        elif r["result"] == "lost": by_type_hour[stype][mst_hour]["l"] += 1
+        else: by_type_hour[stype][mst_hour]["p"] += 1
+    for stype in sorted(by_type_hour.keys()):
+        print(f"  --- {stype} ---")
+        for h in sorted(by_type_hour[stype].keys()):
+            c = by_type_hour[stype][h]
+            decided = c["w"] + c["l"]
+            wr = f"{c['w']/decided:.0%}" if decided else "N/A"
+            sign = "+" if c["u"] >= 0 else ""
+            print(f"    {h:02d}:00 MST: {sign}{c['u']:.2f}u | {wr} ({c['w']}W/{c['l']}L/{c['p']}P)")
+
     # By qualifier tags
     print("\n=== BY QUALIFIER TAGS ===")
     by_tags = defaultdict(lambda: {"u": 0.0, "w": 0, "l": 0, "p": 0})
@@ -179,6 +235,26 @@ def run():
         else: by_tags[tag_key]["p"] += 1
     for k, c in sorted(by_tags.items(), key=lambda x: x[1]["u"]):
         print(f"  {k}: {_fmt(c['u'], c['w'], c['l'], c['p'])}")
+
+    # Suppressed signals (0 qualifiers — never sent to Discord)
+    print("\n=== SUPPRESSED SIGNALS (0 qualifiers) ===")
+    suppressed = 0
+    sent = 0
+    for r in rows:
+        details = {}
+        if r["details_json"]:
+            try:
+                details = json.loads(r["details_json"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        qc = details.get("qualifier_count", 0)
+        if qc == 0:
+            suppressed += 1
+        else:
+            sent += 1
+    print(f"  Sent to Discord: {sent}")
+    print(f"  Suppressed (0 qualifiers): {suppressed}")
+    print(f"  Total: {suppressed + sent}")
 
     # Also show NHL for comparison
     print("\n\n=== NHL SIGNAL ANALYSIS (for comparison) ===")
