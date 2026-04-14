@@ -47,17 +47,13 @@ def run():
     conn = sqlite3.connect(DB)
     conn.row_factory = sqlite3.Row
 
-    # All resolved MLB signals
+    # All resolved MLB signals — use sr.details_json (always populated)
+    # instead of sa.details_json (only exists for non-suppressed signals)
     rows = conn.execute("""
         SELECT sr.signal_type, sr.market_key, sr.outcome_name, sr.result,
                sr.signal_strength, sr.sport_key, sr.signal_at,
-               sa.details_json
+               sr.details_json
         FROM signal_results sr
-        LEFT JOIN sent_alerts sa
-          ON sr.event_id = sa.event_id
-         AND sr.signal_type = sa.alert_type
-         AND sr.market_key = sa.market_key
-         AND sr.outcome_name = sa.outcome_name
         WHERE sr.sport_key = 'baseball_mlb'
           AND sr.result IN ('won', 'lost', 'push')
         ORDER BY sr.signal_at ASC
@@ -259,13 +255,8 @@ def run():
     # Also show NHL for comparison
     print("\n\n=== NHL SIGNAL ANALYSIS (for comparison) ===")
     nhl_rows = conn.execute("""
-        SELECT sr.signal_type, sr.market_key, sr.result, sa.details_json
+        SELECT sr.signal_type, sr.market_key, sr.result, sr.details_json
         FROM signal_results sr
-        LEFT JOIN sent_alerts sa
-          ON sr.event_id = sa.event_id
-         AND sr.signal_type = sa.alert_type
-         AND sr.market_key = sa.market_key
-         AND sr.outcome_name = sa.outcome_name
         WHERE sr.sport_key = 'icehockey_nhl'
           AND sr.result IN ('won', 'lost', 'push')
     """).fetchall()
