@@ -102,7 +102,9 @@ class ReportGenerator:
             if len(parts) == 2:
                 override_sports.setdefault(parts[0], []).append(parts[1])
 
-        all_types_stats = await self._repo.get_performance_stats(since)
+        all_types_stats = await self._repo.get_performance_stats(
+            since, sent_only=True,
+        )
         if not all_types_stats:
             return
 
@@ -113,7 +115,7 @@ class ReportGenerator:
 
             # Re-query stats excluding overridden sports for this signal type
             type_stats = await self._repo.get_performance_stats(
-                since, exclude_sports=exclude,
+                since, exclude_sports=exclude, sent_only=True,
             )
             counts = type_stats.get(signal_type_val)
             if not counts:
@@ -121,6 +123,7 @@ class ReportGenerator:
 
             resolved = await self._repo.get_resolved_signals_since(
                 since, signal_type=signal_type_val, exclude_sports=exclude,
+                sent_only=True,
             )
 
             won = counts.get("won", 0)
@@ -163,6 +166,7 @@ class ReportGenerator:
             # Per-market breakdown for this signal type
             market_stats = await self._repo.get_performance_stats_by_market(
                 since, signal_type=signal_type_val, exclude_sports=exclude,
+                sent_only=True,
             )
             if market_stats:
                 mlines = []
@@ -185,6 +189,7 @@ class ReportGenerator:
 
             csv_bytes = await self._build_results_csv(
                 since, signal_type=signal_type_val, exclude_sports=exclude,
+                sent_only=True,
             )
             date_str = since[:10]
             csv_name = f"{signal_type_val}_results_{date_str}.csv"
@@ -221,7 +226,7 @@ class ReportGenerator:
             friendly_sport = _sport_friendly(sport_key)
 
             stats = await self._repo.get_performance_stats(
-                since, sport_key=sport_key,
+                since, sport_key=sport_key, sent_only=True,
             )
             counts = stats.get(signal_type_val)
             if not counts:
@@ -248,6 +253,7 @@ class ReportGenerator:
 
             resolved = await self._repo.get_resolved_signals_since(
                 since, signal_type=signal_type_val, sport_key=sport_key,
+                sent_only=True,
             )
             if resolved:
                 lines = []
@@ -269,6 +275,7 @@ class ReportGenerator:
 
             market_stats = await self._repo.get_performance_stats_by_market(
                 since, signal_type=signal_type_val, sport_key=sport_key,
+                sent_only=True,
             )
             if market_stats:
                 mlines = []
@@ -291,6 +298,7 @@ class ReportGenerator:
 
             csv_bytes = await self._build_results_csv(
                 since, signal_type=signal_type_val, sport_key=sport_key,
+                sent_only=True,
             )
             date_str = since[:10]
             sport_slug = sport_key.replace(":", "_")
@@ -312,7 +320,7 @@ class ReportGenerator:
     # ── Combined summary (default channel) ──────────────────────
 
     async def _send_combined_report(self, title: str, since: str) -> None:
-        stats = await self._repo.get_performance_stats(since)
+        stats = await self._repo.get_performance_stats(since, sent_only=True)
         signal_count = await self._repo.get_signal_count_since(since)
         alert_count = await self._repo.get_alerts_count_since(since)
 
@@ -357,7 +365,9 @@ class ReportGenerator:
             )
 
             # Overall market breakdown
-            market_stats = await self._repo.get_performance_stats_by_market(since)
+            market_stats = await self._repo.get_performance_stats_by_market(
+                since, sent_only=True,
+            )
             if market_stats:
                 mlines = []
                 for mk, mc in sorted(market_stats.items()):
@@ -382,7 +392,7 @@ class ReportGenerator:
         embed.set_timestamp(datetime.now(timezone.utc).isoformat())
         embed.set_footer(text="Sandbox Sports", icon_url=LOGO_URL)
 
-        csv_bytes = await self._build_results_csv(since)
+        csv_bytes = await self._build_results_csv(since, sent_only=True)
         date_str = since[:10]
         csv_name = f"all_results_{date_str}.csv"
 
@@ -399,11 +409,12 @@ class ReportGenerator:
         signal_type: str | None = None,
         sport_key: str | None = None,
         exclude_sports: list[str] | None = None,
+        sent_only: bool = False,
     ) -> bytes | None:
         """Build an in-memory CSV of resolved signals, returning UTF-8 bytes."""
         rows = await self._repo.get_resolved_signals_since(
             since, signal_type=signal_type, sport_key=sport_key,
-            exclude_sports=exclude_sports,
+            exclude_sports=exclude_sports, sent_only=sent_only,
         )
         if not rows:
             return None

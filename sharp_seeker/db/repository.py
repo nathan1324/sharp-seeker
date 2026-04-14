@@ -312,14 +312,23 @@ class Repository:
     async def get_performance_stats(
         self, since: str | None = None, sport_key: str | None = None,
         exclude_sports: list[str] | None = None,
+        sent_only: bool = False,
     ) -> dict[str, dict[str, int]]:
         """Get win/loss/push counts grouped by signal type.
 
         Deduplicates by (event_id, signal_type, market_key, outcome_name),
         counting each unique play only once.
+
+        If sent_only=True, excludes suppressed signals (qualifier_count=0)
+        that were never sent to Discord.
         """
         where = "WHERE result IS NOT NULL"
         params: list[str] = []
+        if sent_only:
+            where += (" AND (COALESCE(json_extract(details_json,"
+                      " '$.qualifier_count'), 1) > 0"
+                      " OR signal_type = 'arbitrage')")
+
         if since:
             where += " AND signal_at >= ?"
             params.append(since)
@@ -362,6 +371,7 @@ class Repository:
         signal_type: str | None = None,
         sport_key: str | None = None,
         exclude_sports: list[str] | None = None,
+        sent_only: bool = False,
     ) -> dict[str, dict[str, int]]:
         """Get win/loss/push counts grouped by market_key.
 
@@ -369,6 +379,11 @@ class Repository:
         """
         where = "WHERE result IS NOT NULL"
         params: list[str] = []
+        if sent_only:
+            where += (" AND (COALESCE(json_extract(details_json,"
+                      " '$.qualifier_count'), 1) > 0"
+                      " OR signal_type = 'arbitrage')")
+
         if since:
             where += " AND signal_at >= ?"
             params.append(since)
@@ -460,6 +475,7 @@ class Repository:
         self, since: str, signal_type: str | None = None,
         sport_key: str | None = None,
         exclude_sports: list[str] | None = None,
+        sent_only: bool = False,
     ) -> list[aiosqlite.Row]:
         """Get resolved signals since a timestamp, optionally filtered by type/sport.
 
@@ -469,6 +485,11 @@ class Repository:
         """
         where = "WHERE result IS NOT NULL AND signal_at >= ?"
         params: list[str] = [since]
+        if sent_only:
+            where += (" AND (COALESCE(json_extract(details_json,"
+                      " '$.qualifier_count'), 1) > 0"
+                      " OR signal_type = 'arbitrage')")
+
         if signal_type:
             where += " AND signal_type = ?"
             params.append(signal_type)
