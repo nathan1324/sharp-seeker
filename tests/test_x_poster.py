@@ -78,7 +78,7 @@ async def test_whitelisted_combo_becomes_free_play(settings, repo):
     """A signal matching a whitelisted combo should become a free play."""
     poster = XPoster(settings, repo)
     poster._enabled = True
-    poster._digest_mode = False
+
     poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
     poster._free_play_interval = 1
     poster._client = MagicMock()
@@ -104,7 +104,7 @@ async def test_non_whitelisted_combo_no_free_play(settings, repo):
     """A signal NOT matching any whitelisted combo should not become a free play."""
     poster = XPoster(settings, repo)
     poster._enabled = True
-    poster._digest_mode = False
+
     poster._free_play_combos = {"pinnacle_divergence:basketball_nba:h2h"}
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
@@ -128,7 +128,7 @@ async def test_interval_skips_early_signals(settings, repo):
     """With interval=3, only every 3rd eligible signal becomes a free play."""
     poster = XPoster(settings, repo)
     poster._enabled = True
-    poster._digest_mode = False
+
     poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
     poster._free_play_interval = 3
     poster._free_play_sport_cap = 10
@@ -158,7 +158,7 @@ async def test_empty_combo_list_no_free_plays(settings, repo):
     """Empty free_play_combos list should produce no free plays."""
     poster = XPoster(settings, repo)
     poster._enabled = True
-    poster._digest_mode = False
+
     poster._free_play_combos = set()
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
@@ -182,7 +182,7 @@ async def test_sport_cap_limits_free_plays(settings, repo):
     """Sport cap should limit free plays from the same sport."""
     poster = XPoster(settings, repo)
     poster._enabled = True
-    poster._digest_mode = False
+
     poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
     poster._free_play_interval = 1
     poster._free_play_sport_cap = 1  # cap at 1 per sport
@@ -213,41 +213,6 @@ async def test_sport_cap_limits_free_plays(settings, repo):
 
 
 # ── Tweet formatting ─────────────────────────────────────────────
-
-
-def test_format_teaser_steam_move(settings, repo):
-    poster = XPoster(settings, repo)
-    poster._cta_url = "https://discord.gg/test"
-    sig = _make_signal(signal_type=SignalType.STEAM_MOVE)
-
-    text = poster._format_teaser(sig)
-    assert "Celtics vs Lakers" in text
-    assert "Steam Move" in text
-    assert "https://discord.gg/test" in text
-    assert "Sharp money detected" in text
-
-
-def test_format_teaser_all_signal_types(settings, repo):
-    """Every signal type should produce a teaser with its label."""
-    poster = XPoster(settings, repo)
-    poster._cta_url = "https://discord.gg/test"
-
-    for st in SignalType:
-        sig = _make_signal(signal_type=st)
-        text = poster._format_teaser(sig)
-        assert "Celtics vs Lakers" in text
-        assert "discord.gg/test" in text
-
-
-def test_format_teaser_no_cta_url(settings, repo):
-    """Teaser without CTA URL should not include a link line."""
-    poster = XPoster(settings, repo)
-    poster._cta_url = ""
-    sig = _make_signal()
-
-    text = poster._format_teaser(sig)
-    assert "discord" not in text.lower()
-    assert "Sharp money detected" in text
 
 
 def test_format_free_play_with_value_books(settings, repo):
@@ -335,35 +300,11 @@ def test_format_odds_totals():
 
 
 @pytest.mark.asyncio
-async def test_post_signals_calls_tweepy(settings, repo):
-    """When enabled, post_signals should call create_tweet for each signal."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._digest_mode = False
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-    poster._cta_url = "https://discord.gg/test"
-
-    # Record 1 alert in sent_alerts (as Discord alerter would)
-    await repo.record_alert(
-        event_id="evt_123", alert_type="pinnacle_divergence",
-        market_key="spreads", outcome_name="Lakers",
-    )
-
-    sig = _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)
-    await poster.post_signals([sig])
-
-    poster._client.create_tweet.assert_called_once()
-    call_text = poster._client.create_tweet.call_args.kwargs["text"]
-    assert "Sharp money detected" in call_text
-
-
-@pytest.mark.asyncio
 async def test_2u_excluded_book_skipped(settings, repo):
     """2U signal from an excluded book should NOT become a free play."""
     poster = XPoster(settings, repo)
     poster._enabled = True
-    poster._digest_mode = False
+
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
     poster._excluded_books = {"betmgm"}
@@ -554,173 +495,12 @@ async def test_post_signals_marks_free_play_in_db(settings, repo):
     assert row["is_free_play"] == 1
 
 
-# ── Teaser time-window gating ──────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_teaser_skipped_outside_hours(settings, repo):
-    """Teaser should NOT post when current UTC hour is outside x_teaser_hours."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._digest_mode = False
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-    poster._teaser_hours = [14]
-
-    # Record 1 alert so seq=1 (not a free play)
-    await repo.record_alert(
-        event_id="evt_123", alert_type="pinnacle_divergence",
-        market_key="spreads", outcome_name="Lakers",
-    )
-
-    sig = _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)
-
-    # Mock UTC hour to 18 — outside the allowed [14]
-    fake_now = datetime(2026, 2, 26, 18, 30, 0, tzinfo=timezone.utc)
-    with patch("sharp_seeker.alerts.x_poster.datetime") as mock_dt:
-        mock_dt.now.return_value = fake_now
-        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
-        await poster.post_signals([sig])
-
-    poster._client.create_tweet.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_teaser_posted_within_hours(settings, repo):
-    """Teaser SHOULD post when current UTC hour is inside x_teaser_hours."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._digest_mode = False
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-    poster._teaser_hours = [14]
-
-    # Record 1 alert so seq=1 (not a free play)
-    await repo.record_alert(
-        event_id="evt_123", alert_type="pinnacle_divergence",
-        market_key="spreads", outcome_name="Lakers",
-    )
-
-    sig = _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)
-
-    # Mock UTC hour to 14 — inside the allowed [14]
-    fake_now = datetime(2026, 2, 26, 14, 15, 0, tzinfo=timezone.utc)
-    with patch("sharp_seeker.alerts.x_poster.datetime") as mock_dt:
-        mock_dt.now.return_value = fake_now
-        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
-        await poster.post_signals([sig])
-
-    poster._client.create_tweet.assert_called_once()
-    call_text = poster._client.create_tweet.call_args.kwargs["text"]
-    assert "Sharp money detected" in call_text
-
-
-# ── Strength cap ──────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_strength_cap_filters_signals(settings, repo):
-    """Signals at or above the cap should be filtered out of X tweets."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._digest_mode = False
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-    poster._max_strength = 0.80
-
-    # Record 3 alerts (batch of 3)
-    for i in range(3):
-        await repo.record_alert(
-            event_id=f"evt_{i}", alert_type="pinnacle_divergence",
-            market_key="spreads", outcome_name="Lakers",
-        )
-
-    batch = [
-        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.60),
-        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.85),
-        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.92),
-    ]
-    await poster.post_signals(batch)
-
-    # Only the 0.60 signal should produce a tweet
-    assert poster._client.create_tweet.call_count == 1
-
-
-@pytest.mark.asyncio
-async def test_strength_cap_all_filtered(settings, repo):
-    """When all signals are above the cap, no tweets and log batch skipped."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-    poster._max_strength = 0.80
-
-    await repo.record_alert(
-        event_id="evt_0", alert_type="pinnacle_divergence",
-        market_key="spreads", outcome_name="Lakers",
-    )
-
-    batch = [
-        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.85),
-        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.92),
-    ]
-    await poster.post_signals(batch)
-
-    poster._client.create_tweet.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_strength_cap_default_no_filter(settings, repo):
-    """Default cap of 1.0 should let all signals through."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._digest_mode = False
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-    # default _max_strength is 1.0
-
-    for i in range(2):
-        await repo.record_alert(
-            event_id=f"evt_{i}", alert_type="pinnacle_divergence",
-            market_key="spreads", outcome_name="Lakers",
-        )
-
-    batch = [
-        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.60),
-        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.95),
-    ]
-    await poster.post_signals(batch)
-
-    assert poster._client.create_tweet.call_count == 2
-
-
-@pytest.mark.asyncio
-async def test_strength_cap_boundary(settings, repo):
-    """A signal at exactly the cap value should be filtered (strict <)."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._digest_mode = False
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-    poster._max_strength = 0.80
-
-    await repo.record_alert(
-        event_id="evt_0", alert_type="pinnacle_divergence",
-        market_key="spreads", outcome_name="Lakers",
-    )
-
-    batch = [_make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE, strength=0.80)]
-    await poster.post_signals(batch)
-
-    poster._client.create_tweet.assert_not_called()
-
-
 @pytest.mark.asyncio
 async def test_hourly_cap_limits_free_plays(settings, repo):
     """Only 1 free play per hour — second whitelisted signal should be hourly-capped."""
     poster = XPoster(settings, repo)
     poster._enabled = True
-    poster._digest_mode = False
+
     poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
     poster._free_play_interval = 1
     poster._free_play_hourly_cap = 1
@@ -764,7 +544,7 @@ async def test_free_play_skips_repeat_game(settings, repo):
     """Free play should skip a game that already had a free play."""
     poster = XPoster(settings, repo)
     poster._enabled = True
-    poster._digest_mode = False
+
     poster._free_play_combos = {"pinnacle_divergence:basketball_nba:h2h"}
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
@@ -797,7 +577,7 @@ async def test_free_play_picks_different_game(settings, repo):
     """When one game already has a free play, the other whitelisted game gets picked."""
     poster = XPoster(settings, repo)
     poster._enabled = True
-    poster._digest_mode = False
+
     poster._free_play_combos = {
         "pinnacle_divergence:basketball_nba:h2h",
         "pinnacle_divergence:basketball_nba:spreads",
@@ -846,39 +626,12 @@ async def test_free_play_picks_different_game(settings, repo):
 
 
 
-# ── Rapid change tweeting ──────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_rapid_change_gets_teaser(settings, repo):
-    """Rapid change signal should produce a teaser tweet."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._digest_mode = False
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-
-    # Record 1 alert (as Discord alerter would)
-    await repo.record_alert(
-        event_id="evt_123", alert_type="rapid_change",
-        market_key="spreads", outcome_name="Lakers",
-    )
-
-    sig = _make_signal(signal_type=SignalType.RAPID_CHANGE)
-    await poster.post_signals([sig])
-
-    poster._client.create_tweet.assert_called_once()
-    call_text = poster._client.create_tweet.call_args.kwargs["text"]
-    assert "Sharp money detected" in call_text
-    assert "Rapid Change" in call_text
-
-
 @pytest.mark.asyncio
 async def test_rapid_change_not_free_play_unless_whitelisted(settings, repo):
     """Rapid change signal should NOT become a free play unless in combo whitelist."""
     poster = XPoster(settings, repo)
     poster._enabled = True
-    poster._digest_mode = False
+
     poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
@@ -896,267 +649,6 @@ async def test_rapid_change_not_free_play_unless_whitelisted(settings, repo):
     assert all("FREE PLAY" not in t for t in calls)
 
 
-@pytest.mark.asyncio
-async def test_custom_tweet_types_config(settings, repo):
-    """Setting x_tweet_signal_types to PD-only excludes rapid changes."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._digest_mode = False
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-    # Override to PD only
-    poster._tweet_types = {"pinnacle_divergence"}
-
-    await poster.post_signals([_make_signal(signal_type=SignalType.RAPID_CHANGE)])
-    poster._client.create_tweet.assert_not_called()
-
-    # PD should still work
-    await repo.record_alert(
-        event_id="evt_123", alert_type="pinnacle_divergence",
-        market_key="spreads", outcome_name="Lakers",
-    )
-    await poster.post_signals([_make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)])
-    poster._client.create_tweet.assert_called_once()
-
-
-# ── Digest mode ─────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_digest_buffers_teasers(settings, repo):
-    """In digest mode, post_signals() should buffer teasers instead of tweeting."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._digest_mode = True
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-
-    # Record 1 alert (not a free play sequence hit)
-    await repo.record_alert(
-        event_id="evt_123", alert_type="pinnacle_divergence",
-        market_key="spreads", outcome_name="Lakers",
-    )
-
-    sig = _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)
-    await poster.post_signals([sig])
-
-    # No tweet should be posted (teaser is buffered)
-    poster._client.create_tweet.assert_not_called()
-    # Signal should be in the buffer
-    assert len(poster._digest_buffer) == 1
-    assert poster._digest_buffer[0] is sig
-
-
-@pytest.mark.asyncio
-async def test_digest_posts_free_play_immediately(settings, repo):
-    """Whitelisted free plays still tweet right away in digest mode."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._digest_mode = True
-    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
-    poster._free_play_interval = 1
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-
-    sig = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE,
-        market_key="spreads",
-        details={
-            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
-        },
-    )
-
-    await poster.post_signals([sig])
-
-    # Free play should be posted immediately
-    poster._client.create_tweet.assert_called_once()
-    call_text = poster._client.create_tweet.call_args.kwargs["text"]
-    assert "FREE PLAY" in call_text
-    # Teaser buffer should be empty (free play isn't a teaser)
-    assert len(poster._digest_buffer) == 0
-    # Free play should be in the digest free plays buffer
-    assert len(poster._digest_free_plays) == 1
-
-
-@pytest.mark.asyncio
-async def test_post_digest_formats_and_posts(settings, repo):
-    """post_digest() should format buffer and call tweepy."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-    poster._cta_url = "https://discord.gg/test"
-
-    # Manually fill the buffer
-    poster._digest_buffer = [
-        _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE),
-        _make_signal(signal_type=SignalType.RAPID_CHANGE),
-    ]
-
-    await poster.post_digest()
-
-    poster._client.create_tweet.assert_called_once()
-    call_text = poster._client.create_tweet.call_args.kwargs["text"]
-    assert "Sharp Signals" in call_text
-    assert "2 alerts" in call_text
-    assert "\U0001f525 Discord Signals" in call_text
-    assert "Pinnacle Divergence" in call_text
-    assert "Rapid Change" in call_text
-    assert "discord.gg/test" in call_text
-
-
-@pytest.mark.asyncio
-async def test_post_digest_empty_buffer_skips(settings, repo):
-    """No tweet when buffer is empty."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-
-    await poster.post_digest()
-
-    poster._client.create_tweet.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_post_digest_clears_buffer(settings, repo):
-    """Buffer should be empty after digest posts."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-
-    poster._digest_buffer = [_make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)]
-    poster._digest_free_plays = [_make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)]
-    await poster.post_digest()
-
-    assert len(poster._digest_buffer) == 0
-    assert len(poster._digest_free_plays) == 0
-
-
-@pytest.mark.asyncio
-async def test_digest_includes_free_plays(settings, repo):
-    """Digest should include free plays posted during the window with pick details."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-    poster._cta_url = "https://discord.gg/test"
-
-    free_play = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE,
-        market_key="spreads",
-        outcome_name="Lakers",
-        details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
-    )
-    teaser = _make_signal(signal_type=SignalType.RAPID_CHANGE)
-
-    poster._digest_buffer = [teaser]
-    poster._digest_free_plays = [free_play]
-
-    await poster.post_digest()
-
-    poster._client.create_tweet.assert_called_once()
-    call_text = poster._client.create_tweet.call_args.kwargs["text"]
-    assert "2 alerts" in call_text
-    # Free plays section with header
-    assert "\U0001f3af Free Plays" in call_text
-    assert "DraftKings" in call_text
-    assert "-3.5" in call_text
-    # Signals section with header
-    assert "\U0001f525 Discord Signals" in call_text
-    assert "Rapid Change" in call_text
-
-
-@pytest.mark.asyncio
-async def test_digest_only_free_plays(settings, repo):
-    """Digest should post even if there are only free plays and no teasers."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-    poster._cta_url = ""
-
-    free_play = _make_signal(
-        signal_type=SignalType.PINNACLE_DIVERGENCE,
-        market_key="h2h",
-        outcome_name="Lakers",
-        details={"value_books": [{"bookmaker": "fanduel", "price": 150}]},
-    )
-    poster._digest_free_plays = [free_play]
-
-    await poster.post_digest()
-
-    poster._client.create_tweet.assert_called_once()
-    call_text = poster._client.create_tweet.call_args.kwargs["text"]
-    assert "1 alert" in call_text
-    assert "\U0001f3af Free Plays" in call_text
-    assert "FanDuel" in call_text
-    assert "+150" in call_text
-    # No signals section when there are no teasers
-    assert "\U0001f525 Discord Signals" not in call_text
-
-
-@pytest.mark.asyncio
-async def test_digest_truncation(settings, repo):
-    """Large batches should truncate with '...and N more'."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-    poster._cta_url = "https://discord.gg/test"
-
-    # Create many signals with long team names to force truncation
-    signals = []
-    for i in range(15):
-        sig = Signal(
-            signal_type=SignalType.PINNACLE_DIVERGENCE,
-            event_id=f"evt_{i}",
-            sport_key="basketball_nba",
-            home_team=f"TeamHome{i}LongName",
-            away_team=f"TeamAway{i}LongName",
-            market_key="spreads",
-            outcome_name="Lakers",
-            strength=0.75,
-            description="Test signal",
-            commence_time="2099-01-15T00:00:00Z",
-            details={},
-        )
-        signals.append(sig)
-    poster._digest_buffer = signals
-
-    await poster.post_digest()
-
-    poster._client.create_tweet.assert_called_once()
-    call_text = poster._client.create_tweet.call_args.kwargs["text"]
-    assert len(call_text) <= 280
-    assert "more" in call_text
-
-
-@pytest.mark.asyncio
-async def test_legacy_mode_unchanged(settings, repo):
-    """When digest mode is off (interval=0), behavior matches per-signal tweeting."""
-    poster = XPoster(settings, repo)
-    poster._enabled = True
-    poster._digest_mode = False
-    poster._client = MagicMock()
-    poster._client.create_tweet = MagicMock()
-
-    # Record 1 alert (not a free play)
-    await repo.record_alert(
-        event_id="evt_123", alert_type="pinnacle_divergence",
-        market_key="spreads", outcome_name="Lakers",
-    )
-
-    sig = _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)
-    await poster.post_signals([sig])
-
-    # Should tweet immediately (not buffer)
-    poster._client.create_tweet.assert_called_once()
-    call_text = poster._client.create_tweet.call_args.kwargs["text"]
-    assert "Sharp money detected" in call_text
-    # Buffer should be empty
-    assert len(poster._digest_buffer) == 0
 
 
 # ── Weekly recap ──────────────────────────────────────────────────
