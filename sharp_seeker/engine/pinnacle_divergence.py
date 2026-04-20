@@ -169,6 +169,18 @@ class PinnacleDivergenceDetector(BaseDetector):
                 if cross_hold is not None and 0 <= cross_hold <= 0.02:
                     continue
 
+                # Suppress NBA totals at high cross-book hold (>= 2.5%) — consistently
+                # the largest bleed in sent-signal analysis: 172 signals, 45% win,
+                # -56.7u, -33% ROI (range 2026-03-19 to 2026-04-19). Other NBA
+                # markets at high hold are profitable, so scope is PD totals only.
+                if (
+                    market_key == "totals"
+                    and meta[0] == "basketball_nba"
+                    and cross_hold is not None
+                    and cross_hold >= 0.025
+                ):
+                    continue
+
                 # Price dispersion: how spread out are US books on this side?
                 # High dispersion = value book is a real outlier = better signal.
                 # Low dispersion = books agree = less reliable.
