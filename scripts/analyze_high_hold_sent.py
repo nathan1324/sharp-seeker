@@ -141,7 +141,9 @@ def run():
         if details_raw:
             try:
                 details = json.loads(details_raw) if isinstance(details_raw, str) else details_raw
-                row["cross_hold"] = details.get("cross_book_hold")
+                # Stored as fraction (0.048 = 4.8%); convert to percent for readability
+                raw_hold = details.get("cross_book_hold")
+                row["cross_hold"] = raw_hold * 100 if raw_hold is not None else None
                 vb = details.get("value_books", [])
                 if vb:
                     row["best_price"] = vb[0].get("price")
