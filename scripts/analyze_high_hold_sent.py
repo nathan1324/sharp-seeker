@@ -7,7 +7,7 @@ Reports record (W-L-P, win%) and units per sport, per market, per signal type.
 Usage:
     docker compose exec sharp-seeker python /app/scripts/analyze_high_hold_sent.py [threshold]
 
-    threshold   Hold % cutoff for the "high" bucket (default 3.0 = 3%+)
+    threshold   Hold % cutoff for the "high" bucket (default 2.5 = 2.5%+)
 """
 
 import json
@@ -98,7 +98,7 @@ def print_line(label, d, indent=4):
 
 
 def run():
-    threshold = float(sys.argv[1]) if len(sys.argv) > 1 else 3.0
+    threshold = float(sys.argv[1]) if len(sys.argv) > 1 else 2.5
 
     conn = connect()
 
@@ -217,7 +217,8 @@ def run():
         ("< 0%", lambda h: h < 0),
         ("0-1%", lambda h: 0 <= h < 1),
         ("1-2%", lambda h: 1 <= h < 2),
-        ("2-3%", lambda h: 2 <= h < 3),
+        ("2-2.5%", lambda h: 2 <= h < 2.5),
+        ("2.5-3%", lambda h: 2.5 <= h < 3),
         ("3-4%", lambda h: 3 <= h < 4),
         ("4-5%", lambda h: 4 <= h < 5),
         ("5-7%", lambda h: 5 <= h < 7),
