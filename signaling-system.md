@@ -119,6 +119,17 @@ Raw signals pass through 8 stages in order:
 Append a dated entry for every signaling change. Include: what changed, why
 (data snapshot, date range, sample size, win%/units/ROI), and file touched.
 
+### 2026-04-20 — Loosen PD tight-hold suppression for NBA to 0-1% (experiment)
+- **Change:** split the blanket PD 0-2% tight-hold block into per-sport logic.
+  NBA now blocks only `[0, 0.01]`; all other sports keep the original
+  `[0, 0.02]` block. File: `pinnacle_divergence.py`.
+- **Why:** we have zero historical data on the 1-2% band because the blanket
+  block has been active since inception. 2-week trial to gather evidence.
+  0-1% remains blocked per the original data (25%, -19.4u).
+- **Review date:** 2026-05-04. Re-run `analyze_high_hold_sent.py` and break
+  out NBA PD signals in the 1-2% cross-hold band. Roll back if win% < 50%
+  with meaningful sample.
+
 ### 2026-04-20 — Suppress NBA PinDiv totals at cross-book hold >= 2.5%
 - **Change:** added in-detector suppression in `pinnacle_divergence.py` for
   `basketball_nba` + `totals` when `cross_book_hold >= 0.025`.
