@@ -164,10 +164,19 @@ class PinnacleDivergenceDetector(BaseDetector):
                 )
                 cross_hold = compute_cross_book_hold(cb_prices_a, cb_prices_b)
 
-                # Suppress tight hold (0-2%) — market has converged, no real edge
-                # (current period: 25%, -19.4u). Negative hold is kept (can be valid).
-                if cross_hold is not None and 0 <= cross_hold <= 0.02:
-                    continue
+                # Suppress tight hold — market has converged, no real edge.
+                # NBA: block 0-1% only (experiment starting 2026-04-20); we have
+                # zero data on the 1-2% band since the blanket 0-2% block was in
+                # place. 2-week trial to evaluate. 0-1% remains blocked per the
+                # original data (25%, -19.4u at that time).
+                # Other sports: keep the original 0-2% block.
+                if cross_hold is not None:
+                    if meta[0] == "basketball_nba":
+                        if 0 <= cross_hold <= 0.01:
+                            continue
+                    else:
+                        if 0 <= cross_hold <= 0.02:
+                            continue
 
                 # Suppress NBA totals at high cross-book hold (>= 2.5%) — consistently
                 # the largest bleed in sent-signal analysis: 172 signals, 45% win,
