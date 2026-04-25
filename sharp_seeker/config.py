@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     pinnacle_totals_threshold: float = 1.0
     pinnacle_ml_prob_threshold: float = 0.03  # 3% implied probability edge
     pd_excluded_books: list[str] = Field(default_factory=list)
+    # Per-sport excluded books — applied IN ADDITION to pd_excluded_books.
+    # Example: {"baseball_mlb": ["draftkings"]} excludes DK from MLB PD only.
+    pd_sport_excluded_books: dict[str, list[str]] = Field(default_factory=dict)
     # Per-sport Pinnacle ML probability threshold overrides (JSON object in .env)
     # Lowers or raises the ML divergence threshold for specific sports.
     # Example: {"icehockey_nhl": 0.015}
