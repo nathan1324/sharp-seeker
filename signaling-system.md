@@ -119,6 +119,33 @@ Raw signals pass through 8 stages in order:
 Append a dated entry for every signaling change. Include: what changed, why
 (data snapshot, date range, sample size, win%/units/ROI), and file touched.
 
+### 2026-04-25 — X free play policy: Steam spreads only + data-driven combo trim
+- **Change:** added a code guard in `sharp_seeker/alerts/x_poster.py` that drops
+  any `spreads` signal from free play eligibility unless its type is
+  `steam_move`. Trimmed `X_FREE_PLAY_COMBOS` to four data-driven entries:
+  `steam_move:basketball_nba:spreads`, `rapid_change:basketball_nba:h2h`,
+  `steam_move:baseball_mlb:totals`, `pinnacle_divergence:icehockey_nhl:totals`.
+- **Why:** policy decision — spread tweets need cross-book confirmation (Steam),
+  not single-book PD divergence. Free-play PD spreads were 33% / -3.8u over the
+  last 21d (n=9). Trimmed combos based on a 21-day diagnostic
+  (`scripts/diagnose_mlb_volume.py`, `analyze_spread_ml_by_type.py`,
+  2026-04-04 → 2026-04-24):
+    - Steam NBA spreads: n=45, 61% WR, +7.9u (kept).
+    - Rapid NBA ML: n=20, 60% WR, +10.9u (added — best ML bucket).
+    - Steam MLB totals: n=40, 69% WR (added — strongest MLB combo by far).
+    - PD NHL totals: kept on historical +55.86u; thin 21d sample (n=0 graded
+      under "totals" in the script — most NHL PD totals signals were live or
+      ungraded). Re-evaluate in 14d.
+  Excluded: PD NBA h2h (n=3), PD NCAAB h2h (n=0 in window), Steam ML for any
+  sport (`steam_move:h2h` is in `SIGNAL_BLOCKLIST` — would never fire), Rapid
+  ML for MLB/NHL (zero signals — MLB runlines don't move 1.0pt and ML 20¢
+  threshold rarely trips on tight MLB lines).
+- **Server action:** production `.env` on the server must be updated to match
+  the new `X_FREE_PLAY_COMBOS` list — `.env.example` is documentation only and
+  isn't read by the running container.
+- **Review date:** 2026-05-09. Re-run `analyze_spread_ml_by_type.py 14` and
+  confirm the four kept combos are still earning their slots; reconsider PD
+  NHL totals if the 14-day sample is still thin or negative.
 ### 2026-04-20 — Suppress NBA PinDiv totals at cross-book hold >= 2.5%
 - **Change:** added in-detector suppression in `pinnacle_divergence.py` for
   `basketball_nba` + `totals` when `cross_book_hold >= 0.025`.

@@ -186,6 +186,14 @@ class XPoster:
                 combo_key = f"{s.signal_type.value}:{s.sport_key}:{s.market_key}"
                 if combo_key not in self._free_play_combos:
                     continue
+                # Policy: spread free plays must be Steam type only.
+                if s.market_key == "spreads" and s.signal_type != SignalType.STEAM_MOVE:
+                    log.info(
+                        "x_free_play_spreads_non_steam_skip",
+                        event_id=s.event_id,
+                        signal_type=s.signal_type.value,
+                    )
+                    continue
                 if s.event_id in past_fp_events:
                     continue
                 if self._excluded_books and self._get_book(s) in self._excluded_books:
