@@ -39,9 +39,10 @@ written to `sent_alerts` count as "sent".
   - **NBA totals at cross-book hold >= 0.025** (data-driven; see Change Log
     2026-04-20).
   - All US books agree (no outlier).
-  - Book in `pd_excluded_books`.
+  - Book in `pd_excluded_books` (global) or `pd_sport_excluded_books[sport]`.
 - **Per-sport overrides:** `pd_sport_ml_prob_overrides`,
-  `pd_sport_totals_overrides`, `pd_sport_spread_overrides`.
+  `pd_sport_totals_overrides`, `pd_sport_spread_overrides`,
+  `pd_sport_excluded_books`.
 
 ### Reverse Line — `sharp_seeker/engine/reverse_line.py`
 - **Triggers when:** US consensus (2+ movers) and Pinnacle move in opposite
@@ -91,7 +92,8 @@ Raw signals pass through 8 stages in order:
 | `pd_sport_ml_prob_overrides` | `{}` | Per-sport h2h threshold |
 | `pd_sport_totals_overrides` | `{}` | Per-sport totals threshold |
 | `pd_sport_spread_overrides` | `{}` | Per-sport spread threshold |
-| `pd_excluded_books` | `[]` | Books skipped by PD detector |
+| `pd_excluded_books` | `[]` | Books skipped by PD detector (global) |
+| `pd_sport_excluded_books` | `{}` | Per-sport books skipped by PD detector (added to global) |
 | `exchange_shift_threshold` | 0.05 | Betfair implied prob shift |
 | `arb_excluded_books` | `["pinnacle"]` | Books skipped by arb |
 | `min_signal_strength` | 0.5 | Global min strength |
@@ -118,6 +120,29 @@ Raw signals pass through 8 stages in order:
 
 Append a dated entry for every signaling change. Include: what changed, why
 (data snapshot, date range, sample size, win%/units/ROI), and file touched.
+
+### 2026-04-25 — Per-sport PD book exclusion: DraftKings off for MLB
+- **Change:** added `pd_sport_excluded_books: dict[str, list[str]]` config
+  (`sharp_seeker/config.py`), merged into the existing `excluded` set in
+  `sharp_seeker/engine/pinnacle_divergence.py` alongside the global
+  `pd_excluded_books`. Initial value: `{"baseball_mlb": ["draftkings"]}`.
+- **Why:** all-time PD-by-book-by-sport breakdown
+  (`scripts/analyze_pd_by_book_sport.py`, 2026-04-25):
+    - DraftKings on MLB PD: n=155, **25% WR, -86.8u** (Totals only).
+    - DraftKings on NBA PD: n=255, 56% WR, +15.6u (profitable).
+    - DraftKings on NCAAB PD: n=326, 56% WR, +17.7u (profitable, best).
+    - DraftKings on NHL PD: n=211, 59% WR, +12.2u (profitable).
+  Adding DK globally would have killed +45.5u of NBA/NCAAB/NHL profit. Per-
+  sport scoping recovers the MLB bleed without touching the wins. Estimated
+  recovery: +86.8u over the same forward window vs the historical baseline.
+- **Server action:** production `.env` must add
+  `PD_SPORT_EXCLUDED_BOOKS={"baseball_mlb": ["draftkings"]}` after merge.
+- **Review date:** 2026-05-25. Re-run `analyze_pd_by_book_sport.py 30` to
+  confirm the bleed is gone, and check whether DK on NBA/NCAAB/NHL PD has
+  shifted (don't want to be miss-applying a stale book signal).
+- **Follow-up candidates** (not in this change): NHL ML BetRivers (n=32, 9% WR,
+  -33.8u), NBA Spread FanDuel (n=101, 39%, -29.2u), NCAAB Total FanDuel (n=109,
+  41%, -27.3u). Address in separate PRs after this one deploys.
 
 ### 2026-04-25 — X free play policy: Steam spreads only + data-driven combo trim
 - **Change:** added a code guard in `sharp_seeker/alerts/x_poster.py` that drops

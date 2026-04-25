@@ -104,7 +104,8 @@ class PinnacleDivergenceDetector(BaseDetector):
             return []
 
         signals: list[Signal] = []
-        excluded = set(self._settings.pd_excluded_books)
+        sport_excluded = self._settings.pd_sport_excluded_books.get(meta[0], [])
+        excluded = set(self._settings.pd_excluded_books) | set(sport_excluded)
 
         for (market_key, outcome_name), books in by_market.items():
             pinnacle = books.get(PINNACLE_KEY)
