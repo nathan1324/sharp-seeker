@@ -76,6 +76,13 @@ Raw signals pass through 8 stages in order:
 | 7 | Value Books | Require at least one actionable value bet (arb exempt) |
 | 8 | Cooldown Dedup | Drop repeat (event, type, market, outcome) within `alert_cooldown_minutes` (default 60) |
 
+After the pipeline, `DiscordAlerter.send_signals` applies a final **qualifier
+gate**: any non-arb signal with zero qualifiers (no Best Combo, no Best Hour,
+no Edge Hold for Rapid) is dropped before send. PD signals route to a dedicated
+raw channel (and skip the gate) when `discord_webhook_pinnacle_divergence_<sport>`
+is set for that sport — used for data-collection on sports without trusted
+combos/hours yet. Pipeline filters above are NOT bypassed.
+
 ---
 
 ## Signal-Tuning Config — `sharp_seeker/config.py`
@@ -105,6 +112,8 @@ Raw signals pass through 8 stages in order:
 | `signal_blocklist` | `[]` | Blocked type:market / type:sport:market |
 | `signal_best_combos` | `[]` | Promoted type:sport:market combos |
 | `signal_best_hours` | `{}` | Promoted hours (MST) per type or type:sport |
+| `discord_webhook_pinnacle_divergence_wnba` | — | Dedicated raw WNBA-PD channel; bypasses qualifier gate when set |
+| `discord_webhook_pinnacle_divergence_mlb` | — | Dedicated raw MLB-PD channel; bypasses qualifier gate when set |
 | `quiet_hours_start` / `quiet_hours_end` | 5 / 14 | UTC hours to skip polling entirely |
 | `alert_cooldown_minutes` | 60 | Per (event, type, market, outcome) dedup |
 | `x_free_play_combos` | `[]` | Combos eligible to post as X free plays |
@@ -120,6 +129,40 @@ Raw signals pass through 8 stages in order:
 
 Append a dated entry for every signaling change. Include: what changed, why
 (data snapshot, date range, sample size, win%/units/ROI), and file touched.
+
+### 2026-05-09 — Dedicated raw PD channels for WNBA + MLB
+- **Change:** added two optional config fields
+  (`sharp_seeker/config.py`):
+  `discord_webhook_pinnacle_divergence_wnba` and
+  `discord_webhook_pinnacle_divergence_mlb`. When set,
+  `DiscordAlerter.send_signals` (`sharp_seeker/alerts/discord.py`) routes ALL
+  PD signals for that sport to the dedicated webhook AND bypasses the discord
+  zero-qualifier suppression. Other sports / signal types are unaffected.
+  WNBA PD intentionally inherits the global 0.5 strength floor — the existing
+  NBA/NHL/MLB 0.25 overrides are data-driven (+22.1u 63% historical) and we
+  have no WNBA performance data to justify the same loosening.
+- **Also stripped MLB PD quiet hours** —
+  `signal_quiet_hours["pinnacle_divergence:baseball_mlb"]` set to `[]` (was
+  `[3, 4, 14, 15, 17, 18, 20, 21, 22]` UTC). Reason: MLB PD has produced no
+  signals in recent memory under the prior settings, so the original bad-hour
+  rationale (8 AM MST 1-4 20% WR, 2 PM MST 0-3 0% WR) is preserved here only
+  so it can be restored data-driven if warranted.
+- **Why:** WNBA season just opened (added `basketball_wnba` to `SPORTS` same
+  day) — no historical data exists to populate combos or sport-specific hours,
+  so the qualifier gate would suppress essentially all WNBA PD output. MLB PD
+  is similarly suppressed by empty best-hours and missing combos. Routing both
+  to a dedicated raw channel (hidden in Discord so noise stays user-only) lets
+  the detector flow uncensored for re-evaluation while leaving the main PD
+  channel and the qualifier-gate behavior untouched for trusted sports.
+- **Server action:** production `.env` must set
+  `DISCORD_WEBHOOK_PINNACLE_DIVERGENCE_WNBA=<url>`,
+  `DISCORD_WEBHOOK_PINNACLE_DIVERGENCE_MLB=<url>`, and update
+  `SIGNAL_QUIET_HOURS["pinnacle_divergence:baseball_mlb"]` to `[]`.
+- **Review date:** 2026-06-09. Run `analyze_best_combos_hours.py` against the
+  collected WNBA + MLB PD data, promote winners to `SIGNAL_BEST_COMBOS` /
+  `SIGNAL_BEST_HOURS`, then unset the dedicated webhooks (or keep as audit
+  channels) once the main channel can carry these sports through normal
+  qualifiers.
 
 ### 2026-04-25 — Per-sport PD book exclusion: DraftKings off for MLB
 - **Change:** added `pd_sport_excluded_books: dict[str, list[str]]` config

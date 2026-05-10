@@ -389,6 +389,60 @@ async def test_arb_bypasses_zero_qualifier_suppression(mock_webhook_cls):
     repo.record_alert.assert_called_once()
 
 
+@pytest.mark.asyncio
+@patch("sharp_seeker.alerts.discord.DiscordWebhook")
+async def test_dedicated_pd_webhook_bypasses_qualifier_gate(mock_webhook_cls):
+    """When a dedicated PD webhook is set for a sport, signals route there and bypass the gate."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_instance = MagicMock()
+    mock_instance.execute.return_value = mock_resp
+    mock_webhook_cls.return_value = mock_instance
+
+    raw_url = "https://discord.com/api/webhooks/wnba_pd_raw"
+    settings = _make_settings(
+        signal_best_combos=[],
+        signal_best_hours={},
+        discord_webhook_pinnacle_divergence_wnba=raw_url,
+    )
+    repo = MagicMock()
+    repo.record_alert = AsyncMock()
+    alerter = DiscordAlerter(settings, repo=repo)
+    sig = _make_signal(sport_key="basketball_wnba")  # 0 qualifiers
+
+    await alerter.send_signals([sig])
+
+    mock_webhook_cls.assert_called_once_with(url=raw_url)
+    repo.record_alert.assert_called_once()
+    assert sig.details["qualifier_count"] == 0
+
+
+@pytest.mark.asyncio
+@patch("sharp_seeker.alerts.discord.DiscordWebhook")
+async def test_dedicated_pd_webhook_does_not_leak_to_other_sports(mock_webhook_cls):
+    """A WNBA dedicated webhook must not affect non-WNBA PD signals."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_instance = MagicMock()
+    mock_instance.execute.return_value = mock_resp
+    mock_webhook_cls.return_value = mock_instance
+
+    settings = _make_settings(
+        signal_best_combos=[],
+        signal_best_hours={},
+        discord_webhook_pinnacle_divergence_wnba="https://discord.com/api/webhooks/wnba_pd_raw",
+    )
+    repo = MagicMock()
+    repo.record_alert = AsyncMock()
+    alerter = DiscordAlerter(settings, repo=repo)
+    sig = _make_signal(sport_key="basketball_nba")  # different sport, no dedicated webhook
+
+    await alerter.send_signals([sig])
+
+    mock_webhook_cls.assert_not_called()
+    repo.record_alert.assert_not_called()
+
+
 @patch("sharp_seeker.alerts.discord.DiscordWebhook")
 def test_cross_book_hold_display(mock_webhook_cls):
     """Cross-book hold should be displayed in the embed description."""
