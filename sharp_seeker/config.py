@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     discord_webhook_reverse_line: str | None = None
     discord_webhook_exchange_shift: str | None = None
     discord_webhook_arbitrage: str | None = None
+    # Dedicated raw-data PD channels — when set, ALL PD signals for that sport
+    # route here and bypass the discord qualifier gate. Use for data-collection
+    # channels on sports without trusted combos/hours yet.
+    discord_webhook_pinnacle_divergence_wnba: str | None = None
+    discord_webhook_pinnacle_divergence_mlb: str | None = None
 
     # Per-sport+signal webhook overrides (JSON object in .env)
     # Keys: "signal_type:sport_key", values: webhook URL

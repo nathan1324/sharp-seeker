@@ -137,6 +137,22 @@ class DiscordAlerter:
         self._best_hours: dict[str, set[int]] = {
             k: set(v) for k, v in settings.signal_best_hours.items()
         }
+        # Dedicated raw PD channels by sport — bypass qualifier gate when set
+        self._pd_raw_webhooks: dict[str, str] = {}
+        if settings.discord_webhook_pinnacle_divergence_wnba:
+            self._pd_raw_webhooks["basketball_wnba"] = (
+                settings.discord_webhook_pinnacle_divergence_wnba
+            )
+        if settings.discord_webhook_pinnacle_divergence_mlb:
+            self._pd_raw_webhooks["baseball_mlb"] = (
+                settings.discord_webhook_pinnacle_divergence_mlb
+            )
+
+    def _raw_pd_webhook(self, sig: Signal) -> str | None:
+        """Return the dedicated raw-PD webhook URL for this signal, if any."""
+        if sig.signal_type != SignalType.PINNACLE_DIVERGENCE:
+            return None
+        return self._pd_raw_webhooks.get(sig.sport_key)
 
     def _is_best_combo(self, sig: Signal) -> bool:
         key = f"{sig.signal_type.value}:{sig.sport_key}:{sig.market_key}"
@@ -193,7 +209,12 @@ class DiscordAlerter:
             q_count, q_tags = self._count_qualifiers(signal)
             signal.details["qualifier_count"] = q_count
             signal.details["qualifier_tags"] = q_tags
-            if q_count == 0 and signal.signal_type != SignalType.ARBITRAGE:
+            raw_url = self._raw_pd_webhook(signal)
+            if (
+                q_count == 0
+                and signal.signal_type != SignalType.ARBITRAGE
+                and raw_url is None
+            ):
                 log.info(
                     "signal_suppressed",
                     signal_type=signal.signal_type.value,
@@ -202,7 +223,7 @@ class DiscordAlerter:
                 )
                 continue
             try:
-                self._send_embed(signal)
+                self._send_embed(signal, override_url=raw_url)
                 alert_details = dict(signal.details)
                 alert_details["home_team"] = signal.home_team
                 alert_details["away_team"] = signal.away_team
@@ -222,12 +243,15 @@ class DiscordAlerter:
             except Exception:
                 log.exception("alert_send_failed", event_id=signal.event_id)
 
-    def _send_embed(self, sig: Signal) -> None:
-        override_key = f"{sig.signal_type.value}:{sig.sport_key}"
-        url = self._webhook_overrides.get(
-            override_key,
-            self._webhook_urls.get(sig.signal_type, self._default_url),
-        )
+    def _send_embed(self, sig: Signal, override_url: str | None = None) -> None:
+        if override_url:
+            url = override_url
+        else:
+            override_key = f"{sig.signal_type.value}:{sig.sport_key}"
+            url = self._webhook_overrides.get(
+                override_key,
+                self._webhook_urls.get(sig.signal_type, self._default_url),
+            )
         webhook = DiscordWebhook(url=url)
 
         label = SIGNAL_LABELS.get(sig.signal_type, sig.signal_type.value)

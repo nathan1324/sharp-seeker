@@ -197,6 +197,8 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `SIGNAL_BLOCKLIST` | `[]` | Block losing type:market or type:sport:market combos (JSON array) |
 | `SIGNAL_BEST_COMBOS` | `[]` | Tag high-confidence type:sport:market combos on Discord embeds (JSON array) |
 | `SIGNAL_BEST_HOURS` | `{}` | Tag high-confidence type:hour(MST) combos on Discord embeds (JSON) |
+| `DISCORD_WEBHOOK_PINNACLE_DIVERGENCE_WNBA` | — | Dedicated raw-data channel for WNBA PD; bypasses qualifier gate when set |
+| `DISCORD_WEBHOOK_PINNACLE_DIVERGENCE_MLB` | — | Dedicated raw-data channel for MLB PD; bypasses qualifier gate when set |
 | `CARD_OUTPUT_DIR` | `data/cards` | Directory for daily results card PNGs |
 | `ALERT_COOLDOWN_MINUTES` | `60` | Dedup cooldown per signal |
 | `X_CONSUMER_KEY` | — | X OAuth 1.0a consumer key (optional) |
