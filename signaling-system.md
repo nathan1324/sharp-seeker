@@ -130,6 +130,24 @@ combos/hours yet. Pipeline filters above are NOT bypassed.
 Append a dated entry for every signaling change. Include: what changed, why
 (data snapshot, date range, sample size, win%/units/ROI), and file touched.
 
+### 2026-05-11 — Steam Move @here + @member mention
+- **Change:** added `discord_steam_mention_here` (bool, default `False`) and
+  `discord_steam_mention_role_id` (str, default `"944472531631472640"`) to
+  `sharp_seeker/config.py`. When the flag is on, `DiscordAlerter._send_embed`
+  (`sharp_seeker/alerts/discord.py`) sets the webhook `content` to
+  `"@here <@&MEMBER_ROLE_ID>"` with `allowed_mentions={"parse": ["everyone"],
+  "roles": [role_id]}` so the ping actually fires (Discord otherwise renders
+  the text but suppresses the notification). Other signal types are unaffected.
+- **Why:** Steam is the most-trusted signal type and fires at a manageable
+  cadence — worth pulling online viewers' attention to. PD/Rapid/RevLine
+  intentionally excluded to keep notification noise bounded; revisit if other
+  types warrant it.
+- **Default off:** merge can deploy without surprise pings. Flip
+  `DISCORD_STEAM_MENTION_HERE=true` on prod when ready.
+- **Server action:** production `.env` must set
+  `DISCORD_STEAM_MENTION_HERE=true` to enable; role ID override only needed if
+  the @member role ID changes in the Sandbox Sports server.
+
 ### 2026-05-09 — Dedicated raw PD channels for WNBA + MLB
 - **Change:** added two optional config fields
   (`sharp_seeker/config.py`):

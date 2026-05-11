@@ -444,6 +444,78 @@ async def test_dedicated_pd_webhook_does_not_leak_to_other_sports(mock_webhook_c
 
 
 @patch("sharp_seeker.alerts.discord.DiscordWebhook")
+def test_steam_mention_off_by_default(mock_webhook_cls):
+    """No content/allowed_mentions kwargs are passed when the flag is off."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_instance = MagicMock()
+    mock_instance.execute.return_value = mock_resp
+    mock_webhook_cls.return_value = mock_instance
+
+    settings = _make_settings()  # discord_steam_mention_here defaults to False
+    alerter = DiscordAlerter(settings, repo=MagicMock())
+    sig = _make_signal(signal_type=SignalType.STEAM_MOVE)
+    sig.details["qualifier_count"] = 1
+    sig.details["qualifier_tags"] = ["Best Combo"]
+
+    alerter._send_embed(sig)
+
+    kwargs = mock_webhook_cls.call_args.kwargs
+    assert "content" not in kwargs
+    assert "allowed_mentions" not in kwargs
+
+
+@patch("sharp_seeker.alerts.discord.DiscordWebhook")
+def test_steam_mention_on_pings_here_and_role(mock_webhook_cls):
+    """Steam alerts include @here + role mention when the flag is on."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_instance = MagicMock()
+    mock_instance.execute.return_value = mock_resp
+    mock_webhook_cls.return_value = mock_instance
+
+    settings = _make_settings(
+        discord_steam_mention_here=True,
+        discord_steam_mention_role_id="944472531631472640",
+    )
+    alerter = DiscordAlerter(settings, repo=MagicMock())
+    sig = _make_signal(signal_type=SignalType.STEAM_MOVE)
+    sig.details["qualifier_count"] = 1
+    sig.details["qualifier_tags"] = ["Best Combo"]
+
+    alerter._send_embed(sig)
+
+    kwargs = mock_webhook_cls.call_args.kwargs
+    assert kwargs["content"] == "@here <@&944472531631472640>"
+    assert kwargs["allowed_mentions"] == {
+        "parse": ["everyone"],
+        "roles": ["944472531631472640"],
+    }
+
+
+@patch("sharp_seeker.alerts.discord.DiscordWebhook")
+def test_steam_mention_does_not_apply_to_other_signal_types(mock_webhook_cls):
+    """Flag on but signal is PD — no mention should be attached."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_instance = MagicMock()
+    mock_instance.execute.return_value = mock_resp
+    mock_webhook_cls.return_value = mock_instance
+
+    settings = _make_settings(discord_steam_mention_here=True)
+    alerter = DiscordAlerter(settings, repo=MagicMock())
+    sig = _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)
+    sig.details["qualifier_count"] = 1
+    sig.details["qualifier_tags"] = ["Best Combo"]
+
+    alerter._send_embed(sig)
+
+    kwargs = mock_webhook_cls.call_args.kwargs
+    assert "content" not in kwargs
+    assert "allowed_mentions" not in kwargs
+
+
+@patch("sharp_seeker.alerts.discord.DiscordWebhook")
 def test_cross_book_hold_display(mock_webhook_cls):
     """Cross-book hold should be displayed in the embed description."""
     mock_resp = MagicMock()
