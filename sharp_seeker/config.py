@@ -43,6 +43,15 @@ class Settings(BaseSettings):
     discord_webhook_pinnacle_divergence_wnba: str | None = None
     discord_webhook_pinnacle_divergence_mlb: str | None = None
 
+    # When True, every Steam Move alert prepends `@here <@&MEMBER_ROLE_ID>` to
+    # the webhook payload (with allowed_mentions set so the ping actually fires).
+    # Off by default so merging the code can't accidentally start spamming a
+    # production channel — flip via env var when ready.
+    discord_steam_mention_here: bool = False
+    # Role ID to mention alongside @here on Steam alerts. Hardcoded default is
+    # the @member role in the Sandbox Sports server.
+    discord_steam_mention_role_id: str = "944472531631472640"
+
     # Per-sport+signal webhook overrides (JSON object in .env)
     # Keys: "signal_type:sport_key", values: webhook URL
     # Example: {"pinnacle_divergence:basketball_ncaab": "https://discord.com/api/webhooks/..."}

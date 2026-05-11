@@ -147,6 +147,22 @@ class DiscordAlerter:
             self._pd_raw_webhooks["baseball_mlb"] = (
                 settings.discord_webhook_pinnacle_divergence_mlb
             )
+        # Steam Move @here + role mention toggle
+        self._steam_mention_here: bool = settings.discord_steam_mention_here
+        self._steam_mention_role_id: str = settings.discord_steam_mention_role_id
+
+    def _steam_mention_payload(self, sig: Signal) -> tuple[str | None, dict | None]:
+        """Return (content, allowed_mentions) for a Steam mention, or (None, None)."""
+        if not self._steam_mention_here:
+            return None, None
+        if sig.signal_type != SignalType.STEAM_MOVE:
+            return None, None
+        role_id = self._steam_mention_role_id
+        content = f"@here <@&{role_id}>" if role_id else "@here"
+        allowed: dict = {"parse": ["everyone"]}
+        if role_id:
+            allowed["roles"] = [role_id]
+        return content, allowed
 
     def _raw_pd_webhook(self, sig: Signal) -> str | None:
         """Return the dedicated raw-PD webhook URL for this signal, if any."""
@@ -252,7 +268,12 @@ class DiscordAlerter:
                 override_key,
                 self._webhook_urls.get(sig.signal_type, self._default_url),
             )
-        webhook = DiscordWebhook(url=url)
+        content, allowed_mentions = self._steam_mention_payload(sig)
+        kwargs: dict = {"url": url}
+        if content is not None:
+            kwargs["content"] = content
+            kwargs["allowed_mentions"] = allowed_mentions
+        webhook = DiscordWebhook(**kwargs)
 
         label = SIGNAL_LABELS.get(sig.signal_type, sig.signal_type.value)
         color = SIGNAL_COLORS.get(sig.signal_type, 0x95A5A6)
