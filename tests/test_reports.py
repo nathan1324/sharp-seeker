@@ -269,3 +269,89 @@ async def test_per_type_report_attaches_csv(settings, repo):
     _, kw = calls[0]
     assert kw.get("file_content") is not None
     assert kw.get("filename", "").endswith(".csv")
+
+
+# ── Raw-PD recap routing tests ─────────────────────────────────
+
+
+def _settings_with_mlb_raw_pd():
+    from sharp_seeker.config import Settings
+    return Settings(
+        odds_api_key="test_key",
+        discord_webhook_url="https://discord.com/api/webhooks/default/x",
+        db_path=":memory:",
+        discord_webhook_pinnacle_divergence_mlb="https://discord.com/api/webhooks/mlb_raw_pd/x",
+    )
+
+
+@pytest.mark.asyncio
+async def test_raw_pd_mlb_channel_receives_override_report(repo):
+    """An MLB PD signal with qualifier_count=0 (raw-PD bypass) should appear
+    in the MLB raw-PD channel's daily recap."""
+    await _seed_resolved_signal(
+        repo,
+        event_id="mlb1",
+        signal_type="pinnacle_divergence",
+        sport_key="baseball_mlb",
+        result="won",
+        details_json='{"qualifier_count": 0, "value_books": [{"bookmaker": "fanduel", "point": -1.5, "price": -110}]}',
+    )
+
+    gen = ReportGenerator(_settings_with_mlb_raw_pd(), repo)
+
+    calls = []
+
+    def capture_send(url, *args, **kwargs):
+        calls.append((url, args, kwargs))
+
+    with patch.object(ReportGenerator, "_send_webhook", staticmethod(capture_send)):
+        await gen._send_override_reports("Daily", "2025-01-01T00:00:00+00:00")
+
+    sent_urls = [c[0] for c in calls]
+    assert "https://discord.com/api/webhooks/mlb_raw_pd/x" in sent_urls, (
+        f"MLB raw-PD webhook did not receive a recap; got urls: {sent_urls}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_raw_pd_mlb_excluded_from_main_pd_per_type_report(repo):
+    """MLB PD signals routed via raw-PD bypass must not be counted in the
+    main PD per-type recap (avoid double-counting if MLB ever gets a qualified
+    PD signal in the future)."""
+    # Seed an MLB raw-PD signal AND a qualified NBA PD signal
+    await _seed_resolved_signal(
+        repo,
+        event_id="mlb1",
+        signal_type="pinnacle_divergence",
+        sport_key="baseball_mlb",
+        result="won",
+        details_json='{"qualifier_count": 0}',
+    )
+    await _seed_resolved_signal(
+        repo,
+        event_id="nba1",
+        signal_type="pinnacle_divergence",
+        sport_key="basketball_nba",
+        result="won",
+        details_json='{"qualifier_count": 1, "qualifier_tags": ["Best Combo"]}',
+    )
+
+    gen = ReportGenerator(_settings_with_mlb_raw_pd(), repo)
+
+    captured_excludes = []
+
+    real_get_perf = repo.get_performance_stats
+
+    async def spy_get_perf(*args, **kwargs):
+        if kwargs.get("sent_only") is True:
+            captured_excludes.append(kwargs.get("exclude_sports"))
+        return await real_get_perf(*args, **kwargs)
+
+    with patch.object(repo, "get_performance_stats", spy_get_perf):
+        with patch.object(ReportGenerator, "_send_webhook", staticmethod(lambda *a, **k: None)):
+            await gen._send_per_type_reports("Daily", "2025-01-01T00:00:00+00:00")
+
+    # At least one of the per-type stat queries should exclude baseball_mlb
+    assert any(
+        ex and "baseball_mlb" in ex for ex in captured_excludes
+    ), f"baseball_mlb was not excluded from any per-type stats query; captured: {captured_excludes}"

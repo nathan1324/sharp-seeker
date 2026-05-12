@@ -72,6 +72,38 @@ class ReportGenerator:
         self._settings = settings
         self._repo = repo
 
+    def _effective_webhook_overrides(self) -> dict[str, str]:
+        """Merge discord_webhook_overrides with dedicated raw-PD webhooks.
+
+        The two raw-PD channels (WNBA, MLB) act as per-sport+signal overrides
+        for reporting purposes too — they should receive their own per-channel
+        recap AND be excluded from the main PD recap to avoid double-counting.
+        """
+        merged: dict[str, str] = dict(self._settings.discord_webhook_overrides)
+        for key in self._raw_pd_override_keys():
+            sport = key.split(":", 1)[1]
+            if sport == "basketball_wnba":
+                url = self._settings.discord_webhook_pinnacle_divergence_wnba
+            else:  # baseball_mlb
+                url = self._settings.discord_webhook_pinnacle_divergence_mlb
+            if url:
+                merged.setdefault(key, url)
+        return merged
+
+    def _raw_pd_override_keys(self) -> set[str]:
+        """Override keys that route to a raw-PD bypass channel.
+
+        Stats for these keys must be queried with sent_only=False, because
+        raw-PD signals are stored with qualifier_count=0 (they bypass the
+        qualifier gate) and would otherwise be filtered out of the recap.
+        """
+        keys: set[str] = set()
+        if self._settings.discord_webhook_pinnacle_divergence_wnba:
+            keys.add("pinnacle_divergence:basketball_wnba")
+        if self._settings.discord_webhook_pinnacle_divergence_mlb:
+            keys.add("pinnacle_divergence:baseball_mlb")
+        return keys
+
     async def send_daily_report(self) -> None:
         """Send per-signal-type reports + combined summary + override reports."""
         since = self._hours_ago(24)
@@ -97,7 +129,7 @@ class ReportGenerator:
         """
         # Build a map: signal_type -> list of sports that have overrides
         override_sports: dict[str, list[str]] = {}
-        for key in self._settings.discord_webhook_overrides:
+        for key in self._effective_webhook_overrides():
             parts = key.split(":", 1)
             if len(parts) == 2:
                 override_sports.setdefault(parts[0], []).append(parts[1])
@@ -211,9 +243,11 @@ class ReportGenerator:
 
     async def _send_override_reports(self, period: str, since: str) -> None:
         """Send sport-specific reports to each webhook override channel."""
-        overrides = self._settings.discord_webhook_overrides
+        overrides = self._effective_webhook_overrides()
         if not overrides:
             return
+
+        raw_pd_keys = self._raw_pd_override_keys()
 
         for key, webhook_url in overrides.items():
             parts = key.split(":", 1)
@@ -225,8 +259,11 @@ class ReportGenerator:
             friendly_signal = _SIGNAL_FRIENDLY.get(signal_type_val, signal_type_val)
             friendly_sport = _sport_friendly(sport_key)
 
+            # Raw-PD bypass channels store qualifier_count=0; include them.
+            sent_only = key not in raw_pd_keys
+
             stats = await self._repo.get_performance_stats(
-                since, sport_key=sport_key, sent_only=True,
+                since, sport_key=sport_key, sent_only=sent_only,
             )
             counts = stats.get(signal_type_val)
             if not counts:
@@ -253,7 +290,7 @@ class ReportGenerator:
 
             resolved = await self._repo.get_resolved_signals_since(
                 since, signal_type=signal_type_val, sport_key=sport_key,
-                sent_only=True,
+                sent_only=sent_only,
             )
             if resolved:
                 lines = []
@@ -275,7 +312,7 @@ class ReportGenerator:
 
             market_stats = await self._repo.get_performance_stats_by_market(
                 since, signal_type=signal_type_val, sport_key=sport_key,
-                sent_only=True,
+                sent_only=sent_only,
             )
             if market_stats:
                 mlines = []
@@ -298,7 +335,7 @@ class ReportGenerator:
 
             csv_bytes = await self._build_results_csv(
                 since, signal_type=signal_type_val, sport_key=sport_key,
-                sent_only=True,
+                sent_only=sent_only,
             )
             date_str = since[:10]
             sport_slug = sport_key.replace(":", "_")
