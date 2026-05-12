@@ -130,6 +130,25 @@ combos/hours yet. Pipeline filters above are NOT bypassed.
 Append a dated entry for every signaling change. Include: what changed, why
 (data snapshot, date range, sample size, win%/units/ROI), and file touched.
 
+### 2026-05-12 — Daily/weekly recaps for raw-PD channels
+- **Change:** `sharp_seeker/analysis/reports.py` now treats the two
+  `discord_webhook_pinnacle_divergence_<sport>` webhooks as effective per-sport
+  overrides for recap purposes via a new `_effective_webhook_overrides()`
+  helper. Both `_send_per_type_reports` (exclusion logic) and
+  `_send_override_reports` (iteration) use the merged map. For raw-PD entries,
+  the stats/CSV queries flip `sent_only` to `False` because raw-PD signals are
+  stored with `qualifier_count=0` (they bypass the qualifier gate) and would
+  otherwise be filtered out by the default `sent_only=True`.
+- **Why:** under the prior code the MLB and WNBA dedicated raw-PD channels
+  received per-signal alerts but never received the daily or weekly recap,
+  because the recap loop only iterated `discord_webhook_overrides` and the
+  dedicated webhook fields lived elsewhere. Confirmed live on prod 2026-05-12.
+- **Double-counting note:** the per-type PD recap now excludes `baseball_mlb`
+  and `basketball_wnba` so a future qualified PD signal in those sports won't
+  appear in both the main PD recap and the raw-PD recap. Today both sports
+  have empty `signal_best_combos` / `signal_best_hours`, so the practical
+  impact starts at zero and only matters if those configs change.
+
 ### 2026-05-11 — Steam Move @here + @member mention
 - **Change:** added `discord_steam_mention_here` (bool, default `False`) and
   `discord_steam_mention_role_id` (str, default `"944472531631472640"`) to
