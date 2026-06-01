@@ -93,6 +93,11 @@ class Settings(BaseSettings):
 
     # Detection — arbitrage
     arb_excluded_books: list[str] = Field(default=["pinnacle"])
+    # Minimum guaranteed-profit % for an arb to alert. 0.0 = surface every arb
+    # (any negative cross-book hold). Arbs are EXEMPT from the generic
+    # min_signal_strength floor (their strength encodes profit%, so the 0.5
+    # default would require a ~5% arb to pass) — this is their only volume gate.
+    arb_min_profit_pct: float = 0.0
 
     # Detection — exchange monitor
     exchange_shift_threshold: float = 0.05  # 5% implied probability shift

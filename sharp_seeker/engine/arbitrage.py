@@ -73,7 +73,9 @@ class ArbitrageDetector(BaseDetector):
                 if arb is not None:
                     signals.append(arb)
 
-        return signals
+        # Only surface arbs at or above the configured profit floor (0 = all).
+        floor = self._settings.arb_min_profit_pct
+        return [s for s in signals if s.details["profit_pct"] >= floor]
 
     @staticmethod
     def _check_h2h_arb(

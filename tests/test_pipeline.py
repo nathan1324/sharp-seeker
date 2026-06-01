@@ -78,6 +78,35 @@ async def test_deduplication(settings, repo):
 
 
 @pytest.mark.asyncio
+async def test_thin_arb_survives_strength_filter(settings, repo):
+    """A sub-1% arb (strength ~0.1) must NOT be dropped by the min-strength gate.
+
+    Arb strength = profit%/10, so a real ~1% arb has strength ~0.1 — far below
+    the 0.5 default floor. Arbs are exempt from that filter, so it should survive.
+    """
+    event = "evt_thin_arb"
+    t = "2099-01-14T12:00:00+00:00"  # before the 2099-01-15 commence (not live)
+
+    # TeamA best +102 @ dk, TeamB best +102 @ fanduel:
+    # implied(+102) = 100/202 ≈ 0.4950; cross hold ≈ -0.0099 → ~0.99% profit.
+    snapshots = [
+        _snap(event, "draftkings", "h2h", "Lakers", 102, None, t),
+        _snap(event, "draftkings", "h2h", "Celtics", -125, None, t),
+        _snap(event, "fanduel", "h2h", "Lakers", -125, None, t),
+        _snap(event, "fanduel", "h2h", "Celtics", 102, None, t),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    pipeline = DetectionPipeline(settings, repo)
+    signals = await pipeline.run(t)
+
+    arbs = [s for s in signals if s.signal_type == SignalType.ARBITRAGE]
+    assert len(arbs) == 1, "thin arb should survive the pipeline"
+    assert arbs[0].strength < settings.min_signal_strength  # would've been dropped pre-fix
+    assert arbs[0].details["profit_pct"] > 0
+
+
+@pytest.mark.asyncio
 async def test_market_side_dedup(settings, repo):
     """Both sides of the same market should be deduped to one signal."""
     event = "evt_sides"

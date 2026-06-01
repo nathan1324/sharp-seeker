@@ -52,8 +52,13 @@ written to `sent_alerts` count as "sent".
 
 ### Arbitrage — `sharp_seeker/engine/arbitrage.py`
 - **Triggers when:** cross-book hold goes negative.
+- **Strength:** `min(1.0, abs(cross_hold) * 10)` = `profit% / 10`.
 - **Suppressions:** books in `arb_excluded_books` (default `["pinnacle"]`).
-  Point arbs only compare books at the same line value.
+  Point arbs only compare books at the same line value. Arbs below
+  `arb_min_profit_pct` (default `0.0` = all) are dropped at the detector.
+- **Strength-filter exemption:** arbs are NOT subject to the pipeline's
+  `min_signal_strength` floor (see Change Log 2026-06-01) — `arb_min_profit_pct`
+  is their only volume gate.
 
 ### Exchange Shift — `sharp_seeker/engine/exchange_monitor.py`
 - **Triggers when:** Betfair h2h implied prob shifts by >=
@@ -104,6 +109,7 @@ combos/hours yet. Pipeline filters above are NOT bypassed.
 | `pd_sport_excluded_books` | `{}` | Per-sport books skipped by PD detector (added to global) |
 | `exchange_shift_threshold` | 0.05 | Betfair implied prob shift |
 | `arb_excluded_books` | `["pinnacle"]` | Books skipped by arb |
+| `arb_min_profit_pct` | `0.0` | Min guaranteed-profit % to alert; arbs exempt from min strength |
 | `min_signal_strength` | 0.5 | Global min strength |
 | `signal_strength_overrides` | `{}` | Per-type min strength |
 | `signal_sport_strength_overrides` | `{}` | Per-type+sport min strength |
@@ -130,6 +136,26 @@ combos/hours yet. Pipeline filters above are NOT bypassed.
 
 Append a dated entry for every signaling change. Include: what changed, why
 (data snapshot, date range, sample size, win%/units/ROI), and file touched.
+
+### 2026-06-01 — Exempt arbs from min-strength floor + add profit floor
+- **Change:** (1) the pipeline min-strength filter (`sharp_seeker/engine/
+  pipeline.py`) now exempts `SignalType.ARBITRAGE`. (2) Added
+  `arb_min_profit_pct` (float, default `0.0`) to `sharp_seeker/config.py`;
+  `ArbitrageDetector.detect` (`sharp_seeker/engine/arbitrage.py`) drops arbs
+  below it. `0.0` = surface every arb (any negative cross-book hold).
+- **Why (the bug):** arb `strength = min(1.0, abs(cross_hold) * 10)` =
+  `profit% / 10`. The generic `min_signal_strength` floor is `0.5`, and prod had
+  NO arb strength override (`signal_strength_overrides` was only
+  `{rapid_change:0.65, reverse_line:0.65}`, confirmed in deploy logs). So an arb
+  had to clear `strength > 0.5` → **`profit% > 5%`** to alert. Real arbs are
+  almost always 0.5–2%, so virtually every genuine arb was silently dropped at
+  pipeline stage 1. This is why arbs almost never fired.
+- **Effect:** with the exemption + `arb_min_profit_pct=0.0`, every detected arb
+  (negative hold) now reaches Discord. Operator chose "let anything through";
+  raise `ARB_MIN_PROFIT_PCT` later (e.g. `0.5`) if thin/stale-line arbs are noisy.
+- **Untouched (intentional):** `arb_excluded_books=["pinnacle"]`, exact-point
+  matching for spread/total arbs, and the live-game drop all still apply.
+- **Server action:** none required — defaults take effect on deploy.
 
 ### 2026-06-01 — Arbitrage @here + @member mention (always on)
 - **Change:** added `discord_arb_mention_here` (bool, default `True`) to

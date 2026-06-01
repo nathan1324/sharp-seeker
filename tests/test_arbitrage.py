@@ -10,6 +10,10 @@ from sharp_seeker.engine.base import SignalType
 
 class FakeSettings:
     arb_excluded_books: list[str] = []
+    arb_min_profit_pct: float = 0.0
+
+    def __init__(self, arb_min_profit_pct: float = 0.0):
+        self.arb_min_profit_pct = arb_min_profit_pct
 
 
 class FakeRepo:
@@ -81,6 +85,38 @@ async def test_arb_detected_when_hold_negative():
     assert "side_b" in sig.details
     assert sig.details["side_a"]["bookmaker"] in ("draftkings", "fanduel")
     assert sig.details["side_b"]["bookmaker"] in ("draftkings", "fanduel")
+
+
+@pytest.mark.asyncio
+async def test_arb_below_profit_floor_is_dropped():
+    """An arb under arb_min_profit_pct should be filtered out at the detector."""
+    # Same ~7% arb as above, but floor set higher than its profit.
+    rows = [
+        _row("draftkings", "h2h", "TeamA", 115),
+        _row("draftkings", "h2h", "TeamB", -110),
+        _row("fanduel", "h2h", "TeamA", -105),
+        _row("fanduel", "h2h", "TeamB", 115),
+    ]
+    repo = FakeRepo(rows)
+    det = ArbitrageDetector(FakeSettings(arb_min_profit_pct=8.0), repo)
+    signals = await det.detect("evt1", "2026-03-20T01:00:00Z")
+    assert signals == []
+
+
+@pytest.mark.asyncio
+async def test_arb_at_or_above_profit_floor_is_kept():
+    """An arb meeting the floor still fires (floor below its profit)."""
+    rows = [
+        _row("draftkings", "h2h", "TeamA", 115),
+        _row("draftkings", "h2h", "TeamB", -110),
+        _row("fanduel", "h2h", "TeamA", -105),
+        _row("fanduel", "h2h", "TeamB", 115),
+    ]
+    repo = FakeRepo(rows)
+    det = ArbitrageDetector(FakeSettings(arb_min_profit_pct=1.0), repo)
+    signals = await det.detect("evt1", "2026-03-20T01:00:00Z")
+    assert len(signals) == 1
+    assert signals[0].details["profit_pct"] >= 1.0
 
 
 @pytest.mark.asyncio
