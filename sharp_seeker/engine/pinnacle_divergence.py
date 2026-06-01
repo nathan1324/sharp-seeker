@@ -179,13 +179,16 @@ class PinnacleDivergenceDetector(BaseDetector):
                         if 0 <= cross_hold <= 0.02:
                             continue
 
-                # Suppress NBA totals at high cross-book hold (>= 2.5%) — consistently
-                # the largest bleed in sent-signal analysis: 172 signals, 45% win,
-                # -56.7u, -33% ROI (range 2026-03-19 to 2026-04-19). Other NBA
-                # markets at high hold are profitable, so scope is PD totals only.
+                # Suppress NBA/WNBA totals at high cross-book hold (>= 2.5%). NBA:
+                # consistently the largest bleed in sent-signal analysis (172
+                # signals, 45% win, -56.7u, -33% ROI, range 2026-03-19 to
+                # 2026-04-19). Other NBA markets at high hold are profitable, so
+                # scope is PD totals only. WNBA: extended by analogy as part of
+                # the 2026-05-31 NBA-style config alignment — no WNBA data yet;
+                # revisit at 2026-06-15.
                 if (
                     market_key == "totals"
-                    and meta[0] == "basketball_nba"
+                    and meta[0] in ("basketball_nba", "basketball_wnba")
                     and cross_hold is not None
                     and cross_hold >= 0.025
                 ):
