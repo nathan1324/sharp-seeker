@@ -160,6 +160,45 @@ Append a dated entry for every signaling change. Include: what changed, why
   list. After 2-3 more weeks accumulate, consider promoting positive MLB hours
   into `SIGNAL_BEST_HOURS["pinnacle_divergence:baseball_mlb"]` with proper
   forward-window validation.
+### 2026-05-31 — X free-play recap upgrades + summer-season combo whitelist
+- **Change A (recap format):** `XPoster.post_daily_recap` and `_format_recap`
+  in `sharp_seeker/alerts/x_poster.py` now include per-pick units, daily unit
+  total in the header (`📊 Yesterday: 3-2 (+1.4u)`), and a month-to-date
+  running total in the footer (`May: 12-9 (+8.7u)`). Recap also now ALWAYS
+  posts — zero-free-play days emit an accountability line + MTD instead of
+  silently skipping. New helpers: `_compute_units`, `_units_from_row`,
+  `_fmt_units`, `_month_start_iso`, `_month_label`.
+- **Change B (combo whitelist):** added two combos to `X_FREE_PLAY_COMBOS`
+  for summer-season volume:
+    - `pinnacle_divergence:baseball_mlb:totals` — MLB PD totals are now
+      profitable after the 2026-05-31 5-6 AM quiet-hours fix (May post-fix
+      projection +37u on n=211).
+    - `pinnacle_divergence:basketball_wnba:totals` — WNBA PD filters were
+      loosened to match NBA earlier the same day; no historical data but user
+      accepted public-loss risk to grow audience cadence during lean season.
+  Combos kept as-is: NBA Steam spreads, NBA Rapid h2h, MLB Steam totals, NHL
+  PD totals.
+- **Why:** strategic shift discussed in session — NBA Finals end ~June 22,
+  Elite NBA PD plays dry up, summer is MLB + WNBA only. Sparse Steam-only X
+  free plays were producing too little volume to build audience or sustain a
+  daily-beat cadence. Recap upgrades add transparency/accountability layer
+  (units shown publicly, posts every day even when nothing fires) that
+  matches the broader "build the X content franchise during the lean season"
+  strategy.
+- **Server action:** production `.env` must update `X_FREE_PLAY_COMBOS` to
+  add the two new entries (see `.env.example`). Then `docker compose up -d
+  --build` for the recap format code changes.
+- **Risk callout:** more posts = more public losses. This is intentional —
+  user explicitly said "I'm not afraid to lose in public." The MTD footer is
+  the discipline mechanism; if a streak goes bad it shows up immediately
+  rather than getting buried in selective recap timing.
+- **Review date:** 2026-07-01. Audit X free-play unit totals + follower
+  growth. If summer combos are bleeding badly, narrow the whitelist; if
+  recap-on-empty-days is producing engagement, expand the content franchise
+  with the other post types in the strategy doc (commentary posts, weekly
+  threads). Weekly recap (`_format_weekly_recap`) was NOT upgraded in this
+  PR — defer until daily-format usage validates the approach.
+
 ### 2026-05-31 — Align WNBA PD config with NBA (looser detector + high-hold suppression)
 - **Change:** WNBA PD inherits the same per-sport overrides NBA has, plus the
   NBA high-cross-book-hold totals suppression:

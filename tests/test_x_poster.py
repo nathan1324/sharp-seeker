@@ -341,7 +341,7 @@ async def test_post_signals_handles_tweepy_error(settings, repo):
 
 
 def test_format_recap_with_results(settings, repo):
-    """Won/lost/push signals format correctly in the recap."""
+    """Won/lost/push signals format correctly in the recap with units."""
     poster = XPoster(settings, repo)
     poster._cta_url = "https://discord.gg/test"
 
@@ -358,14 +358,54 @@ def test_format_recap_with_results(settings, repo):
     ]
 
     text = poster._format_recap(results)
-    assert "Yesterday's Free Plays" in text
+    # Header now includes record + units (1W-1L, push doesn't count)
+    # Lakers: won at -110 = +1.0u. Chiefs: lost at +150 = -0.67u. Net = +0.3u
+    assert "Yesterday: 1-1" in text
+    assert "+0.3u" in text
     assert "\u2705" in text  # won
     assert "\u274c" in text  # lost
     assert "\u21a9\ufe0f" in text  # push
     assert "Lakers" in text
     assert "Chiefs" in text
-    assert "Record: 1-1" in text  # push doesn't count
+    # Per-pick units appear inline
+    assert "(+1.0u)" in text  # Lakers win
     assert "discord.gg/test" in text
+
+
+def test_format_recap_includes_mtd_footer(settings, repo):
+    """When mtd_results provided, footer shows month-to-date W-L and units."""
+    poster = XPoster(settings, repo)
+    poster._cta_url = ""
+
+    yesterday = [
+        {"outcome_name": "Lakers", "market_key": "spreads", "result": "won",
+         "signal_strength": 0.85, "event_id": "e1", "sent_at": "2099-01-15",
+         "details_json": json.dumps({"value_books": [{"price": -110}]})},
+    ]
+    # MTD: include yesterday's win plus 2 other prior wins and 1 loss
+    mtd = yesterday + [
+        {"outcome_name": "X", "market_key": "h2h", "result": "won",
+         "details_json": json.dumps({"value_books": [{"price": -110}]})},
+        {"outcome_name": "Y", "market_key": "h2h", "result": "won",
+         "details_json": json.dumps({"value_books": [{"price": -110}]})},
+        {"outcome_name": "Z", "market_key": "h2h", "result": "lost",
+         "details_json": json.dumps({"value_books": [{"price": -110}]})},
+    ]
+
+    text = poster._format_recap(yesterday, mtd)
+    # 3W-1L: +3.0u (wins) - 1.1u (loss at -110) = +1.9u
+    assert "3-1" in text
+    assert "+1.9u" in text
+
+
+def test_format_recap_zero_plays_always_posts(settings, repo):
+    """Empty results must still produce a tweet body (accountability beat)."""
+    poster = XPoster(settings, repo)
+    poster._cta_url = ""
+
+    text = poster._format_recap([])
+    assert text  # not empty
+    assert "No free plays yesterday" in text
 
 
 def test_format_recap_pending(settings, repo):
@@ -388,7 +428,7 @@ def test_format_recap_pending(settings, repo):
 
 @pytest.mark.asyncio
 async def test_post_daily_recap_empty(settings, repo):
-    """No free plays in window → no tweet posted."""
+    """Zero free plays still posts an accountability tweet (no-play message)."""
     poster = XPoster(settings, repo)
     poster._enabled = True
     poster._client = MagicMock()
@@ -396,7 +436,10 @@ async def test_post_daily_recap_empty(settings, repo):
 
     await poster.post_daily_recap()
 
-    poster._client.create_tweet.assert_not_called()
+    # Always-post behavior: tweet IS sent, with the no-plays message
+    poster._client.create_tweet.assert_called_once()
+    call_text = poster._client.create_tweet.call_args.kwargs["text"]
+    assert "No free plays yesterday" in call_text
 
 
 @pytest.mark.asyncio
@@ -415,6 +458,7 @@ async def test_post_daily_recap_calls_tweepy(settings, repo):
         alert_type="pinnacle_divergence",
         market_key="spreads",
         outcome_name="Lakers",
+        details_json=json.dumps({"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]}),
         is_free_play=True,
     )
     await repo.record_signal_result(
@@ -432,7 +476,9 @@ async def test_post_daily_recap_calls_tweepy(settings, repo):
 
     poster._client.create_tweet.assert_called_once()
     call_text = poster._client.create_tweet.call_args.kwargs["text"]
-    assert "Yesterday's Free Plays" in call_text
+    # New header format includes record + units
+    assert "Yesterday: 1-0" in call_text
+    assert "+1.0u" in call_text  # won at -110
     assert "Lakers" in call_text
 
 

@@ -99,6 +99,54 @@ def _format_odds(market: str, price: float | None, point: float | None) -> str:
     return " ".join(parts) if parts else "?"
 
 
+def _compute_units(price: float | None, result: str, multiplier: int = 1) -> float:
+    """Risk-adjusted units. Mirrors analysis/reports.py for tweet recaps."""
+    if result == "push" or price is None:
+        return 0.0
+    risk = abs(price) / 100.0 if price < 0 else 100.0 / price
+    if result == "won":
+        return 1.0 * multiplier
+    if result == "lost":
+        return -risk * multiplier
+    return 0.0
+
+
+def _units_from_row(row_dict: dict) -> float:
+    """Compute units for a single free-play recap row."""
+    details_raw = row_dict.get("details_json")
+    price = None
+    qualifier_count = 0
+    if details_raw:
+        try:
+            details = json.loads(details_raw) if isinstance(details_raw, str) else details_raw
+            vb = details.get("value_books", [])
+            if vb:
+                price = vb[0].get("price")
+            qualifier_count = details.get("qualifier_count", 0)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    multiplier = 2 if qualifier_count >= 2 else 1
+    return _compute_units(price, row_dict.get("result"), multiplier)
+
+
+def _fmt_units(u: float) -> str:
+    """Format units as `+1.4u` (no brackets — tweet-friendly)."""
+    sign = "+" if u >= 0 else ""
+    return f"{sign}{u:.1f}u"
+
+
+def _month_start_iso(now: datetime | None = None) -> str:
+    """ISO timestamp of the first day of the current UTC month at 00:00:00."""
+    now = now or datetime.now(timezone.utc)
+    return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+
+def _month_label(now: datetime | None = None) -> str:
+    """Short month label like 'May' for the running-total footer."""
+    now = now or datetime.now(timezone.utc)
+    return now.strftime("%b")
+
+
 class XPoster:
     """Posts signal teasers (and occasional free plays) to X."""
 
@@ -282,22 +330,28 @@ class XPoster:
         return
 
     async def post_daily_recap(self) -> None:
-        """Post a daily recap of yesterday's free plays to X, with card image."""
+        """Post a daily recap of yesterday's free plays to X, with card image.
+
+        Always posts — even on zero-free-play days, an accountability footer
+        with month-to-date running totals goes out. Skipping breaks the daily
+        beat that builds the audience habit.
+        """
         if not self._enabled:
             log.info("x_recap_skipped", reason="disabled")
             return
 
         since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
         results = await self._repo.get_free_play_results_resolved_since(since)
-        if not results:
-            log.info("x_recap_skipped", reason="no_free_plays")
-            return
 
-        text = self._format_recap(results)
+        # Month-to-date results for the running footer
+        mtd_since = _month_start_iso()
+        mtd_results = await self._repo.get_free_play_results_resolved_since(mtd_since)
 
-        # Generate card images and attach the square one to the tweet
+        text = self._format_recap(results, mtd_results)
+
+        # Card image only makes sense when there are plays to show
         media_ids = None
-        if self._card_gen is not None:
+        if results and self._card_gen is not None:
             try:
                 paths = await self._card_gen.generate_daily_cards()
                 square = [p for p in paths if "1080x1080" in p]
@@ -309,7 +363,12 @@ class XPoster:
                 log.exception("x_recap_card_error")
 
         self._post_tweet(text, media_ids=media_ids)
-        log.info("x_recap_posted", free_plays=len(results), has_card=media_ids is not None)
+        log.info(
+            "x_recap_posted",
+            free_plays=len(results),
+            mtd_plays=len(mtd_results),
+            has_card=media_ids is not None,
+        )
 
     async def post_weekly_recap(self) -> None:
         """Post a weekly recap of this week's free plays to X."""
@@ -401,19 +460,25 @@ class XPoster:
         tweet = f"{header}\n\n...and {total} more\n\n{footer}" if footer else f"{header}\n\n...and {total} more"
         return tweet
 
-    def _format_recap(self, results: list) -> str:
-        """Format a recap tweet from free play results."""
-        _RESULT_EMOJI = {"won": "\u2705", "lost": "\u274c", "push": "\u21a9\ufe0f"}
-        lines = ["\U0001f4ca Yesterday's Free Plays", ""]
+    def _format_recap(self, results: list, mtd_results: list | None = None) -> str:
+        """Format a recap tweet from free play results.
 
+        Adds per-pick units, daily unit total in the header, and a month-to-date
+        line in the footer if mtd_results is provided. Always returns text even
+        when results is empty (zero-play accountability post).
+        """
+        _RESULT_EMOJI = {"won": "\u2705", "lost": "\u274c", "push": "\u21a9\ufe0f"}
+
+        # Aggregate yesterday's record + units while we have the rows in hand
         wins = losses = 0
+        daily_units = 0.0
+        play_lines: list[str] = []
         for row in results:
             row_dict = dict(row) if not isinstance(row, dict) else row
             result = row_dict.get("result")
             outcome = row_dict["outcome_name"]
             market = row_dict["market_key"]
 
-            # Extract odds, tier, and matchup from details_json
             odds_str = ""
             tier_badge = ""
             matchup_prefix = ""
@@ -428,7 +493,6 @@ class XPoster:
                     q_count = details.get("qualifier_count", 0)
                     if q_count >= 2:
                         tier_badge = " \U0001f3c6"  # Elite
-                    # Build compact matchup prefix for totals: "LAL/BOS"
                     home = details.get("home_team")
                     away = details.get("away_team")
                     if home and away and market == "totals":
@@ -436,7 +500,6 @@ class XPoster:
                 except (json.JSONDecodeError, TypeError):
                     pass
 
-            # For totals, show "LAL/BOS O 215.5" instead of just "Over 215.5"
             if market == "totals":
                 direction = "O" if outcome.lower() == "over" else "U"
                 pick_label = f"{matchup_prefix}{direction}{odds_str}"
@@ -445,25 +508,56 @@ class XPoster:
 
             if result:
                 emoji = _RESULT_EMOJI.get(result, "\u2753")
-                label = result.upper()
-                lines.append(f"{emoji} {pick_label}{tier_badge} \u2014 {label}")
+                u = _units_from_row(row_dict)
+                daily_units += u
+                u_str = f" ({_fmt_units(u)})"
+                play_lines.append(f"{emoji} {pick_label}{tier_badge}{u_str}")
                 if result == "won":
                     wins += 1
                 elif result == "lost":
                     losses += 1
             else:
-                lines.append(f"\u23f3 {pick_label}{tier_badge} \u2014 PENDING")
+                play_lines.append(f"\u23f3 {pick_label}{tier_badge} \u2014 PENDING")
 
-        decided = wins + losses
-        if decided > 0:
-            lines.append("")
-            lines.append(f"Record: {wins}-{losses}")
+        # Build the message
+        out: list[str] = []
+        if results:
+            decided = wins + losses
+            if decided > 0:
+                header = f"\U0001f4ca Yesterday: {wins}-{losses} ({_fmt_units(daily_units)})"
+            else:
+                header = "\U0001f4ca Yesterday's Free Plays"
+            out.append(header)
+            out.append("")
+            # Cap to 6 plays to keep tweet under 280 chars; card image has the rest
+            out.extend(play_lines[:6])
+            if len(play_lines) > 6:
+                out.append(f"+{len(play_lines) - 6} more on card")
+        else:
+            out.append("\U0001f4ca No free plays yesterday \u2014 no qualifying signals fired.")
+
+        # Month-to-date footer
+        if mtd_results:
+            mtd_w = mtd_l = 0
+            mtd_units = 0.0
+            for row in mtd_results:
+                row_dict = dict(row) if not isinstance(row, dict) else row
+                r = row_dict.get("result")
+                if r == "won":
+                    mtd_w += 1
+                elif r == "lost":
+                    mtd_l += 1
+                mtd_units += _units_from_row(row_dict)
+            out.append("")
+            out.append(
+                f"{_month_label()}: {mtd_w}-{mtd_l} ({_fmt_units(mtd_units)})"
+            )
 
         if self._cta_url:
-            lines.append("")
-            lines.append(f"Get all picks in Discord \u2192 {self._cta_url}")
+            out.append("")
+            out.append(f"Get all picks in Discord \u2192 {self._cta_url}")
 
-        return "\n".join(lines)
+        return "\n".join(out)
 
     def _upload_media(self, filepath: str) -> int | None:
         """Upload an image via the v1.1 API. Returns media_id or None."""
