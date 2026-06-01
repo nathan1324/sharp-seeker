@@ -130,6 +130,36 @@ combos/hours yet. Pipeline filters above are NOT bypassed.
 Append a dated entry for every signaling change. Include: what changed, why
 (data snapshot, date range, sample size, win%/units/ROI), and file touched.
 
+### 2026-05-31 — Restore MLB PD quiet hours: 5-6 AM MST overnight bleed
+- **Change:** `SIGNAL_QUIET_HOURS["pinnacle_divergence:baseball_mlb"]` set to
+  `[12, 13]` UTC (was `[]`). Suppresses MLB PD signals during the 5 AM and 6 AM
+  MST hours only. `.env.example` updated; production `.env` requires the same
+  edit. No code change — pipeline already supports the sport-specific key
+  (`pipeline.py:188-191`, overrides not merges with global PD hours).
+- **Why:** May 2026 PD-by-hour breakdown (`scripts/_counterfactual_may.py`,
+  ran 2026-05-31):
+    - 5 AM MST: n=80, 44.7% WR, **-17.56u**
+    - 6 AM MST: n=71, 40.6% WR, **-21.53u**
+    - Combined bleed (n=149): 42.7% WR, **-38.94u** — accounts for the entire
+      MLB PD Totals May loss. Every other MST hour was profitable; suppressing
+      these two flips MLB PD Totals from -1.76u baseline to +37.18u after.
+  Structural explanation: 5-6 AM MST is overnight before Pinnacle has fully
+  shaped the MLB market and US books are slow to react — lots of divergence,
+  mostly noise.
+- **Scope discipline:** chose narrow 5-6 AM suppression rather than promoting a
+  full `signal_best_hours` set for MLB. Best-hours selection from May data would
+  be in-sample (best-hours picked from the same window evaluated against), and
+  the +38u figure for the wider 1-qualifier set carries that overfit risk. The
+  bleed-only suppression is the conservative read: "MLB overnight is structurally
+  bad" doesn't require trusting any in-sample hour ranking.
+- **Server action:** production `.env` must update
+  `SIGNAL_QUIET_HOURS["pinnacle_divergence:baseball_mlb"]` from `[]` to `[12, 13]`.
+- **Review date:** 2026-06-30. Re-run May-style hour breakdown on June data; if
+  5-6 AM bleed persists, keep. If June shows different bleed hours, expand the
+  list. After 2-3 more weeks accumulate, consider promoting positive MLB hours
+  into `SIGNAL_BEST_HOURS["pinnacle_divergence:baseball_mlb"]` with proper
+  forward-window validation.
+
 ### 2026-05-11 — Steam Move @here + @member mention
 - **Change:** added `discord_steam_mention_here` (bool, default `False`) and
   `discord_steam_mention_role_id` (str, default `"944472531631472640"`) to
