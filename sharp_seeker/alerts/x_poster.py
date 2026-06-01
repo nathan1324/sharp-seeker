@@ -322,7 +322,7 @@ class XPoster:
         ]
         if self._cta_url:
             lines.append("")
-            lines.append(f"Get real-time signals in Discord \u2192 {self._cta_url}")
+            lines.append(f"Get all picks \u2192 {self._cta_url}")
         return "\n".join(lines)
 
     async def post_digest(self) -> None:
@@ -555,7 +555,7 @@ class XPoster:
 
         if self._cta_url:
             out.append("")
-            out.append(f"Get all picks in Discord \u2192 {self._cta_url}")
+            out.append(f"Get all picks \u2192 {self._cta_url}")
 
         return "\n".join(out)
 
