@@ -160,6 +160,31 @@ Append a dated entry for every signaling change. Include: what changed, why
   list. After 2-3 more weeks accumulate, consider promoting positive MLB hours
   into `SIGNAL_BEST_HOURS["pinnacle_divergence:baseball_mlb"]` with proper
   forward-window validation.
+### 2026-05-31 — Add NBA PD totals to X free-play whitelist (followup)
+- **Change:** added `pinnacle_divergence:basketball_nba:totals` to
+  `X_FREE_PLAY_COMBOS`. Brings the list to 7 entries.
+- **Why:** the combo was overlooked in the 2026-04-25 whitelist trim because
+  the NBA high-cross-book-hold suppression (2026-04-20 change) hadn't yet
+  proven out — PD NBA totals was mid-tuning. Post-suppression May data
+  validates it as the highest-EV combo in the system: **70% WR, +42.9u on
+  n=57**, with Elite (2+ qualifier) tier at **79% / +53.5u on n=48**. User
+  caught the omission during X-recap deploy review.
+- **Scope discipline:** chose only PD NBA totals rather than also adding PD
+  NBA spreads (+9.5u, n=23) and Steam NBA totals (+11.1u, n=28) — single
+  highest-confidence combo is easier to evaluate during a short 3-week NBA
+  Finals window. Other NBA combos can be added later if data supports.
+- **Timing:** NBA Finals run ~2026-06-05 to 2026-06-22, so this gives ~3
+  weeks of playoff-window volume — short but peak engagement period for
+  launching the new recap format. Combo goes dormant for offseason after
+  the Finals.
+- **Server action:** production `.env` must add
+  `"pinnacle_divergence:basketball_nba:totals"` to `X_FREE_PLAY_COMBOS`.
+  Config-only — no rebuild needed; `docker compose up -d --force-recreate`
+  is sufficient (matches the 2026-05-31 MLB quiet-hours pattern).
+- **Review date:** covered by the 2026-07-01 review already scheduled in the
+  prior X-recap change log entry — audit X free-play unit totals + follower
+  growth then.
+
 ### 2026-05-31 — X free-play recap upgrades + summer-season combo whitelist
 - **Change A (recap format):** `XPoster.post_daily_recap` and `_format_recap`
   in `sharp_seeker/alerts/x_poster.py` now include per-pick units, daily unit
