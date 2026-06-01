@@ -67,6 +67,66 @@ def _parse_best_book(details_json_str: str | None) -> tuple[str, str, str]:
         return "", "", ""
 
 
+def _parse_price_and_qualifier(details_json_str: str | None) -> tuple[float | None, int]:
+    """Extract best-book price and qualifier_count from details_json."""
+    if not details_json_str:
+        return None, 0
+    try:
+        details = json.loads(details_json_str) if isinstance(details_json_str, str) else details_json_str
+    except (json.JSONDecodeError, TypeError):
+        return None, 0
+    vb = details.get("value_books", [])
+    price = vb[0].get("price") if vb else None
+    qualifier_count = details.get("qualifier_count", 0)
+    return price, qualifier_count
+
+
+def _compute_units(price: float | None, result: str, multiplier: int = 1) -> float:
+    """Risk-adjusted units. Negative odds risk to win 1u; positive odds risk
+    100/price to win 1u. Elite (2+ qualifier) plays use multiplier=2."""
+    if result == "push" or price is None:
+        return 0.0
+    risk = abs(price) / 100.0 if price < 0 else 100.0 / price
+    if result == "won":
+        return 1.0 * multiplier
+    if result == "lost":
+        return -risk * multiplier
+    return 0.0
+
+
+def _units_from_signal(sig_dict: dict) -> float:
+    """Compute units for a single resolved signal row."""
+    price, qualifier_count = _parse_price_and_qualifier(sig_dict.get("details_json"))
+    multiplier = 2 if qualifier_count >= 2 else 1
+    return _compute_units(price, sig_dict["result"], multiplier)
+
+
+def _aggregate_units(
+    rows: list,
+) -> tuple[float, dict[str, float], dict[str, float]]:
+    """Walk resolved-signal rows, return (total_units, by_market, by_detector)."""
+    total = 0.0
+    by_market: dict[str, float] = {}
+    by_detector: dict[str, float] = {}
+    for row in rows:
+        d = dict(row)
+        u = _units_from_signal(d)
+        total += u
+        mk = d.get("market_key", "")
+        if mk:
+            by_market[mk] = by_market.get(mk, 0.0) + u
+        st = d.get("signal_type", "")
+        if st:
+            by_detector[st] = by_detector.get(st, 0.0) + u
+    return total, by_market, by_detector
+
+
+def _fmt_units(u: float) -> str:
+    """Format units as `[+5.4u]` or `[-3.2u]`."""
+    sign = "+" if u >= 0 else ""
+    return f"[{sign}{u:.1f}u]"
+
+
 class ReportGenerator:
     def __init__(self, settings: Settings, repo: Repository) -> None:
         self._settings = settings
@@ -158,6 +218,8 @@ class ReportGenerator:
                 sent_only=True,
             )
 
+            total_units, units_by_market, _ = _aggregate_units(resolved)
+
             won = counts.get("won", 0)
             lost = counts.get("lost", 0)
             push = counts.get("push", 0)
@@ -172,7 +234,7 @@ class ReportGenerator:
 
             embed.add_embed_field(
                 name="Record",
-                value=f"**{rate}** ({won}W / {lost}L / {push}P)",
+                value=f"**{rate}** ({won}W / {lost}L / {push}P) **{_fmt_units(total_units)}**",
                 inline=True,
             )
 
@@ -209,7 +271,8 @@ class ReportGenerator:
                     mp = mc.get("push", 0)
                     md = mw + ml
                     mr = f"{mw / md:.0%}" if md else "N/A"
-                    mlines.append(f"**{mname}**: {mr} ({mw}W/{ml}L/{mp}P)")
+                    mu = units_by_market.get(mk, 0.0)
+                    mlines.append(f"**{mname}**: {mr} ({mw}W/{ml}L/{mp}P) {_fmt_units(mu)}")
                 embed.add_embed_field(
                     name="By Market",
                     value="\n".join(mlines),
@@ -269,6 +332,12 @@ class ReportGenerator:
             if not counts:
                 continue
 
+            resolved = await self._repo.get_resolved_signals_since(
+                since, signal_type=signal_type_val, sport_key=sport_key,
+                sent_only=sent_only,
+            )
+            total_units, units_by_market, _ = _aggregate_units(resolved)
+
             won = counts.get("won", 0)
             lost = counts.get("lost", 0)
             push = counts.get("push", 0)
@@ -284,14 +353,10 @@ class ReportGenerator:
 
             embed.add_embed_field(
                 name="Record",
-                value=f"**{rate}** ({won}W / {lost}L / {push}P)",
+                value=f"**{rate}** ({won}W / {lost}L / {push}P) **{_fmt_units(total_units)}**",
                 inline=True,
             )
 
-            resolved = await self._repo.get_resolved_signals_since(
-                since, signal_type=signal_type_val, sport_key=sport_key,
-                sent_only=sent_only,
-            )
             if resolved:
                 lines = []
                 for sig in resolved[:15]:
@@ -323,7 +388,8 @@ class ReportGenerator:
                     mp = mc.get("push", 0)
                     md = mw + ml
                     mr = f"{mw / md:.0%}" if md else "N/A"
-                    mlines.append(f"**{mname}**: {mr} ({mw}W/{ml}L/{mp}P)")
+                    mu = units_by_market.get(mk, 0.0)
+                    mlines.append(f"**{mname}**: {mr} ({mw}W/{ml}L/{mp}P) {_fmt_units(mu)}")
                 embed.add_embed_field(
                     name="By Market",
                     value="\n".join(mlines),
@@ -360,6 +426,10 @@ class ReportGenerator:
         stats = await self._repo.get_performance_stats(since, sent_only=True)
         signal_count = await self._repo.get_signal_count_since(since)
         alert_count = await self._repo.get_alerts_count_since(since)
+        resolved = await self._repo.get_resolved_signals_since(
+            since, sent_only=True,
+        )
+        total_units, units_by_market, units_by_detector = _aggregate_units(resolved)
 
         embed = DiscordEmbed(
             title=title,
@@ -381,7 +451,7 @@ class ReportGenerator:
             overall_rate = f"{total_won / total_decided:.1%}" if total_decided else "N/A"
             embed.add_embed_field(
                 name="Overall Win Rate",
-                value=f"{overall_rate} ({total_won}W / {total_lost}L)",
+                value=f"{overall_rate} ({total_won}W / {total_lost}L) **{_fmt_units(total_units)}**",
                 inline=True,
             )
 
@@ -393,7 +463,8 @@ class ReportGenerator:
                 push = counts.get("push", 0)
                 decided = won + lost
                 rate = f"{won / decided:.0%}" if decided else "N/A"
-                lines.append(f"**{friendly}**: {rate} ({won}W/{lost}L/{push}P)")
+                u = units_by_detector.get(st, 0.0)
+                lines.append(f"**{friendly}**: {rate} ({won}W/{lost}L/{push}P) {_fmt_units(u)}")
 
             embed.add_embed_field(
                 name="By Detector",
@@ -414,7 +485,8 @@ class ReportGenerator:
                     mp = mc.get("push", 0)
                     md = mw + ml
                     mr = f"{mw / md:.0%}" if md else "N/A"
-                    mlines.append(f"**{mname}**: {mr} ({mw}W/{ml}L/{mp}P)")
+                    mu = units_by_market.get(mk, 0.0)
+                    mlines.append(f"**{mname}**: {mr} ({mw}W/{ml}L/{mp}P) {_fmt_units(mu)}")
                 embed.add_embed_field(
                     name="By Market",
                     value="\n".join(mlines),
@@ -460,7 +532,7 @@ class ReportGenerator:
         writer = csv.writer(buf)
         writer.writerow([
             "result", "sport", "matchup", "signal_type", "market",
-            "outcome", "book", "point", "price", "strength", "signal_at",
+            "outcome", "book", "point", "price", "strength", "units", "signal_at",
         ])
 
         for row in rows:
@@ -468,6 +540,7 @@ class ReportGenerator:
             teams = await self._repo.get_event_teams(d["event_id"])
             matchup = f"{teams[1]} vs {teams[0]}" if teams else d["event_id"]
             book, point, price = _parse_best_book(d.get("details_json"))
+            units = _units_from_signal(d)
             writer.writerow([
                 d["result"].upper(),
                 _sport_friendly(d.get("sport_key", "")),
@@ -479,6 +552,7 @@ class ReportGenerator:
                 point,
                 price,
                 d["signal_strength"],
+                f"{units:+.2f}",
                 d.get("signal_at", ""),
             ])
 
