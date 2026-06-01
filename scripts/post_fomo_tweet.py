@@ -21,7 +21,7 @@ DB = os.getenv("DB_PATH", "/app/data/sharp_seeker.db")
 MST = ZoneInfo("America/Phoenix")
 SINCE_STREAK = "2026-03-05"
 SINCE_ALGO = "2026-03-01T00:00:00+00:00"
-CTA = os.getenv("X_CTA_URL", "")
+CTA = os.getenv("X_CTA_URL", "https://whop.com/checkout/plan_e8xrvfpTHqP4d")
 DRY_RUN = os.getenv("DRY_RUN", "0") == "1"
 
 

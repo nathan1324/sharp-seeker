@@ -207,7 +207,7 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `X_CONSUMER_SECRET` | — | X OAuth 1.0a consumer secret (optional) |
 | `X_ACCESS_TOKEN` | — | X OAuth 1.0a access token (optional) |
 | `X_ACCESS_TOKEN_SECRET` | — | X OAuth 1.0a access token secret (optional) |
-| `X_CTA_URL` | `""` | Link in tweet CTA (Discord invite / landing page) |
+| `X_CTA_URL` | `https://whop.com/checkout/plan_e8xrvfpTHqP4d` | Link appended to tweet CTAs (free plays + recaps) |
 | `X_FREE_PLAY_SPORT_CAP` | `3` | Max free plays per sport per day |
 | `X_FREE_PLAY_HOURLY_CAP` | `1` | Max free plays per UTC hour |
 | `X_FREE_PLAY_INTERVAL` | `3` | Post a free play every Nth eligible signal (spreads picks throughout the day) |
@@ -331,7 +331,7 @@ Sharp Seeker can automatically post to X when signals fire. By default, **Pinnac
 🔥 Chiefs @ Eagles — Steam Move
 🔥 Yankees @ Red Sox — Rapid Change
 
-Get real-time signals in Discord → discord.gg/link
+Get all picks → whop.com/checkout/plan_e8xrvfpTHqP4d
 ```
 
 **Free play example (posted immediately):**
@@ -341,7 +341,7 @@ Get real-time signals in Discord → discord.gg/link
 💰 Bet Lakers -3.5 (-110) @ DraftKings
 Pinnacle Divergence • 85% strength
 
-Get real-time signals in Discord → https://discord.gg/your-link
+Get all picks → https://whop.com/checkout/plan_e8xrvfpTHqP4d
 ```
 
 ### Setup
@@ -355,7 +355,7 @@ X_CONSUMER_KEY=your_consumer_key
 X_CONSUMER_SECRET=your_consumer_secret
 X_ACCESS_TOKEN=your_access_token
 X_ACCESS_TOKEN_SECRET=your_access_token_secret
-X_CTA_URL=https://discord.gg/your-invite-link
+X_CTA_URL=https://whop.com/checkout/plan_e8xrvfpTHqP4d
 X_FREE_PLAY_COMBOS=["pinnacle_divergence:basketball_nba:spreads", "pinnacle_divergence:basketball_nba:h2h", "pinnacle_divergence:basketball_ncaab:h2h"]
 ```
 
