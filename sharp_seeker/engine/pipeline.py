@@ -128,12 +128,16 @@ class DetectionPipeline:
                         event_id=event_id,
                     )
 
-        # Filter by minimum strength (tiered: market > sport > type > global)
+        # Filter by minimum strength (tiered: market > sport > type > global).
+        # Arbs are exempt: their strength encodes profit% (strength = profit%/10),
+        # so the generic 0.5 floor would silently drop every arb under ~5% profit.
+        # Arb volume is gated at the detector by arb_min_profit_pct instead.
         overrides = self._settings.signal_strength_overrides
         global_min = self._settings.min_signal_strength
         strong_signals = [
             s for s in all_signals
-            if s.strength > self._get_min_strength(
+            if s.signal_type == SignalType.ARBITRAGE
+            or s.strength > self._get_min_strength(
                 s.signal_type.value, s.market_key, s.sport_key
             )
         ]

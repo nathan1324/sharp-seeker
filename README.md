@@ -35,7 +35,7 @@ Every report embed includes a **downloadable CSV attachment** with the full resu
 
 Raw signals pass through an 8-stage filter before alerting:
 
-1. **Min strength filter** — tiered lookup: market override > sport override > type override > global `MIN_SIGNAL_STRENGTH`
+1. **Min strength filter** — tiered lookup: market override > sport override > type override > global `MIN_SIGNAL_STRENGTH`. **Arbitrage is exempt** (its strength encodes profit%, so the 0.5 floor would require a ~5% arb to pass); arb volume is gated by `ARB_MIN_PROFIT_PCT` at the detector instead.
 2. **Max strength cap** — per-type ceiling via `MAX_SIGNAL_STRENGTH_OVERRIDES` (drops trap signals with suspiciously high strength)
 3. **Blocklist filter** — drops losing type+market combos via `SIGNAL_BLOCKLIST` (supports 2-key `type:market` and 3-key `type:sport:market` patterns)
 4. **Quiet hours filter** — suppresses specific signal types during configured UTC hours via `SIGNAL_QUIET_HOURS`
@@ -188,6 +188,7 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `PD_SPORT_TOTALS_OVERRIDES` | `{}` | Per-sport Pinnacle totals threshold (JSON, overrides global) |
 | `PD_SPORT_SPREAD_OVERRIDES` | `{}` | Per-sport Pinnacle spread threshold (JSON, overrides global) |
 | `EXCHANGE_SHIFT_THRESHOLD` | `0.05` | Implied probability shift (5%) |
+| `ARB_MIN_PROFIT_PCT` | `0.0` | Min guaranteed-profit % for an arb to alert; `0.0` = every arb. Arbs are exempt from `MIN_SIGNAL_STRENGTH`. |
 | `MIN_SIGNAL_STRENGTH` | `0.5` | Min strength to alert (0.0–1.0) |
 | `SIGNAL_STRENGTH_OVERRIDES` | `{}` | Per-signal-type min strength (JSON, overrides global) |
 | `MAX_SIGNAL_STRENGTH_OVERRIDES` | `{}` | Per-signal-type max strength cap — drops trap signals (JSON) |
