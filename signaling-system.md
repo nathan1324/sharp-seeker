@@ -36,8 +36,9 @@ written to `sent_alerts` count as "sent".
 - **Suppressions (in order):**
   - delta >= 2.0 for spreads/totals (noise cap).
   - cross-book hold in `[0, 0.02]` (tight market, no edge).
-  - **NBA totals at cross-book hold >= 0.025** (data-driven; see Change Log
-    2026-04-20).
+  - **NBA/WNBA totals at cross-book hold >= 0.025** (NBA data-driven; see
+    Change Log 2026-04-20. WNBA extended by analogy 2026-05-31, no WNBA data
+    yet — revisit at 2026-06-15).
   - All US books agree (no outlier).
   - Book in `pd_excluded_books` (global) or `pd_sport_excluded_books[sport]`.
 - **Per-sport overrides:** `pd_sport_ml_prob_overrides`,
@@ -130,6 +131,81 @@ combos/hours yet. Pipeline filters above are NOT bypassed.
 Append a dated entry for every signaling change. Include: what changed, why
 (data snapshot, date range, sample size, win%/units/ROI), and file touched.
 
+### 2026-05-31 — Restore MLB PD quiet hours: 5-6 AM MST overnight bleed
+- **Change:** `SIGNAL_QUIET_HOURS["pinnacle_divergence:baseball_mlb"]` set to
+  `[12, 13]` UTC (was `[]`). Suppresses MLB PD signals during the 5 AM and 6 AM
+  MST hours only. `.env.example` updated; production `.env` requires the same
+  edit. No code change — pipeline already supports the sport-specific key
+  (`pipeline.py:188-191`, overrides not merges with global PD hours).
+- **Why:** May 2026 PD-by-hour breakdown (`scripts/_counterfactual_may.py`,
+  ran 2026-05-31):
+    - 5 AM MST: n=80, 44.7% WR, **-17.56u**
+    - 6 AM MST: n=71, 40.6% WR, **-21.53u**
+    - Combined bleed (n=149): 42.7% WR, **-38.94u** — accounts for the entire
+      MLB PD Totals May loss. Every other MST hour was profitable; suppressing
+      these two flips MLB PD Totals from -1.76u baseline to +37.18u after.
+  Structural explanation: 5-6 AM MST is overnight before Pinnacle has fully
+  shaped the MLB market and US books are slow to react — lots of divergence,
+  mostly noise.
+- **Scope discipline:** chose narrow 5-6 AM suppression rather than promoting a
+  full `signal_best_hours` set for MLB. Best-hours selection from May data would
+  be in-sample (best-hours picked from the same window evaluated against), and
+  the +38u figure for the wider 1-qualifier set carries that overfit risk. The
+  bleed-only suppression is the conservative read: "MLB overnight is structurally
+  bad" doesn't require trusting any in-sample hour ranking.
+- **Server action:** production `.env` must update
+  `SIGNAL_QUIET_HOURS["pinnacle_divergence:baseball_mlb"]` from `[]` to `[12, 13]`.
+- **Review date:** 2026-06-30. Re-run May-style hour breakdown on June data; if
+  5-6 AM bleed persists, keep. If June shows different bleed hours, expand the
+  list. After 2-3 more weeks accumulate, consider promoting positive MLB hours
+  into `SIGNAL_BEST_HOURS["pinnacle_divergence:baseball_mlb"]` with proper
+  forward-window validation.
+### 2026-05-31 — Align WNBA PD config with NBA (looser detector + high-hold suppression)
+- **Change:** WNBA PD inherits the same per-sport overrides NBA has, plus the
+  NBA high-cross-book-hold totals suppression:
+    - `SIGNAL_SPORT_STRENGTH_OVERRIDES["pinnacle_divergence:basketball_wnba"] = 0.25`
+      (was missing, falling back to global 0.5).
+    - `PD_SPORT_TOTALS_OVERRIDES["basketball_wnba"] = 0.5` (was missing,
+      falling back to global 1.0 pt).
+    - `PD_SPORT_SPREAD_OVERRIDES["basketball_wnba"] = 0.5` (was missing,
+      falling back to global 1.0 pt).
+    - `pinnacle_divergence.py` high-hold suppression list extended from
+      `"basketball_nba"` to `("basketball_nba", "basketball_wnba")` so WNBA
+      totals at cross-book hold >= 0.025 are dropped, matching NBA.
+  No change to ML threshold (NBA also uses the global 0.03).
+- **Why:** May 2026 audit (`signal_results` query, 2026-05-31): WNBA produced
+  only 8 graded PD signals over ~3 weeks (vs Steam n=88 in the same window).
+  Root cause: WNBA inherits ALL global PD defaults because it had no
+  sport-specific overrides. The 0.5 strength floor was the binding constraint
+  (all 7 WNBA PD spread signals fired at exactly 0.500 strength — piled at the
+  cutoff), with the 1.0 pt totals threshold contributing zero totals signals
+  for the month. Pinnacle WNBA price coverage (21k snapshots) is ~half of FD/DK
+  (~44k each), so there's a structural ceiling on PD volume regardless of
+  filters — but the current settings are tighter than the structural ceiling
+  warrants.
+- **Decision shape:** chose "match NBA + track forward" over a full backtest
+  replay. Replay against the 229k WNBA snapshots was offered (path B) but the
+  user opted for the analogy approach: trust NBA-derived settings as the
+  starting point, watch what happens, adjust at the 2026-06-15 review. The
+  high-hold totals suppression was included by user choice ("yes, extend it")
+  even though the NBA bleed pattern hasn't been confirmed on WNBA — protects
+  against a potential bleed before we see it.
+- **Safety net:** WNBA PD signals continue to route to the dedicated raw-PD
+  Discord channel (`discord_webhook_pinnacle_divergence_wnba`), so the
+  loosened-filter signals don't reach main channels. Noise increase is
+  contained.
+- **Server action:** production `.env` must update three values:
+    - `PD_SPORT_TOTALS_OVERRIDES` to add `"basketball_wnba": 0.5`
+    - `PD_SPORT_SPREAD_OVERRIDES` to add `"basketball_wnba": 0.5`
+    - `SIGNAL_SPORT_STRENGTH_OVERRIDES` to add
+      `"pinnacle_divergence:basketball_wnba": 0.25`
+  Then `docker compose up -d --build` (build needed for the code change in
+  `pinnacle_divergence.py`).
+- **Review date:** 2026-06-15. Re-evaluate WNBA PD volume + outcomes at the
+  scheduled review; if loosened filters produce profitable signals, consider
+  promoting combos/hours (with explicit 2U Elite sizing decision). If volume
+  is still anemic or unprofitable, reconsider whether the structural Pinnacle
+  WNBA coverage ceiling makes WNBA PD a poor fit regardless of filters.
 ### 2026-05-12 — Daily/weekly recaps for raw-PD channels
 - **Change:** `sharp_seeker/analysis/reports.py` now treats the two
   `discord_webhook_pinnacle_divergence_<sport>` webhooks as effective per-sport
