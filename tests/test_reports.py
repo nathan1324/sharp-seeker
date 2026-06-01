@@ -189,7 +189,7 @@ async def test_build_results_csv_content(settings, repo):
     # Header row
     assert rows[0] == [
         "result", "sport", "matchup", "signal_type", "market",
-        "outcome", "book", "point", "price", "strength", "signal_at",
+        "outcome", "book", "point", "price", "strength", "units", "signal_at",
     ]
     # Data row
     assert rows[1][0] == "WON"
@@ -199,6 +199,8 @@ async def test_build_results_csv_content(settings, repo):
     assert rows[1][6] == "fanduel"
     assert rows[1][7] == "-3.5"
     assert rows[1][8] == "-110"
+    # Units: a won bet at -110 returns +1.00u (no Elite multiplier; qualifier_count=0)
+    assert rows[1][10] == "+1.00"
 
 
 @pytest.mark.asyncio
@@ -355,3 +357,100 @@ async def test_raw_pd_mlb_excluded_from_main_pd_per_type_report(repo):
     assert any(
         ex and "baseball_mlb" in ex for ex in captured_excludes
     ), f"baseball_mlb was not excluded from any per-type stats query; captured: {captured_excludes}"
+
+
+# ── Units tests ────────────────────────────────────────────────
+
+
+def test_compute_units_won_at_negative_odds():
+    """A won bet at -110 returns +1.0u (risk 1.10 to win 1.00)."""
+    from sharp_seeker.analysis.reports import _compute_units
+    assert _compute_units(-110, "won") == 1.0
+    assert _compute_units(-110, "won", multiplier=2) == 2.0
+
+
+def test_compute_units_lost_at_negative_odds():
+    """A lost bet at -150 returns -1.5u (risked 1.50 to win 1.00)."""
+    from sharp_seeker.analysis.reports import _compute_units
+    assert _compute_units(-150, "lost") == pytest.approx(-1.5)
+
+
+def test_compute_units_won_at_positive_odds():
+    """A won bet at +150 returns +1.0u (risked 0.667 to win 1.00)."""
+    from sharp_seeker.analysis.reports import _compute_units
+    assert _compute_units(150, "won") == 1.0
+
+
+def test_compute_units_lost_at_positive_odds():
+    """A lost bet at +200 returns -0.5u (risked 0.50 to win 1.00)."""
+    from sharp_seeker.analysis.reports import _compute_units
+    assert _compute_units(200, "lost") == pytest.approx(-0.5)
+
+
+def test_compute_units_push():
+    """A push returns 0u regardless of odds or multiplier."""
+    from sharp_seeker.analysis.reports import _compute_units
+    assert _compute_units(-110, "push") == 0.0
+    assert _compute_units(-110, "push", multiplier=2) == 0.0
+
+
+def test_compute_units_missing_price():
+    """No price information returns 0u (can't risk-adjust without odds)."""
+    from sharp_seeker.analysis.reports import _compute_units
+    assert _compute_units(None, "won") == 0.0
+    assert _compute_units(None, "lost") == 0.0
+
+
+def test_units_from_signal_applies_elite_multiplier():
+    """qualifier_count >= 2 triggers 2x sizing."""
+    from sharp_seeker.analysis.reports import _units_from_signal
+    elite_sig = {
+        "result": "won",
+        "details_json": '{"qualifier_count": 2, "value_books": [{"price": -110}]}',
+    }
+    assert _units_from_signal(elite_sig) == 2.0
+
+    top_perf_sig = {
+        "result": "won",
+        "details_json": '{"qualifier_count": 1, "value_books": [{"price": -110}]}',
+    }
+    assert _units_from_signal(top_perf_sig) == 1.0
+
+
+def test_fmt_units_signs_and_decimals():
+    """Format produces signed value with one decimal and 'u' suffix."""
+    from sharp_seeker.analysis.reports import _fmt_units
+    assert _fmt_units(5.4) == "[+5.4u]"
+    assert _fmt_units(-3.2) == "[-3.2u]"
+    assert _fmt_units(0) == "[+0.0u]"
+
+
+@pytest.mark.asyncio
+async def test_per_type_report_embed_includes_units(settings, repo):
+    """The Record field on a per-type report embed should include unit total."""
+    # qualifier_count=1 (Top Perf) so the signal isn't filtered by sent_only=True
+    details = json.dumps({
+        "qualifier_count": 1,
+        "value_books": [{"bookmaker": "fanduel", "point": -3.5, "price": -110}],
+    })
+    await _seed_resolved_signal(repo, details_json=details)
+
+    gen = ReportGenerator(settings, repo)
+
+    captured_embeds = []
+
+    def capture_send(url, embed, *args, **kwargs):
+        captured_embeds.append(embed)
+
+    with patch.object(ReportGenerator, "_send_webhook", staticmethod(capture_send)):
+        await gen._send_per_type_reports("Daily", "2025-01-01T00:00:00+00:00")
+
+    assert captured_embeds, "no embeds were sent"
+    record_fields = [
+        f for embed in captured_embeds
+        for f in embed.fields
+        if f.get("name") == "Record"
+    ]
+    assert record_fields, "no Record field on any embed"
+    # One won bet at -110 = +1.0u
+    assert "[+1.0u]" in record_fields[0]["value"]
