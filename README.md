@@ -200,7 +200,8 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `DISCORD_WEBHOOK_PINNACLE_DIVERGENCE_WNBA` | — | Dedicated raw-data channel for WNBA PD; bypasses qualifier gate when set |
 | `DISCORD_WEBHOOK_PINNACLE_DIVERGENCE_MLB` | — | Dedicated raw-data channel for MLB PD; bypasses qualifier gate when set |
 | `DISCORD_STEAM_MENTION_HERE` | `false` | When true, Steam Move alerts ping `@here` + the `@member` role. Steam-only. |
-| `DISCORD_STEAM_MENTION_ROLE_ID` | `944472531631472640` | Role ID mentioned alongside `@here` on Steam alerts. |
+| `DISCORD_STEAM_MENTION_ROLE_ID` | `944472531631472640` | Role ID mentioned alongside `@here` on Steam/Arb alerts. |
+| `DISCORD_ARB_MENTION_HERE` | `true` | When true, every Arbitrage alert pings `@here` + the `@member` role. On by default (arbs are rare/guaranteed-profit). |
 | `CARD_OUTPUT_DIR` | `data/cards` | Directory for daily results card PNGs |
 | `ALERT_COOLDOWN_MINUTES` | `60` | Dedup cooldown per signal |
 | `X_CONSUMER_KEY` | — | X OAuth 1.0a consumer key (optional) |

@@ -48,9 +48,13 @@ class Settings(BaseSettings):
     # Off by default so merging the code can't accidentally start spamming a
     # production channel — flip via env var when ready.
     discord_steam_mention_here: bool = False
-    # Role ID to mention alongside @here on Steam alerts. Hardcoded default is
-    # the @member role in the Sandbox Sports server.
+    # Role ID to mention alongside @here on Steam/Arb alerts. Hardcoded default
+    # is the @member role in the Sandbox Sports server (shared by both pings).
     discord_steam_mention_role_id: str = "944472531631472640"
+    # When True, every Arbitrage alert prepends `@here <@&MEMBER_ROLE_ID>` too.
+    # On by default: arbs are rare and guaranteed-profit, so they always ping.
+    # Reuses discord_steam_mention_role_id for the role. Set False to silence.
+    discord_arb_mention_here: bool = True
 
     # Per-sport+signal webhook overrides (JSON object in .env)
     # Keys: "signal_type:sport_key", values: webhook URL

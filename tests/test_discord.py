@@ -515,6 +515,74 @@ def test_steam_mention_does_not_apply_to_other_signal_types(mock_webhook_cls):
     assert "allowed_mentions" not in kwargs
 
 
+def _make_arb_signal() -> Signal:
+    return Signal(
+        signal_type=SignalType.ARBITRAGE,
+        event_id="evt_arb",
+        sport_key="basketball_nba",
+        home_team="Lakers",
+        away_team="Celtics",
+        market_key="h2h",
+        outcome_name="Lakers",
+        strength=0.5,
+        description="Arb found",
+        commence_time="2099-01-15T00:00:00Z",
+        details={
+            "cross_book_hold": -0.02,
+            "profit_pct": 2.0,
+            "side_a": {"outcome": "Lakers", "bookmaker": "draftkings", "price": 115, "point": None},
+            "side_b": {"outcome": "Celtics", "bookmaker": "fanduel", "price": 115, "point": None},
+        },
+    )
+
+
+@patch("sharp_seeker.alerts.discord.DiscordWebhook")
+def test_arb_mention_on_by_default(mock_webhook_cls):
+    """Every Arbitrage alert pings @here + role out of the box."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_instance = MagicMock()
+    mock_instance.execute.return_value = mock_resp
+    mock_webhook_cls.return_value = mock_instance
+
+    settings = _make_settings()  # discord_arb_mention_here defaults to True
+    alerter = DiscordAlerter(settings, repo=MagicMock())
+    sig = _make_arb_signal()
+    sig.details["qualifier_count"] = 0
+    sig.details["qualifier_tags"] = []
+
+    alerter._send_embed(sig)
+
+    kwargs = mock_webhook_cls.call_args.kwargs
+    assert kwargs["content"] == "@here <@&944472531631472640>"
+    assert kwargs["allowed_mentions"] == {
+        "parse": ["everyone"],
+        "roles": ["944472531631472640"],
+    }
+
+
+@patch("sharp_seeker.alerts.discord.DiscordWebhook")
+def test_arb_mention_can_be_disabled(mock_webhook_cls):
+    """Arb ping can be silenced via discord_arb_mention_here=False."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_instance = MagicMock()
+    mock_instance.execute.return_value = mock_resp
+    mock_webhook_cls.return_value = mock_instance
+
+    settings = _make_settings(discord_arb_mention_here=False)
+    alerter = DiscordAlerter(settings, repo=MagicMock())
+    sig = _make_arb_signal()
+    sig.details["qualifier_count"] = 0
+    sig.details["qualifier_tags"] = []
+
+    alerter._send_embed(sig)
+
+    kwargs = mock_webhook_cls.call_args.kwargs
+    assert "content" not in kwargs
+    assert "allowed_mentions" not in kwargs
+
+
 @patch("sharp_seeker.alerts.discord.DiscordWebhook")
 def test_cross_book_hold_display(mock_webhook_cls):
     """Cross-book hold should be displayed in the embed description."""
