@@ -147,15 +147,24 @@ class DiscordAlerter:
             self._pd_raw_webhooks["baseball_mlb"] = (
                 settings.discord_webhook_pinnacle_divergence_mlb
             )
-        # Steam Move @here + role mention toggle
+        # @here + role mention toggles (shared role ID)
         self._steam_mention_here: bool = settings.discord_steam_mention_here
+        self._arb_mention_here: bool = settings.discord_arb_mention_here
         self._steam_mention_role_id: str = settings.discord_steam_mention_role_id
 
-    def _steam_mention_payload(self, sig: Signal) -> tuple[str | None, dict | None]:
-        """Return (content, allowed_mentions) for a Steam mention, or (None, None)."""
-        if not self._steam_mention_here:
-            return None, None
-        if sig.signal_type != SignalType.STEAM_MOVE:
+    def _mention_payload(self, sig: Signal) -> tuple[str | None, dict | None]:
+        """Return (content, allowed_mentions) for an @here ping, or (None, None).
+
+        Fires for Steam Move (when enabled) and every Arbitrage signal (when
+        enabled); both share the same role ID. Other signal types never ping.
+        """
+        if sig.signal_type == SignalType.STEAM_MOVE:
+            enabled = self._steam_mention_here
+        elif sig.signal_type == SignalType.ARBITRAGE:
+            enabled = self._arb_mention_here
+        else:
+            enabled = False
+        if not enabled:
             return None, None
         role_id = self._steam_mention_role_id
         content = f"@here <@&{role_id}>" if role_id else "@here"
@@ -268,7 +277,7 @@ class DiscordAlerter:
                 override_key,
                 self._webhook_urls.get(sig.signal_type, self._default_url),
             )
-        content, allowed_mentions = self._steam_mention_payload(sig)
+        content, allowed_mentions = self._mention_payload(sig)
         kwargs: dict = {"url": url}
         if content is not None:
             kwargs["content"] = content

@@ -131,6 +131,23 @@ combos/hours yet. Pipeline filters above are NOT bypassed.
 Append a dated entry for every signaling change. Include: what changed, why
 (data snapshot, date range, sample size, win%/units/ROI), and file touched.
 
+### 2026-06-01 — Arbitrage @here + @member mention (always on)
+- **Change:** added `discord_arb_mention_here` (bool, default `True`) to
+  `sharp_seeker/config.py`. Generalized `DiscordAlerter._steam_mention_payload`
+  → `_mention_payload` (`sharp_seeker/alerts/discord.py`): it now fires the
+  `"@here <@&MEMBER_ROLE_ID>"` ping (with `allowed_mentions={"parse":
+  ["everyone"], "roles": [role_id]}`) for **Steam Move** (when
+  `discord_steam_mention_here` is on) and **every Arbitrage** signal (when
+  `discord_arb_mention_here` is on). Arb reuses `discord_steam_mention_role_id`
+  for the role. Other signal types still never ping.
+- **Why:** arbitrage is rare and guaranteed-profit, so every arb is worth
+  pulling members' attention to — unlike Steam (gated off by default to bound
+  noise), arb pings default ON so they fire immediately on deploy. Requested by
+  the operator.
+- **Default on:** no server `.env` change needed to enable. Set
+  `DISCORD_ARB_MENTION_HERE=false` to silence. Note arb already bypasses the
+  zero-qualifier suppression gate, so it always reaches `_send_embed`.
+
 ### 2026-05-31 — Restore MLB PD quiet hours: 5-6 AM MST overnight bleed
 - **Change:** `SIGNAL_QUIET_HOURS["pinnacle_divergence:baseball_mlb"]` set to
   `[12, 13]` UTC (was `[]`). Suppresses MLB PD signals during the 5 AM and 6 AM
