@@ -15,6 +15,7 @@ Usage (server):
 Optional args: [hours_back] [db_path]   e.g. ... inspect_free_plays.py 48
 """
 
+import json
 import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
@@ -46,6 +47,9 @@ def main():
     # INNER JOIN would double-count this play once it grades).
     sql = """
         SELECT sa.event_id, sa.alert_type, sa.market_key, sa.outcome_name, sa.sent_at,
+          sa.details_json,
+          (SELECT o.away_team || ' @ ' || o.home_team FROM odds_snapshots o
+             WHERE o.event_id = sa.event_id LIMIT 1) AS matchup,
           (SELECT MAX(o.commence_time) FROM odds_snapshots o
              WHERE o.event_id = sa.event_id) AS commence_time,
           (SELECT COUNT(*) FROM signal_results sr
@@ -75,11 +79,20 @@ def main():
     in_recap = 0
     wins = losses = pushes = 0
     fanout = 0
-    print("  {:<14} {:<8} {:<6} {:<7} {:<17} {:<17} {:<5} {:<6} {}".format(
-        "event", "type", "market", "outcome", "sent_at", "commence", "sr#", "result", "recap status"))
-    print("  " + "-" * 118)
+    print("  {:<24} {:<7} {:<6} {:>5} {:<12} {:<12} {:<4} {:<6} {}".format(
+        "matchup", "outcome", "market", "line", "sent", "commence", "sr#", "result", "recap status"))
+    print("  " + "-" * 120)
     for r in rows:
         sr_count = r["sr_count"] or 0
+        try:
+            det = json.loads(r["details_json"]) if r["details_json"] else {}
+        except (ValueError, TypeError):
+            det = {}
+        line = det.get("us_value")
+        if line is None:
+            vbs = det.get("value_books") or []
+            if vbs and isinstance(vbs[0], dict):
+                line = vbs[0].get("point")
         result = r["result"]
         resolved_at = r["resolved_at"]
         commence = _parse(r["commence_time"])
@@ -108,11 +121,10 @@ def main():
         else:
             why = "UNGRADED, commence_time unknown"
 
-        print("  {:<14} {:<8} {:<6} {:<7} {:<17} {:<17} {:<5} {:<6} {}".format(
-            (r["event_id"] or "")[:14], (r["alert_type"] or "")[:8],
-            (r["market_key"] or "")[:6], (r["outcome_name"] or "")[:7],
-            str(r["sent_at"])[5:16], str(r["commence_time"])[5:16],
-            sr_count, str(result), why))
+        print("  {:<24} {:<7} {:<6} {:>5} {:<12} {:<12} {:<4} {:<6} {}".format(
+            (r["matchup"] or r["event_id"] or "")[:24], (r["outcome_name"] or "")[:7],
+            (r["market_key"] or "")[:6], str(line), str(r["sent_at"])[5:16],
+            str(r["commence_time"])[5:16], sr_count, str(result), why))
 
     print(f"\n  Free-play alerts in window: {len(rows)}   |   Survive recap join+window: {in_recap}")
     print(f"  Recap record would read: {wins}-{losses}" + (f" ({pushes} push)" if pushes else ""))
