@@ -504,6 +504,120 @@ async def test_no_hold_when_other_side_missing(settings, repo):
     assert signals[0].details["hold_boost"] == 0.0
 
 
+# ── Sharp-line direction annotation (measurement only) ────────────
+
+
+@pytest.mark.asyncio
+async def test_h2h_direction_toward_when_pinnacle_shortens(settings, repo):
+    """When Pinnacle shortened the flagged side over the window → 'toward'."""
+    event = "evt_dir_toward"
+    t1 = "2025-01-15T12:00:00+00:00"
+    t2 = "2025-01-15T12:20:00+00:00"  # within 30-min window
+
+    snapshots = [
+        # Pinnacle Lakers shortens: -120 (0.5455) → -150 (0.60) = more likely
+        _snap(event, "pinnacle", "h2h", "Lakers", -120, None, t1),
+        _snap(event, "pinnacle", "h2h", "Lakers", -150, None, t2),
+        _snap(event, "betmgm", "h2h", "Lakers", -110, None, t2),  # value at t2 → fires
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t2)
+
+    assert len(signals) == 1
+    assert signals[0].details["pinnacle_recent_direction"] == "toward"
+    assert signals[0].details["pinnacle_recent_delta"] > 0
+
+
+@pytest.mark.asyncio
+async def test_h2h_direction_against_when_pinnacle_lengthens(settings, repo):
+    """When Pinnacle lengthened the flagged side over the window → 'against'."""
+    event = "evt_dir_against"
+    t1 = "2025-01-15T12:00:00+00:00"
+    t2 = "2025-01-15T12:20:00+00:00"
+
+    snapshots = [
+        # Pinnacle Lakers lengthens: -180 (0.6429) → -150 (0.60) = less likely
+        _snap(event, "pinnacle", "h2h", "Lakers", -180, None, t1),
+        _snap(event, "pinnacle", "h2h", "Lakers", -150, None, t2),
+        _snap(event, "betmgm", "h2h", "Lakers", -110, None, t2),  # value at t2 → fires
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t2)
+
+    assert len(signals) == 1
+    assert signals[0].details["pinnacle_recent_direction"] == "against"
+    assert signals[0].details["pinnacle_recent_delta"] < 0
+
+
+@pytest.mark.asyncio
+async def test_direction_unknown_with_single_snapshot(settings, repo):
+    """One snapshot in the window → not enough history → 'unknown'."""
+    event = "evt_dir_unknown"
+    t = "2025-01-15T12:00:00+00:00"
+
+    snapshots = [
+        _snap(event, "pinnacle", "h2h", "Lakers", -150, None, t),
+        _snap(event, "betmgm", "h2h", "Lakers", -110, None, t),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 1
+    assert signals[0].details["pinnacle_recent_direction"] == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_spread_direction_toward_when_point_drops(settings, repo):
+    """Spread: Pinnacle point lowering for the side → 'toward'."""
+    event = "evt_dir_spread_toward"
+    t1 = "2025-01-15T12:00:00+00:00"
+    t2 = "2025-01-15T12:20:00+00:00"
+
+    snapshots = [
+        # Pinnacle Lakers point drops -2.0 → -3.0 (more favored / backed)
+        _snap(event, "pinnacle", "spreads", "Lakers", -110, -2.0, t1),
+        _snap(event, "pinnacle", "spreads", "Lakers", -110, -3.0, t2),
+        _snap(event, "draftkings", "spreads", "Lakers", -110, -1.5, t2),  # value → fires
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t2)
+
+    assert len(signals) == 1
+    assert signals[0].details["pinnacle_recent_direction"] == "toward"
+    assert signals[0].details["pinnacle_recent_delta"] < 0
+
+
+@pytest.mark.asyncio
+async def test_spread_direction_against_when_point_rises(settings, repo):
+    """Spread: Pinnacle point rising for the side (more points = faded) → 'against'."""
+    event = "evt_dir_spread_against"
+    t1 = "2025-01-15T12:00:00+00:00"
+    t2 = "2025-01-15T12:20:00+00:00"
+
+    snapshots = [
+        # Pinnacle Lakers point rises -4.0 → -3.0 (less favored / faded)
+        _snap(event, "pinnacle", "spreads", "Lakers", -110, -4.0, t1),
+        _snap(event, "pinnacle", "spreads", "Lakers", -110, -3.0, t2),
+        _snap(event, "draftkings", "spreads", "Lakers", -110, -1.5, t2),  # value → fires
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t2)
+
+    assert len(signals) == 1
+    assert signals[0].details["pinnacle_recent_direction"] == "against"
+    assert signals[0].details["pinnacle_recent_delta"] > 0
+
+
 @pytest.mark.asyncio
 async def test_hold_works_for_h2h(settings, repo):
     """Hold should be computed for moneyline (h2h) markets too."""
