@@ -27,22 +27,38 @@ recap_since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
 list_since = (datetime.now(timezone.utc) - timedelta(hours=HOURS_BACK)).isoformat()
 
 
+def _parse(ts):
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
 def main():
     db = sqlite3.connect(DB_PATH)
     db.row_factory = sqlite3.Row
+    now = datetime.now(timezone.utc)
 
-    # All free plays sent in the wider window, with their (possibly absent)
-    # graded result via the SAME join keys the recap uses.
+    # One row per free-play alert (no signal_results fan-out), with commence_time
+    # and the count of matching signal_results rows (sr_count > 1 = the recap's
+    # INNER JOIN would double-count this play once it grades).
     sql = """
-        SELECT sa.event_id, sa.alert_type, sa.market_key, sa.outcome_name,
-               sa.sent_at, sr.result, sr.resolved_at, sr.sport_key,
-               CASE WHEN sr.event_id IS NULL THEN 0 ELSE 1 END AS matched
+        SELECT sa.event_id, sa.alert_type, sa.market_key, sa.outcome_name, sa.sent_at,
+          (SELECT MAX(o.commence_time) FROM odds_snapshots o
+             WHERE o.event_id = sa.event_id) AS commence_time,
+          (SELECT COUNT(*) FROM signal_results sr
+             WHERE sr.event_id = sa.event_id AND sr.signal_type = sa.alert_type
+               AND sr.market_key = sa.market_key AND sr.outcome_name = sa.outcome_name) AS sr_count,
+          (SELECT sr.result FROM signal_results sr
+             WHERE sr.event_id = sa.event_id AND sr.signal_type = sa.alert_type
+               AND sr.market_key = sa.market_key AND sr.outcome_name = sa.outcome_name
+               AND sr.result IS NOT NULL LIMIT 1) AS result,
+          (SELECT MAX(sr.resolved_at) FROM signal_results sr
+             WHERE sr.event_id = sa.event_id AND sr.signal_type = sa.alert_type
+               AND sr.market_key = sa.market_key AND sr.outcome_name = sa.outcome_name) AS resolved_at
         FROM sent_alerts sa
-        LEFT JOIN signal_results sr
-          ON sa.event_id = sr.event_id
-         AND sa.alert_type = sr.signal_type
-         AND sa.market_key = sr.market_key
-         AND sa.outcome_name = sr.outcome_name
         WHERE sa.is_free_play = 1 AND sa.sent_at >= ?
         ORDER BY sa.sent_at ASC
     """
@@ -50,7 +66,7 @@ def main():
     db.close()
 
     print(f"Free plays in last {HOURS_BACK}h - DB: {DB_PATH}")
-    print(f"Recap window (resolved_at >=): {recap_since}\n")
+    print(f"Now: {now.isoformat()}    Recap window (resolved_at >=): {recap_since}\n")
 
     if not rows:
         print("No free plays in window.")
@@ -58,15 +74,16 @@ def main():
 
     in_recap = 0
     wins = losses = pushes = 0
-    print("  {:<22} {:<8} {:<7} {:<22} {:<8} {:<26} {}".format(
-        "event_id", "type", "market", "outcome", "result", "resolved_at", "recap?"))
-    print("  " + "-" * 110)
+    fanout = 0
+    print("  {:<14} {:<8} {:<6} {:<7} {:<17} {:<17} {:<5} {:<6} {}".format(
+        "event", "type", "market", "outcome", "sent_at", "commence", "sr#", "result", "recap status"))
+    print("  " + "-" * 118)
     for r in rows:
-        matched = r["matched"] == 1
+        sr_count = r["sr_count"] or 0
         result = r["result"]
         resolved_at = r["resolved_at"]
-        # Replicate the recap's INNER JOIN + resolved_at >= recap_since
-        survives = bool(matched and resolved_at is not None and resolved_at >= recap_since)
+        commence = _parse(r["commence_time"])
+        survives = bool(sr_count >= 1 and resolved_at is not None and resolved_at >= recap_since)
         if survives:
             in_recap += 1
             if result == "won":
@@ -75,27 +92,36 @@ def main():
                 losses += 1
             elif result == "push":
                 pushes += 1
+        if sr_count > 1:
+            fanout += 1
 
-        if not matched:
-            why = "NO signal_results match"
-        elif resolved_at is None:
-            why = "UNGRADED (resolved_at NULL)"
-        elif resolved_at < recap_since:
-            why = "graded before window"
+        if sr_count == 0:
+            why = "NO signal_results match (dropped even after grading)"
+        elif resolved_at is not None and resolved_at >= recap_since:
+            why = "IN RECAP" + ("  [DOUBLE-COUNT: sr#>1]" if sr_count > 1 else "")
+        elif resolved_at is not None:
+            why = "graded before 24h window"
+        elif commence is not None and commence > now:
+            why = "not yet played (game in future) - legit ungraded"
+        elif commence is not None:
+            why = ">>> GAME FINISHED but UNGRADED - grading gap"
         else:
-            why = "IN RECAP"
+            why = "UNGRADED, commence_time unknown"
 
-        ev = (r["event_id"] or "")[:22]
-        oc = (r["outcome_name"] or "")[:22]
-        print("  {:<22} {:<8} {:<7} {:<22} {:<8} {:<26} {}".format(
-            ev, (r["alert_type"] or "")[:8], (r["market_key"] or "")[:7],
-            oc, str(result), str(resolved_at)[:26], why))
+        print("  {:<14} {:<8} {:<6} {:<7} {:<17} {:<17} {:<5} {:<6} {}".format(
+            (r["event_id"] or "")[:14], (r["alert_type"] or "")[:8],
+            (r["market_key"] or "")[:6], (r["outcome_name"] or "")[:7],
+            str(r["sent_at"])[5:16], str(r["commence_time"])[5:16],
+            sr_count, str(result), why))
 
-    print(f"\n  Sent in window: {len(rows)}   |   Survive recap join+window: {in_recap}")
+    print(f"\n  Free-play alerts in window: {len(rows)}   |   Survive recap join+window: {in_recap}")
     print(f"  Recap record would read: {wins}-{losses}" + (f" ({pushes} push)" if pushes else ""))
     dropped = len(rows) - in_recap
     if dropped:
-        print(f"\n  >>> {dropped} free play(s) sent but NOT in the recap — see 'recap?' column above.")
+        print(f"  {dropped} sent but NOT in recap — see 'recap status' column.")
+    if fanout:
+        print(f"  WARNING: {fanout} play(s) match >1 signal_results row — recap INNER JOIN "
+              f"will COUNT THEM MULTIPLE TIMES once graded.")
 
 
 if __name__ == "__main__":
