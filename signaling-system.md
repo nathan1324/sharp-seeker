@@ -44,6 +44,12 @@ written to `sent_alerts` count as "sent".
 - **Per-sport overrides:** `pd_sport_ml_prob_overrides`,
   `pd_sport_totals_overrides`, `pd_sport_spread_overrides`,
   `pd_sport_excluded_books`.
+- **Sharp-direction annotation (h2h + spreads, measurement only):** each signal
+  carries `pinnacle_recent_direction` (`toward` / `against` / `flat` /
+  `unknown`) + `pinnacle_recent_delta`, computed from Pinnacle's move over the
+  last `steam_window_minutes`. `toward` = sharp line moving to favor the flagged
+  side (confirms value); `against` = sharp line fading it (possible falling
+  knife). Does NOT affect firing or strength yet — see Change Log 2026-06-01.
 
 ### Reverse Line — `sharp_seeker/engine/reverse_line.py`
 - **Triggers when:** US consensus (2+ movers) and Pinnacle move in opposite
@@ -136,6 +142,29 @@ combos/hours yet. Pipeline filters above are NOT bypassed.
 
 Append a dated entry for every signaling change. Include: what changed, why
 (data snapshot, date range, sample size, win%/units/ROI), and file touched.
+
+### 2026-06-01 — PD sharp-direction annotation (measurement only, h2h + spreads)
+- **Change:** `PinnacleDivergenceDetector` (`sharp_seeker/engine/
+  pinnacle_divergence.py`) now tags every h2h/spread signal with
+  `pinnacle_recent_direction` (`toward`/`against`/`flat`/`unknown`),
+  `pinnacle_recent_delta`, and `pinnacle_recent_window_min`. Direction is
+  computed from Pinnacle's own line move over the last `steam_window_minutes`
+  (new `_pinnacle_recent_direction`, one extra `get_snapshots_since` query per
+  event — local DB only, no API credits). `toward` = sharp line shortening the
+  flagged h2h side / lowering its spread point (sharp money backing it →
+  confirms our value); `against` = lengthening / raising the point (sharp money
+  fading it → our "value" may be catching a move mid-flight).
+- **Why:** PD is a pure snapshot comparison with no line-movement awareness, so
+  it can't tell "soft book lagging behind steam = beat the close" (good) from
+  "we're flagging the side the market is turning against" (trap). Operator raised
+  this for moneylines/spreads specifically.
+- **NO behavior change:** firing, strength, qualifier gate, and pipeline filters
+  are all untouched. The fields ride inside `signal.details` → `details_json` in
+  both `signal_results` (all detected) and `sent_alerts` (posted), so the grader
+  resolves win/loss against them with no schema migration.
+- **Next step:** after ~1–2 weeks, run `scripts/pd_direction_analysis.py` (buckets
+  resolved PD h2h/spreads by direction → win%/units/ROI). If `against`
+  demonstrably underperforms, add a suppression then. Until then, measure only.
 
 ### 2026-06-01 — Exempt arbs from min-strength floor + add profit floor
 - **Change:** (1) the pipeline min-strength filter (`sharp_seeker/engine/

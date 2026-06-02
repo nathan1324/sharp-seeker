@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
+from datetime import datetime, timedelta
+
 import structlog
 
 from sharp_seeker.config import Settings
@@ -84,6 +87,74 @@ class PinnacleDivergenceDetector(BaseDetector):
         self._settings = settings
         self._repo = repo
 
+    async def _pinnacle_recent_direction(
+        self, event_id: str, fetched_at: str
+    ) -> dict[tuple[str, str], dict]:
+        """How has Pinnacle's line moved over the recent window, per side?
+
+        MEASUREMENT ONLY — does not affect what fires or its strength. We tag
+        each PD h2h/spread signal with whether the sharp line was moving TOWARD
+        the flagged side (shortening h2h price / lowering its spread point →
+        sharp money backing it, our value confirmed) or AGAINST it (lengthening
+        → sharp money fading it, so our "value" may be a falling knife). Lets us
+        later test whether "against" signals underperform before suppressing.
+
+        Returns {(market_key, outcome_name): {"direction", "delta"}} for h2h and
+        spreads. direction ∈ {"toward", "against", "flat", "unknown"}.
+        """
+        try:
+            window_start = (
+                datetime.fromisoformat(fetched_at)
+                - timedelta(minutes=self._settings.steam_window_minutes)
+            ).isoformat()
+        except (ValueError, TypeError):
+            return {}
+
+        snaps = await self._repo.get_snapshots_since(event_id, window_start)
+        series: dict[tuple[str, str], list[tuple[str, float, float | None]]] = defaultdict(list)
+        for _snap in snaps:
+            row = dict(_snap)
+            if row["bookmaker_key"] != PINNACLE_KEY:
+                continue
+            if row["market_key"] not in ("h2h", "spreads"):
+                continue
+            series[(row["market_key"], row["outcome_name"])].append(
+                (row["fetched_at"], row["price"], row["point"])
+            )
+
+        out: dict[tuple[str, str], dict] = {}
+        for (market_key, outcome_name), entries in series.items():
+            if len(entries) < 2:
+                out[(market_key, outcome_name)] = {"direction": "unknown", "delta": 0.0}
+                continue
+            entries.sort(key=lambda e: e[0])
+            first, last = entries[0], entries[-1]
+            if market_key == "h2h":
+                # Implied-prob change: up = side became more likely = shortened.
+                delta = (
+                    american_to_implied_prob(last[1])
+                    - american_to_implied_prob(first[1])
+                )
+                if abs(delta) < 0.005:
+                    direction = "flat"
+                else:
+                    direction = "toward" if delta > 0 else "against"
+            else:  # spreads
+                if first[2] is None or last[2] is None:
+                    out[(market_key, outcome_name)] = {"direction": "unknown", "delta": 0.0}
+                    continue
+                # Lower point = side more favored by the sharp market = backed.
+                delta = last[2] - first[2]
+                if delta == 0:
+                    direction = "flat"
+                else:
+                    direction = "toward" if delta < 0 else "against"
+            out[(market_key, outcome_name)] = {
+                "direction": direction,
+                "delta": round(delta, 4),
+            }
+        return out
+
     async def detect(self, event_id: str, fetched_at: str) -> list[Signal]:
         latest = await self._repo.get_latest_snapshots(event_id)
         if not latest:
@@ -106,6 +177,9 @@ class PinnacleDivergenceDetector(BaseDetector):
         signals: list[Signal] = []
         sport_excluded = self._settings.pd_sport_excluded_books.get(meta[0], [])
         excluded = set(self._settings.pd_excluded_books) | set(sport_excluded)
+
+        # Sharp-line movement annotation (measurement only — see method docstring)
+        pin_direction = await self._pinnacle_recent_direction(event_id, fetched_at)
 
         for (market_key, outcome_name), books in by_market.items():
             pinnacle = books.get(PINNACLE_KEY)
@@ -237,6 +311,18 @@ class PinnacleDivergenceDetector(BaseDetector):
                 if market_key == "h2h":
                     details["us_implied_prob"] = round(us_prob, 4)
                     details["pinnacle_implied_prob"] = round(pin_prob, 4)
+
+                # Annotate sharp-line direction for h2h/spreads (measurement only)
+                if market_key in ("h2h", "spreads"):
+                    ann = pin_direction.get(
+                        (market_key, outcome_name),
+                        {"direction": "unknown", "delta": 0.0},
+                    )
+                    details["pinnacle_recent_direction"] = ann["direction"]
+                    details["pinnacle_recent_delta"] = ann["delta"]
+                    details["pinnacle_recent_window_min"] = (
+                        self._settings.steam_window_minutes
+                    )
 
                 signals.append(
                     Signal(
