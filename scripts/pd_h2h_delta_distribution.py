@@ -55,45 +55,56 @@ def main():
     if SINCE:
         sql += " AND fetched_at >= ?"
         params.append(SINCE)
-    rows = [dict(r) for r in db.execute(sql, params).fetchall()]
-    db.close()
+    # Stream ordered by the cell key so rows for one detection opportunity arrive
+    # contiguously. We never materialize all rows (the box has ~1GB RAM): we hold
+    # only the current cell's books plus the bounded per-game-side accumulators.
+    sql += " ORDER BY event_id, fetched_at, outcome_name"
 
-    if not rows:
-        print("No h2h snapshots found" + (f" since {SINCE}" if SINCE else "") + ".")
-        return
-
-    # Group prices per detection opportunity: (event, fetched_at, outcome) -> {book: price}
-    cells = defaultdict(dict)
-    sport_of = {}
-    fetched_min = fetched_max = None
-    for r in rows:
-        key = (r["event_id"], r["fetched_at"], r["outcome_name"])
-        cells[key][r["bookmaker_key"]] = r["price"]
-        sport_of[r["event_id"]] = r["sport_key"]
-        fa = r["fetched_at"]
-        fetched_min = fa if fetched_min is None or fa < fetched_min else fetched_min
-        fetched_max = fa if fetched_max is None or fa > fetched_max else fetched_max
-
-    # Best favorable (US more generous than Pinnacle) delta per (event, outcome),
-    # taken as the MAX observed across all cycles for that game-side.
     best_delta = {}  # (event, outcome) -> max favorable delta
     cycle_opps = 0   # per-cycle sides where ANY favorable divergence existed
-    for (event_id, _fa, outcome), books in cells.items():
-        if PINNACLE_KEY not in books:
-            continue
+    sport_of = {}
+    fetched_min = fetched_max = None
+    total_rows = 0
+
+    def flush(key, books):
+        """Fold one completed (event, fetched_at, outcome) cell into best_delta."""
+        nonlocal cycle_opps
+        if key is None or PINNACLE_KEY not in books:
+            return
         us_prices = [p for bk, p in books.items() if bk in US_BOOKS]
         if not us_prices:
-            continue
+            return
         pin_prob = american_to_implied_prob(books[PINNACLE_KEY])
         # US more generous = lower implied prob on this side = best (min) implied
         best_us_prob = min(american_to_implied_prob(p) for p in us_prices)
         favorable = pin_prob - best_us_prob  # >0 means US beats Pinnacle here
         if favorable <= 0:
-            continue
+            return
         cycle_opps += 1
-        gk = (event_id, outcome)
+        gk = (key[0], key[2])  # (event_id, outcome)
         if favorable > best_delta.get(gk, 0.0):
             best_delta[gk] = favorable
+
+    cur_key = None
+    cur_books = {}
+    for r in db.execute(sql, params):
+        total_rows += 1
+        key = (r["event_id"], r["fetched_at"], r["outcome_name"])
+        if key != cur_key:
+            flush(cur_key, cur_books)
+            cur_key = key
+            cur_books = {}
+        cur_books[r["bookmaker_key"]] = r["price"]
+        sport_of[r["event_id"]] = r["sport_key"]
+        fa = r["fetched_at"]
+        fetched_min = fa if fetched_min is None or fa < fetched_min else fetched_min
+        fetched_max = fa if fetched_max is None or fa > fetched_max else fetched_max
+    flush(cur_key, cur_books)  # final cell
+    db.close()
+
+    if total_rows == 0:
+        print("No h2h snapshots found" + (f" since {SINCE}" if SINCE else "") + ".")
+        return
 
     total_sides = len(best_delta)
     span = f" (since {SINCE})" if SINCE else " (all stored data)"
