@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -505,6 +505,48 @@ async def test_mark_alert_free_play(settings, repo):
     assert len(rows) == 2
     assert rows[0]["is_free_play"] == 0
     assert rows[1]["is_free_play"] == 1
+
+
+@pytest.mark.asyncio
+async def test_free_play_results_dedup_multi_cycle_signal(settings, repo):
+    """A free play whose signal fired across multiple poll cycles must count once.
+
+    Regression for the recap fan-out: one free play with N signal_results rows
+    (one per cycle, differing only by signal_at) was joined into N rows and
+    counted N times — e.g. a single win shown as 4-0.
+    """
+    base = datetime(2026, 6, 3, 18, 0, tzinfo=timezone.utc)
+    await repo.record_alert(
+        event_id="evt_multi",
+        alert_type="pinnacle_divergence",
+        market_key="totals",
+        outcome_name="Under",
+        details_json=json.dumps(
+            {"value_books": [{"bookmaker": "draftkings", "price": -114, "point": 218.5}]}
+        ),
+        is_free_play=True,
+    )
+    # Same signal recorded across four cycles (distinct signal_at) and all graded won.
+    for i in range(4):
+        signal_at = (base + timedelta(minutes=12 * i)).isoformat()
+        await repo.record_signal_result(
+            event_id="evt_multi", signal_type="pinnacle_divergence",
+            market_key="totals", outcome_name="Under",
+            signal_direction="under", signal_strength=0.5, signal_at=signal_at,
+        )
+        await repo.resolve_signal(
+            event_id="evt_multi", signal_type="pinnacle_divergence",
+            market_key="totals", outcome_name="Under",
+            signal_at=signal_at, result="won",
+        )
+
+    since = (base - timedelta(days=2)).isoformat()
+    resolved = await repo.get_free_play_results_resolved_since(since)
+    sent_based = await repo.get_free_play_results_since(since)
+
+    assert len(resolved) == 1, f"expected 1 row, got {len(resolved)} (fan-out)"
+    assert len(sent_based) == 1, f"expected 1 row, got {len(sent_based)} (fan-out)"
+    assert dict(resolved[0])["result"] == "won"
 
 
 @pytest.mark.asyncio
