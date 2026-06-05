@@ -532,17 +532,28 @@ class Repository:
     # ── Free play recap ─────────────────────────────────────────────
 
     async def get_free_play_results_since(self, since: str) -> list[aiosqlite.Row]:
-        """Get free play alerts from the last N hours with their graded results."""
+        """Get free play alerts from the last N hours with their graded results.
+
+        A signal that fires across several poll cycles has one signal_results
+        row per cycle (UNIQUE keyed on signal_at). A naive join fans a single
+        free play out to N rows and counts it N times. We bind each free play to
+        exactly ONE signal_results row — preferring a graded row, then the
+        latest signal_at — so one play counts once.
+        """
         sql = """
             SELECT sa.event_id, sa.market_key, sa.outcome_name, sa.sent_at,
                    sa.details_json,
                    sr.result, sr.signal_strength
             FROM sent_alerts sa
-            LEFT JOIN signal_results sr
-              ON sa.event_id = sr.event_id
-             AND sa.alert_type = sr.signal_type
-             AND sa.market_key = sr.market_key
-             AND sa.outcome_name = sr.outcome_name
+            LEFT JOIN signal_results sr ON sr.id = (
+                SELECT sr2.id FROM signal_results sr2
+                WHERE sr2.event_id = sa.event_id
+                  AND sr2.signal_type = sa.alert_type
+                  AND sr2.market_key = sa.market_key
+                  AND sr2.outcome_name = sa.outcome_name
+                ORDER BY (sr2.result IS NOT NULL) DESC, sr2.signal_at DESC
+                LIMIT 1
+            )
             WHERE sa.is_free_play = 1
               AND sa.sent_at >= ?
             ORDER BY sa.sent_at ASC
@@ -558,17 +569,26 @@ class Repository:
         Unlike get_free_play_results_since which filters on sent_at, this
         filters on resolved_at — so a play shared Monday for a Tuesday game
         appears in Tuesday's recap when it was graded, not Monday's.
+
+        Binds each free play to exactly ONE (graded) signal_results row so a
+        signal that fired across multiple poll cycles is not counted once per
+        cycle. See get_free_play_results_since for the fan-out rationale.
         """
         sql = """
             SELECT sa.event_id, sa.market_key, sa.outcome_name, sa.sent_at,
                    sa.details_json,
                    sr.result, sr.signal_strength, sr.resolved_at
             FROM sent_alerts sa
-            JOIN signal_results sr
-              ON sa.event_id = sr.event_id
-             AND sa.alert_type = sr.signal_type
-             AND sa.market_key = sr.market_key
-             AND sa.outcome_name = sr.outcome_name
+            JOIN signal_results sr ON sr.id = (
+                SELECT sr2.id FROM signal_results sr2
+                WHERE sr2.event_id = sa.event_id
+                  AND sr2.signal_type = sa.alert_type
+                  AND sr2.market_key = sa.market_key
+                  AND sr2.outcome_name = sa.outcome_name
+                  AND sr2.resolved_at IS NOT NULL
+                ORDER BY sr2.signal_at DESC
+                LIMIT 1
+            )
             WHERE sa.is_free_play = 1
               AND sr.resolved_at >= ?
             ORDER BY sa.sent_at ASC
