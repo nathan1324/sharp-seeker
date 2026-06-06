@@ -231,8 +231,7 @@ class XPoster:
 
             free_play_picks: list[Signal] = []
             for s in signals:
-                combo_key = f"{s.signal_type.value}:{s.sport_key}:{s.market_key}"
-                if combo_key not in self._free_play_combos:
+                if not self._matches_free_play_combo(s):
                     continue
                 # Policy: spread free plays must be Steam type only.
                 if s.market_key == "spreads" and s.signal_type != SignalType.STEAM_MOVE:
@@ -240,6 +239,17 @@ class XPoster:
                         "x_free_play_spreads_non_steam_skip",
                         event_id=s.event_id,
                         signal_type=s.signal_type.value,
+                    )
+                    continue
+                # Quality gate: only signals that earned at least one qualifier
+                # (the same bar Discord uses) are eligible — no 0-qualifier free
+                # plays. Matters now that wildcard combos open every sport.
+                q_count = (s.details or {}).get("qualifier_count", 0)
+                if q_count < 1:
+                    log.info(
+                        "x_free_play_qualifier_skip",
+                        event_id=s.event_id,
+                        qualifier_count=q_count,
                     )
                     continue
                 if s.event_id in past_fp_events:
@@ -289,6 +299,20 @@ class XPoster:
                 log.exception("x_tweet_failed", event_id=pick.event_id)
 
         # Teasers disabled — only free plays are posted to X.
+
+    def _matches_free_play_combo(self, signal: Signal) -> bool:
+        """True if the signal matches a whitelisted free-play combo.
+
+        Combos are `signal_type:sport_key:market_key`. A `*` in any segment is a
+        wildcard, so `pinnacle_divergence:*:totals` matches PD totals in every
+        sport (used to open all-sport PD totals to free plays).
+        """
+        parts = (signal.signal_type.value, signal.sport_key, signal.market_key)
+        for combo in self._free_play_combos:
+            cp = combo.split(":")
+            if len(cp) == 3 and all(c == "*" or c == p for c, p in zip(cp, parts)):
+                return True
+        return False
 
     @staticmethod
     def _get_book(signal: Signal) -> str | None:
