@@ -241,9 +241,9 @@ class XPoster:
                         signal_type=s.signal_type.value,
                     )
                     continue
-                # Quality gate: only signals that earned at least one qualifier
-                # (the same bar Discord uses) are eligible — no 0-qualifier free
-                # plays. Matters now that wildcard combos open every sport.
+                # Mimic Discord: only post signals that cleared Discord's send
+                # gate (1+ qualifier). 0-qualifier signals are suppressed from
+                # the main Discord alert, so they don't become free plays either.
                 q_count = (s.details or {}).get("qualifier_count", 0)
                 if q_count < 1:
                     log.info(
@@ -256,9 +256,13 @@ class XPoster:
                     continue
                 if self._excluded_books and self._get_book(s) in self._excluded_books:
                     continue
-                # Count every eligible signal, but only post every Nth one
+                # Count every eligible signal; throttle to every Nth.
+                # interval <= 1 disables throttling (post every eligible signal).
                 self._fp_eligible_count += 1
-                if self._fp_eligible_count % self._free_play_interval != 0:
+                if (
+                    self._free_play_interval > 1
+                    and self._fp_eligible_count % self._free_play_interval != 0
+                ):
                     log.info(
                         "x_free_play_interval_skip",
                         event_id=s.event_id,
@@ -266,15 +270,18 @@ class XPoster:
                         interval=self._free_play_interval,
                     )
                     continue
-                # Hourly cap
-                if (hour_fp_count + len(free_play_picks)) >= self._free_play_hourly_cap:
+                # Hourly cap (0 = unlimited)
+                if (
+                    self._free_play_hourly_cap > 0
+                    and (hour_fp_count + len(free_play_picks)) >= self._free_play_hourly_cap
+                ):
                     log.info("x_free_play_hourly_capped", event_id=s.event_id)
                     continue
-                # Per-sport daily cap
+                # Per-sport daily cap (0 = unlimited)
                 sport_count = sport_fp_counts.get(s.sport_key, 0) + sum(
                     1 for p in free_play_picks if p.sport_key == s.sport_key
                 )
-                if sport_count >= self._free_play_sport_cap:
+                if self._free_play_sport_cap > 0 and sport_count >= self._free_play_sport_cap:
                     log.info("x_free_play_sport_capped", event_id=s.event_id, sport=s.sport_key)
                     continue
                 free_play_picks.append(s)

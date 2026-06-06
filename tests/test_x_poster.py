@@ -789,6 +789,83 @@ async def test_wildcard_totals_does_not_match_h2h_or_spreads(settings, repo):
 
 
 @pytest.mark.asyncio
+async def test_totals_wildcard_matches_any_signal_type(settings, repo):
+    """`*:*:totals` should match totals from any signal type (PD, steam, rapid)."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+
+    poster._free_play_combos = {"*:*:totals"}
+    poster._free_play_interval = 1
+    poster._free_play_hourly_cap = 0  # unlimited
+    poster._free_play_sport_cap = 0  # unlimited
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    sigs = []
+    for i, st in enumerate(
+        (SignalType.PINNACLE_DIVERGENCE, SignalType.STEAM_MOVE, SignalType.RAPID_CHANGE)
+    ):
+        sig = _make_signal(
+            signal_type=st,
+            market_key="totals",
+            outcome_name="Over",
+            sport_key="basketball_nba",
+            details={
+                "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 220.5}],
+            },
+        )
+        sig.event_id = f"evt_type_{i}"
+        sigs.append(sig)
+
+    await poster.post_signals(sigs)
+
+    free_plays = [
+        c.kwargs["text"]
+        for c in poster._client.create_tweet.call_args_list
+        if "FREE PLAY" in c.kwargs["text"]
+    ]
+    assert len(free_plays) == 3  # all three types post
+
+
+@pytest.mark.asyncio
+async def test_caps_zero_means_unlimited(settings, repo):
+    """Hourly/sport caps of 0 should not limit free plays (mirror-Discord mode)."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+
+    poster._free_play_combos = {"*:*:totals"}
+    poster._free_play_interval = 1
+    poster._free_play_hourly_cap = 0
+    poster._free_play_sport_cap = 0
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    # 4 PD totals, same sport, same poll cycle (same hour) — none should be capped.
+    sigs = []
+    for i in range(4):
+        sig = _make_signal(
+            signal_type=SignalType.PINNACLE_DIVERGENCE,
+            market_key="totals",
+            outcome_name="Over",
+            sport_key="basketball_nba",
+            details={
+                "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 220.5}],
+            },
+        )
+        sig.event_id = f"evt_cap_{i}"
+        sigs.append(sig)
+
+    await poster.post_signals(sigs)
+
+    free_plays = [
+        c.kwargs["text"]
+        for c in poster._client.create_tweet.call_args_list
+        if "FREE PLAY" in c.kwargs["text"]
+    ]
+    assert len(free_plays) == 4  # no throttling
+
+
+@pytest.mark.asyncio
 async def test_zero_qualifier_skipped(settings, repo):
     """A combo-matching signal with 0 qualifiers must not become a free play."""
     poster = XPoster(settings, repo)
