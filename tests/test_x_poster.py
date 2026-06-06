@@ -19,7 +19,12 @@ def _make_signal(
     strength: float = 0.75,
     details: dict | None = None,
     sport_key: str = "basketball_nba",
+    qualifier_count: int = 1,
 ) -> Signal:
+    # Free plays require a 1+ qualifier (the same bar Discord uses); default the
+    # helper to 1 so signals are eligible unless a test overrides it.
+    details = dict(details or {})
+    details.setdefault("qualifier_count", qualifier_count)
     return Signal(
         signal_type=signal_type,
         event_id="evt_123",
@@ -31,7 +36,7 @@ def _make_signal(
         strength=strength,
         description="Test signal",
         commence_time="2099-01-15T00:00:00Z",
-        details=details or {},
+        details=details,
     )
 
 
@@ -79,16 +84,17 @@ async def test_whitelisted_combo_becomes_free_play(settings, repo):
     poster = XPoster(settings, repo)
     poster._enabled = True
 
-    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
+    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:totals"}
     poster._free_play_interval = 1
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
 
     sig = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
-        market_key="spreads",
+        market_key="totals",
+        outcome_name="Over",
         details={
-            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 220.5}],
         },
     )
 
@@ -129,7 +135,7 @@ async def test_interval_skips_early_signals(settings, repo):
     poster = XPoster(settings, repo)
     poster._enabled = True
 
-    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
+    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:totals"}
     poster._free_play_interval = 3
     poster._free_play_sport_cap = 10
     poster._free_play_hourly_cap = 10
@@ -140,9 +146,10 @@ async def test_interval_skips_early_signals(settings, repo):
     for i in range(3):
         sig = _make_signal(
             signal_type=SignalType.PINNACLE_DIVERGENCE,
-            market_key="spreads",
+            market_key="totals",
+            outcome_name="Over",
             details={
-                "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
+                "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 220.5}],
             },
         )
         sig.event_id = f"evt_{i}"
@@ -183,7 +190,7 @@ async def test_sport_cap_limits_free_plays(settings, repo):
     poster = XPoster(settings, repo)
     poster._enabled = True
 
-    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
+    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:totals"}
     poster._free_play_interval = 1
     poster._free_play_sport_cap = 1  # cap at 1 per sport
     poster._client = MagicMock()
@@ -191,16 +198,18 @@ async def test_sport_cap_limits_free_plays(settings, repo):
 
     sig1 = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
-        market_key="spreads",
+        market_key="totals",
+        outcome_name="Over",
         details={
-            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 220.5}],
         },
     )
     sig2 = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
-        market_key="spreads",
+        market_key="totals",
+        outcome_name="Under",
         details={
-            "value_books": [{"bookmaker": "fanduel", "price": -105, "point": -4.5}],
+            "value_books": [{"bookmaker": "fanduel", "price": -105, "point": 224.5}],
         },
     )
     sig2.event_id = "evt_2"
@@ -554,23 +563,24 @@ async def test_post_signals_marks_free_play_in_db(settings, repo):
     """post_signals should mark whitelisted combo signals as free plays in the DB."""
     poster = XPoster(settings, repo)
     poster._enabled = True
-    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
+    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:totals"}
     poster._free_play_interval = 1
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
 
     sig = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
-        market_key="spreads",
+        market_key="totals",
+        outcome_name="Over",
         details={
-            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 220.5}],
         },
     )
 
     # Record the alert (as Discord alerter would)
     await repo.record_alert(
         event_id="evt_123", alert_type="pinnacle_divergence",
-        market_key="spreads", outcome_name="Lakers",
+        market_key="totals", outcome_name="Over",
     )
 
     await poster.post_signals([sig])
@@ -589,7 +599,7 @@ async def test_hourly_cap_limits_free_plays(settings, repo):
     poster = XPoster(settings, repo)
     poster._enabled = True
 
-    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:spreads"}
+    poster._free_play_combos = {"pinnacle_divergence:basketball_nba:totals"}
     poster._free_play_interval = 1
     poster._free_play_hourly_cap = 1
     poster._free_play_sport_cap = 5  # not the limiting factor
@@ -600,20 +610,22 @@ async def test_hourly_cap_limits_free_plays(settings, repo):
         signal_type=SignalType.PINNACLE_DIVERGENCE,
         event_id="evt_1", sport_key="basketball_nba",
         home_team="Lakers", away_team="Celtics",
-        market_key="spreads", outcome_name="Lakers", strength=0.60,
+        market_key="totals", outcome_name="Over", strength=0.60,
         description="Test", commence_time="2099-01-15T00:00:00Z",
         details={
-            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}],
+            "qualifier_count": 1,
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 220.5}],
         },
     )
     sig2 = Signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
         event_id="evt_2", sport_key="basketball_nba",
         home_team="Warriors", away_team="Suns",
-        market_key="spreads", outcome_name="Warriors", strength=0.55,
+        market_key="totals", outcome_name="Under", strength=0.55,
         description="Test", commence_time="2099-01-15T00:00:00Z",
         details={
-            "value_books": [{"bookmaker": "fanduel", "price": -105, "point": -4.5}],
+            "qualifier_count": 1,
+            "value_books": [{"bookmaker": "fanduel", "price": -105, "point": 224.5}],
         },
     )
 
@@ -668,7 +680,7 @@ async def test_free_play_picks_different_game(settings, repo):
 
     poster._free_play_combos = {
         "pinnacle_divergence:basketball_nba:h2h",
-        "pinnacle_divergence:basketball_nba:spreads",
+        "pinnacle_divergence:basketball_nba:totals",
     }
     poster._free_play_interval = 1
     poster._free_play_sport_cap = 10
@@ -690,6 +702,7 @@ async def test_free_play_picks_different_game(settings, repo):
         market_key="h2h", outcome_name="Celtics", strength=0.50,
         description="Test", commence_time="2099-01-15T00:00:00Z",
         details={
+            "qualifier_count": 1,
             "value_books": [{"bookmaker": "draftkings", "price": 150}],
         },
     )
@@ -697,10 +710,11 @@ async def test_free_play_picks_different_game(settings, repo):
         signal_type=SignalType.PINNACLE_DIVERGENCE,
         event_id="evt_other", sport_key="basketball_nba",
         home_team="Warriors", away_team="Suns",
-        market_key="spreads", outcome_name="Warriors", strength=0.70,
+        market_key="totals", outcome_name="Over", strength=0.70,
         description="Test", commence_time="2099-01-15T00:00:00Z",
         details={
-            "value_books": [{"bookmaker": "fanduel", "price": -110, "point": -3.5}],
+            "qualifier_count": 1,
+            "value_books": [{"bookmaker": "fanduel", "price": -110, "point": 224.5}],
         },
     )
 
@@ -712,6 +726,170 @@ async def test_free_play_picks_different_game(settings, repo):
     assert "Warriors" in free_plays[0]  # new game picked, not repeat
 
 
+
+
+# ── Wildcard combos & qualifier gate ───────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_wildcard_combo_matches_all_sports(settings, repo):
+    """`pinnacle_divergence:*:totals` should match PD totals in any sport."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+
+    poster._free_play_combos = {"pinnacle_divergence:*:totals"}
+    poster._free_play_interval = 1
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    # A sport not explicitly listed anywhere — only the wildcard can match it.
+    sig = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="totals",
+        outcome_name="Over",
+        sport_key="basketball_ncaab",
+        details={
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 145.5}],
+        },
+    )
+
+    await poster.post_signals([sig])
+
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    assert any("FREE PLAY" in t for t in calls)
+
+
+@pytest.mark.asyncio
+async def test_wildcard_totals_does_not_match_h2h_or_spreads(settings, repo):
+    """`pinnacle_divergence:*:totals` must not pull in PD h2h or PD spreads."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+
+    poster._free_play_combos = {"pinnacle_divergence:*:totals"}
+    poster._free_play_interval = 1
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    h2h = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="h2h", outcome_name="Lakers",
+        details={"value_books": [{"bookmaker": "draftkings", "price": 150}]},
+    )
+    spreads = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="spreads", outcome_name="Lakers",
+        details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
+    )
+    spreads.event_id = "evt_spreads"
+
+    await poster.post_signals([h2h, spreads])
+
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    assert all("FREE PLAY" not in t for t in calls)
+
+
+@pytest.mark.asyncio
+async def test_totals_wildcard_matches_any_signal_type(settings, repo):
+    """`*:*:totals` should match totals from any signal type (PD, steam, rapid)."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+
+    poster._free_play_combos = {"*:*:totals"}
+    poster._free_play_interval = 1
+    poster._free_play_hourly_cap = 0  # unlimited
+    poster._free_play_sport_cap = 0  # unlimited
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    sigs = []
+    for i, st in enumerate(
+        (SignalType.PINNACLE_DIVERGENCE, SignalType.STEAM_MOVE, SignalType.RAPID_CHANGE)
+    ):
+        sig = _make_signal(
+            signal_type=st,
+            market_key="totals",
+            outcome_name="Over",
+            sport_key="basketball_nba",
+            details={
+                "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 220.5}],
+            },
+        )
+        sig.event_id = f"evt_type_{i}"
+        sigs.append(sig)
+
+    await poster.post_signals(sigs)
+
+    free_plays = [
+        c.kwargs["text"]
+        for c in poster._client.create_tweet.call_args_list
+        if "FREE PLAY" in c.kwargs["text"]
+    ]
+    assert len(free_plays) == 3  # all three types post
+
+
+@pytest.mark.asyncio
+async def test_caps_zero_means_unlimited(settings, repo):
+    """Hourly/sport caps of 0 should not limit free plays (mirror-Discord mode)."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+
+    poster._free_play_combos = {"*:*:totals"}
+    poster._free_play_interval = 1
+    poster._free_play_hourly_cap = 0
+    poster._free_play_sport_cap = 0
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    # 4 PD totals, same sport, same poll cycle (same hour) — none should be capped.
+    sigs = []
+    for i in range(4):
+        sig = _make_signal(
+            signal_type=SignalType.PINNACLE_DIVERGENCE,
+            market_key="totals",
+            outcome_name="Over",
+            sport_key="basketball_nba",
+            details={
+                "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 220.5}],
+            },
+        )
+        sig.event_id = f"evt_cap_{i}"
+        sigs.append(sig)
+
+    await poster.post_signals(sigs)
+
+    free_plays = [
+        c.kwargs["text"]
+        for c in poster._client.create_tweet.call_args_list
+        if "FREE PLAY" in c.kwargs["text"]
+    ]
+    assert len(free_plays) == 4  # no throttling
+
+
+@pytest.mark.asyncio
+async def test_zero_qualifier_skipped(settings, repo):
+    """A combo-matching signal with 0 qualifiers must not become a free play."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+
+    poster._free_play_combos = {"pinnacle_divergence:*:totals"}
+    poster._free_play_interval = 1
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    sig = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="totals",
+        outcome_name="Over",
+        qualifier_count=0,
+        details={
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 220.5}],
+        },
+    )
+
+    await poster.post_signals([sig])
+
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    assert all("FREE PLAY" not in t for t in calls)
 
 
 @pytest.mark.asyncio

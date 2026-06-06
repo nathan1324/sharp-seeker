@@ -210,10 +210,10 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `X_ACCESS_TOKEN` | — | X OAuth 1.0a access token (optional) |
 | `X_ACCESS_TOKEN_SECRET` | — | X OAuth 1.0a access token secret (optional) |
 | `X_CTA_URL` | `https://whop.com/checkout/plan_e8xrvfpTHqP4d` | Link appended to tweet CTAs (free plays + recaps) |
-| `X_FREE_PLAY_SPORT_CAP` | `3` | Max free plays per sport per day |
-| `X_FREE_PLAY_HOURLY_CAP` | `1` | Max free plays per UTC hour |
-| `X_FREE_PLAY_INTERVAL` | `3` | Post a free play every Nth eligible signal (spreads picks throughout the day) |
-| `X_FREE_PLAY_COMBOS` | `[]` | Whitelist of `type:sport:market` combos eligible for free plays (JSON array, empty = none) |
+| `X_FREE_PLAY_SPORT_CAP` | `3` | Max free plays per sport per day (`0` = unlimited) |
+| `X_FREE_PLAY_HOURLY_CAP` | `1` | Max free plays per UTC hour (`0` = unlimited) |
+| `X_FREE_PLAY_INTERVAL` | `3` | Post a free play every Nth eligible signal (`1` = post every eligible signal, no throttle) |
+| `X_FREE_PLAY_COMBOS` | `[]` | Whitelist of `type:sport:market` combos eligible for free plays (JSON array, empty = none). A `*` in any segment is a wildcard, e.g. `*:*:totals` = every totals signal, `pinnacle_divergence:*:totals` = PD totals in every sport |
 | `X_TEASER_HOURS` | `[]` | UTC hours to allow teaser tweets (JSON array, empty = always) |
 | `X_MAX_STRENGTH` | `1.0` | Skip PD signals >= this strength for X tweets (0.0–1.0) |
 | `X_TWEET_SIGNAL_TYPES` | `["pinnacle_divergence", "rapid_change"]` | Signal types eligible for X tweets (JSON array) |
@@ -358,7 +358,7 @@ X_CONSUMER_SECRET=your_consumer_secret
 X_ACCESS_TOKEN=your_access_token
 X_ACCESS_TOKEN_SECRET=your_access_token_secret
 X_CTA_URL=https://whop.com/checkout/plan_e8xrvfpTHqP4d
-X_FREE_PLAY_COMBOS=["pinnacle_divergence:basketball_nba:spreads", "pinnacle_divergence:basketball_nba:h2h", "pinnacle_divergence:basketball_ncaab:h2h"]
+X_FREE_PLAY_COMBOS=["*:*:totals"]
 ```
 
 **Daily recap tweet (12:45 UTC / 5:45 AM MT):** Each morning after grading, a recap of the previous day's free plays is posted to X with results (won/lost/pending), a running record, and an attached results card image (1080x1080 branded PNG with YTD profit, monthly record, and streak).
@@ -368,7 +368,7 @@ X_FREE_PLAY_COMBOS=["pinnacle_divergence:basketball_nba:spreads", "pinnacle_dive
 X tweets use additional filtering to maximize public credibility:
 
 - **Strength cap** (`X_MAX_STRENGTH`) — signals at or above this strength are skipped entirely. Analysis shows very high strength signals (0.90+) underperform, so capping at 0.80 filters out traps.
-- **Free play combo whitelist** (`X_FREE_PLAY_COMBOS`) — only signals matching specific `type:sport:market` patterns become free plays. Combos are data-driven: only patterns with positive unit returns and meaningful sample size are included. Empty list disables free plays entirely.
+- **Free play combo whitelist** (`X_FREE_PLAY_COMBOS`) — only signals matching specific `type:sport:market` patterns become free plays. A `*` in any segment is a wildcard (e.g. `*:*:totals` opens every totals signal regardless of type/sport; `pinnacle_divergence:*:totals` opens PD totals across every sport). All free plays — wildcard-matched or not — still pass a 1+ qualifier gate (the same bar Discord uses to send the main alert), so wildcards only widen the market/type net, never bypass quality. Empty list disables free plays entirely. **Current policy:** free plays mirror Discord — `["*:*:totals"]` with caps/interval off, so every Discord-sent totals signal is tweeted. Spreads and moneyline (h2h) are held out while those markets are under study.
 - **Digest mode** — teasers are batched and posted as a single tweet every N hours (`X_DIGEST_INTERVAL_HOURS`). In legacy mode (0), teaser hours (`X_TEASER_HOURS`) gate per-signal tweets. Free plays always post immediately regardless of mode.
 
 X posting is **optional** — if credentials are not set, the poster disables itself with no errors.

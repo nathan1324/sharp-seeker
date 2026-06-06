@@ -231,8 +231,7 @@ class XPoster:
 
             free_play_picks: list[Signal] = []
             for s in signals:
-                combo_key = f"{s.signal_type.value}:{s.sport_key}:{s.market_key}"
-                if combo_key not in self._free_play_combos:
+                if not self._matches_free_play_combo(s):
                     continue
                 # Policy: spread free plays must be Steam type only.
                 if s.market_key == "spreads" and s.signal_type != SignalType.STEAM_MOVE:
@@ -242,13 +241,28 @@ class XPoster:
                         signal_type=s.signal_type.value,
                     )
                     continue
+                # Mimic Discord: only post signals that cleared Discord's send
+                # gate (1+ qualifier). 0-qualifier signals are suppressed from
+                # the main Discord alert, so they don't become free plays either.
+                q_count = (s.details or {}).get("qualifier_count", 0)
+                if q_count < 1:
+                    log.info(
+                        "x_free_play_qualifier_skip",
+                        event_id=s.event_id,
+                        qualifier_count=q_count,
+                    )
+                    continue
                 if s.event_id in past_fp_events:
                     continue
                 if self._excluded_books and self._get_book(s) in self._excluded_books:
                     continue
-                # Count every eligible signal, but only post every Nth one
+                # Count every eligible signal; throttle to every Nth.
+                # interval <= 1 disables throttling (post every eligible signal).
                 self._fp_eligible_count += 1
-                if self._fp_eligible_count % self._free_play_interval != 0:
+                if (
+                    self._free_play_interval > 1
+                    and self._fp_eligible_count % self._free_play_interval != 0
+                ):
                     log.info(
                         "x_free_play_interval_skip",
                         event_id=s.event_id,
@@ -256,15 +270,18 @@ class XPoster:
                         interval=self._free_play_interval,
                     )
                     continue
-                # Hourly cap
-                if (hour_fp_count + len(free_play_picks)) >= self._free_play_hourly_cap:
+                # Hourly cap (0 = unlimited)
+                if (
+                    self._free_play_hourly_cap > 0
+                    and (hour_fp_count + len(free_play_picks)) >= self._free_play_hourly_cap
+                ):
                     log.info("x_free_play_hourly_capped", event_id=s.event_id)
                     continue
-                # Per-sport daily cap
+                # Per-sport daily cap (0 = unlimited)
                 sport_count = sport_fp_counts.get(s.sport_key, 0) + sum(
                     1 for p in free_play_picks if p.sport_key == s.sport_key
                 )
-                if sport_count >= self._free_play_sport_cap:
+                if self._free_play_sport_cap > 0 and sport_count >= self._free_play_sport_cap:
                     log.info("x_free_play_sport_capped", event_id=s.event_id, sport=s.sport_key)
                     continue
                 free_play_picks.append(s)
@@ -289,6 +306,20 @@ class XPoster:
                 log.exception("x_tweet_failed", event_id=pick.event_id)
 
         # Teasers disabled — only free plays are posted to X.
+
+    def _matches_free_play_combo(self, signal: Signal) -> bool:
+        """True if the signal matches a whitelisted free-play combo.
+
+        Combos are `signal_type:sport_key:market_key`. A `*` in any segment is a
+        wildcard, so `pinnacle_divergence:*:totals` matches PD totals in every
+        sport (used to open all-sport PD totals to free plays).
+        """
+        parts = (signal.signal_type.value, signal.sport_key, signal.market_key)
+        for combo in self._free_play_combos:
+            cp = combo.split(":")
+            if len(cp) == 3 and all(c == "*" or c == p for c, p in zip(cp, parts)):
+                return True
+        return False
 
     @staticmethod
     def _get_book(signal: Signal) -> str | None:
