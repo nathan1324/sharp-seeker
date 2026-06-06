@@ -161,7 +161,6 @@ class Settings(BaseSettings):
     x_consumer_secret: str | None = None
     x_access_token: str | None = None
     x_access_token_secret: str | None = None
-    x_cta_url: str = "https://whop.com/checkout/plan_e8xrvfpTHqP4d"  # Whop checkout / CTA link
     x_free_play_sport_cap: int = 3  # max free plays per sport per day
     x_free_play_hourly_cap: int = 1  # max free plays per UTC hour
     x_free_play_interval: int = 3  # post a free play every Nth eligible signal

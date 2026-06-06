@@ -209,7 +209,6 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `X_CONSUMER_SECRET` | — | X OAuth 1.0a consumer secret (optional) |
 | `X_ACCESS_TOKEN` | — | X OAuth 1.0a access token (optional) |
 | `X_ACCESS_TOKEN_SECRET` | — | X OAuth 1.0a access token secret (optional) |
-| `X_CTA_URL` | `https://whop.com/checkout/plan_e8xrvfpTHqP4d` | Link appended to tweet CTAs (free plays + recaps) |
 | `X_FREE_PLAY_SPORT_CAP` | `3` | Max free plays per sport per day (`0` = unlimited) |
 | `X_FREE_PLAY_HOURLY_CAP` | `1` | Max free plays per UTC hour (`0` = unlimited) |
 | `X_FREE_PLAY_INTERVAL` | `3` | Post a free play every Nth eligible signal (`1` = post every eligible signal, no throttle) |
@@ -332,8 +331,6 @@ Sharp Seeker can automatically post to X when signals fire. By default, **Pinnac
 🔥 Celtics @ Lakers — Pinnacle Divergence
 🔥 Chiefs @ Eagles — Steam Move
 🔥 Yankees @ Red Sox — Rapid Change
-
-Get all picks → whop.com/checkout/plan_e8xrvfpTHqP4d
 ```
 
 **Free play example (posted immediately):**
@@ -342,8 +339,6 @@ Get all picks → whop.com/checkout/plan_e8xrvfpTHqP4d
 
 💰 Bet Lakers -3.5 (-110) @ DraftKings
 Pinnacle Divergence • 85% strength
-
-Get all picks → https://whop.com/checkout/plan_e8xrvfpTHqP4d
 ```
 
 ### Setup
@@ -357,7 +352,6 @@ X_CONSUMER_KEY=your_consumer_key
 X_CONSUMER_SECRET=your_consumer_secret
 X_ACCESS_TOKEN=your_access_token
 X_ACCESS_TOKEN_SECRET=your_access_token_secret
-X_CTA_URL=https://whop.com/checkout/plan_e8xrvfpTHqP4d
 X_FREE_PLAY_COMBOS=["pinnacle_divergence:*:totals"]
 ```
 
