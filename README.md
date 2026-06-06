@@ -358,7 +358,7 @@ X_CONSUMER_SECRET=your_consumer_secret
 X_ACCESS_TOKEN=your_access_token
 X_ACCESS_TOKEN_SECRET=your_access_token_secret
 X_CTA_URL=https://whop.com/checkout/plan_e8xrvfpTHqP4d
-X_FREE_PLAY_COMBOS=["*:*:totals"]
+X_FREE_PLAY_COMBOS=["pinnacle_divergence:*:totals"]
 ```
 
 **Daily recap tweet (12:45 UTC / 5:45 AM MT):** Each morning after grading, a recap of the previous day's free plays is posted to X with results (won/lost/pending), a running record, and an attached results card image (1080x1080 branded PNG with YTD profit, monthly record, and streak).
@@ -368,7 +368,7 @@ X_FREE_PLAY_COMBOS=["*:*:totals"]
 X tweets use additional filtering to maximize public credibility:
 
 - **Strength cap** (`X_MAX_STRENGTH`) — signals at or above this strength are skipped entirely. Analysis shows very high strength signals (0.90+) underperform, so capping at 0.80 filters out traps.
-- **Free play combo whitelist** (`X_FREE_PLAY_COMBOS`) — only signals matching specific `type:sport:market` patterns become free plays. A `*` in any segment is a wildcard (e.g. `*:*:totals` opens every totals signal regardless of type/sport; `pinnacle_divergence:*:totals` opens PD totals across every sport). All free plays — wildcard-matched or not — still pass a 1+ qualifier gate (the same bar Discord uses to send the main alert), so wildcards only widen the market/type net, never bypass quality. Empty list disables free plays entirely. **Current policy:** free plays mirror Discord — `["*:*:totals"]` with caps/interval off, so every Discord-sent totals signal is tweeted. Spreads and moneyline (h2h) are held out while those markets are under study.
+- **Free play combo whitelist** (`X_FREE_PLAY_COMBOS`) — only signals matching specific `type:sport:market` patterns become free plays. A `*` in any segment is a wildcard (e.g. `pinnacle_divergence:*:totals` opens PD totals across every sport). All free plays still pass a 1+ qualifier gate (the same bar Discord uses to send the main alert), so wildcards only widen the sport net, never bypass quality. Empty list disables free plays entirely. **Current policy:** `["pinnacle_divergence:*:totals"]` with caps/interval off, so every Discord-sent PD totals signal is tweeted. Other signal types (steam, rapid) and the spreads/moneyline markets are held out while those are under study.
 - **Digest mode** — teasers are batched and posted as a single tweet every N hours (`X_DIGEST_INTERVAL_HOURS`). In legacy mode (0), teaser hours (`X_TEASER_HOURS`) gate per-signal tweets. Free plays always post immediately regardless of mode.
 
 X posting is **optional** — if credentials are not set, the poster disables itself with no errors.

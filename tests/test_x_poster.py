@@ -828,12 +828,51 @@ async def test_totals_wildcard_matches_any_signal_type(settings, repo):
 
 
 @pytest.mark.asyncio
+async def test_pd_only_combo_excludes_steam_and_rapid_totals(settings, repo):
+    """With `pinnacle_divergence:*:totals`, only PD totals post — not steam/rapid."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+
+    poster._free_play_combos = {"pinnacle_divergence:*:totals"}
+    poster._free_play_interval = 1
+    poster._free_play_hourly_cap = 0
+    poster._free_play_sport_cap = 0
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    sigs = []
+    for i, st in enumerate(
+        (SignalType.PINNACLE_DIVERGENCE, SignalType.STEAM_MOVE, SignalType.RAPID_CHANGE)
+    ):
+        sig = _make_signal(
+            signal_type=st,
+            market_key="totals",
+            outcome_name="Over",
+            sport_key="basketball_nba",
+            details={
+                "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 220.5}],
+            },
+        )
+        sig.event_id = f"evt_pdonly_{i}"
+        sigs.append(sig)
+
+    await poster.post_signals(sigs)
+
+    free_plays = [
+        c.kwargs["text"]
+        for c in poster._client.create_tweet.call_args_list
+        if "FREE PLAY" in c.kwargs["text"]
+    ]
+    assert len(free_plays) == 1  # only the PD totals signal
+
+
+@pytest.mark.asyncio
 async def test_caps_zero_means_unlimited(settings, repo):
     """Hourly/sport caps of 0 should not limit free plays (mirror-Discord mode)."""
     poster = XPoster(settings, repo)
     poster._enabled = True
 
-    poster._free_play_combos = {"*:*:totals"}
+    poster._free_play_combos = {"pinnacle_divergence:*:totals"}
     poster._free_play_interval = 1
     poster._free_play_hourly_cap = 0
     poster._free_play_sport_cap = 0
