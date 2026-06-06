@@ -158,7 +158,6 @@ class XPoster:
     ) -> None:
         self._repo = repo
         self._card_gen = card_gen
-        self._cta_url = settings.x_cta_url
         self._free_play_sport_cap = settings.x_free_play_sport_cap
         self._free_play_hourly_cap = settings.x_free_play_hourly_cap
         self._free_play_interval = settings.x_free_play_interval
@@ -351,9 +350,6 @@ class XPoster:
             bet_line,
             f"{_SIGNAL_LABELS.get(signal.signal_type, signal.signal_type.value)} \u2022 {signal.strength:.0%} strength",
         ]
-        if self._cta_url:
-            lines.append("")
-            lines.append(f"Get all picks \u2192 {self._cta_url}")
         return "\n".join(lines)
 
     async def post_digest(self) -> None:
@@ -467,8 +463,6 @@ class XPoster:
         decided = wins + losses
         if decided > 0:
             footer_parts.append(f"Record: {wins}-{losses}")
-        if self._cta_url:
-            footer_parts.append(f"Get all picks \u2192 {self._cta_url}")
         footer = "\n".join(footer_parts)
 
         # Try all lines first
@@ -583,10 +577,6 @@ class XPoster:
             out.append(
                 f"{_month_label()}: {mtd_w}-{mtd_l} ({_fmt_units(mtd_units)})"
             )
-
-        if self._cta_url:
-            out.append("")
-            out.append(f"Get all picks \u2192 {self._cta_url}")
 
         return "\n".join(out)
 

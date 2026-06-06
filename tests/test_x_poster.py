@@ -226,7 +226,6 @@ async def test_sport_cap_limits_free_plays(settings, repo):
 
 def test_format_free_play_with_value_books(settings, repo):
     poster = XPoster(settings, repo)
-    poster._cta_url = "https://discord.gg/test"
 
     sig = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
@@ -248,12 +247,11 @@ def test_format_free_play_with_value_books(settings, repo):
     assert "-3.5" in text
     assert "DraftKings" in text
     assert "85%" in text
-    assert "discord.gg/test" in text
+    assert "Get all picks" not in text
 
 
 def test_format_free_play_moneyline(settings, repo):
     poster = XPoster(settings, repo)
-    poster._cta_url = ""
 
     sig = _make_signal(
         signal_type=SignalType.PINNACLE_DIVERGENCE,
@@ -352,7 +350,6 @@ async def test_post_signals_handles_tweepy_error(settings, repo):
 def test_format_recap_with_results(settings, repo):
     """Won/lost/push signals format correctly in the recap with units."""
     poster = XPoster(settings, repo)
-    poster._cta_url = "https://discord.gg/test"
 
     results = [
         {"outcome_name": "Lakers", "market_key": "spreads", "result": "won",
@@ -378,13 +375,12 @@ def test_format_recap_with_results(settings, repo):
     assert "Chiefs" in text
     # Per-pick units appear inline
     assert "(+1.0u)" in text  # Lakers win
-    assert "discord.gg/test" in text
+    assert "Get all picks" not in text
 
 
 def test_format_recap_includes_mtd_footer(settings, repo):
     """When mtd_results provided, footer shows month-to-date W-L and units."""
     poster = XPoster(settings, repo)
-    poster._cta_url = ""
 
     yesterday = [
         {"outcome_name": "Lakers", "market_key": "spreads", "result": "won",
@@ -410,7 +406,6 @@ def test_format_recap_includes_mtd_footer(settings, repo):
 def test_format_recap_zero_plays_always_posts(settings, repo):
     """Empty results must still produce a tweet body (accountability beat)."""
     poster = XPoster(settings, repo)
-    poster._cta_url = ""
 
     text = poster._format_recap([])
     assert text  # not empty
@@ -420,7 +415,6 @@ def test_format_recap_zero_plays_always_posts(settings, repo):
 def test_format_recap_pending(settings, repo):
     """Unresolved signals show as pending."""
     poster = XPoster(settings, repo)
-    poster._cta_url = ""
 
     results = [
         {"outcome_name": "Cowboys", "market_key": "spreads", "result": None,
@@ -458,7 +452,6 @@ async def test_post_daily_recap_calls_tweepy(settings, repo):
     poster._enabled = True
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
-    poster._cta_url = "https://discord.gg/test"
 
     # Insert a free play alert + resolved signal result
     now = datetime.now(timezone.utc).isoformat()
@@ -962,7 +955,6 @@ async def test_rapid_change_not_free_play_unless_whitelisted(settings, repo):
 def test_format_weekly_recap_with_results(settings, repo):
     """Won/lost results format correctly in the weekly recap."""
     poster = XPoster(settings, repo)
-    poster._cta_url = "https://discord.gg/test"
 
     results = [
         {"outcome_name": "Lakers", "market_key": "spreads", "result": "won",
@@ -984,14 +976,13 @@ def test_format_weekly_recap_with_results(settings, repo):
     assert "Chiefs" in text
     assert "Celtics" in text
     assert "Record: 2-1" in text
-    assert "discord.gg/test" in text
+    assert "Get all picks" not in text
     assert len(text) <= 280
 
 
 def test_format_weekly_recap_truncation(settings, repo):
     """Many picks should truncate with '...and N more' and stay <= 280 chars."""
     poster = XPoster(settings, repo)
-    poster._cta_url = "https://discord.gg/test"
 
     results = []
     for i in range(15):
@@ -1033,7 +1024,6 @@ async def test_post_weekly_recap_calls_tweepy(settings, repo):
     poster._enabled = True
     poster._client = MagicMock()
     poster._client.create_tweet = MagicMock()
-    poster._cta_url = "https://discord.gg/test"
 
     # Insert a free play alert
     await repo.record_alert(
