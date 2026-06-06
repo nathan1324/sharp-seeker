@@ -143,6 +143,37 @@ combos/hours yet. Pipeline filters above are NOT bypassed.
 Append a dated entry for every signaling change. Include: what changed, why
 (data snapshot, date range, sample size, win%/units/ROI), and file touched.
 
+### 2026-06-06 — Early WNBA PD backtest (DEFERRED to 2026-06-15 review, no change)
+- **Trigger:** noticed a WNBA PD firing during assumed "quiet hours" — it isn't
+  blocked because `signal_quiet_hours` has no WNBA entry and hour 12 UTC isn't
+  in the generic `pinnacle_divergence` list; WNBA PD is still raw-collection.
+  Pulled the 2026-06-15 review forward to backtest under NBA-style guardrails.
+- **Tool:** `scripts/backtest_wnba_pd.py` (new; NBA PD as same-window benchmark).
+- **Data (graded WNBA PD, 2026-05-13 → 06-06, n=27):** overall 17W-10L, 63.0%,
+  +5.73u, +21.2% ROI. By market: spreads 10W-4L (71.4%, +5.43u, +38.8%) — tool
+  flags PROMOTE; totals 5W-5L (50%, −0.68u); h2h 2W-1L (n=3).
+- **Why NOT promoted (the caution):** (1) samples are tiny — 10-4 on n=14 is
+  ~1-in-10 by luck at break-even, not significant; overall 63% is ~18% by luck.
+  (2) **WNBA's profile is the inverse of NBA's:** NBA PD's only durable edge is
+  totals (+3.6% on n=574) and spreads LOSE (−7.8% on n=319); WNBA shows the
+  opposite. If the mechanism transferred, WNBA should resemble NBA — it doesn't,
+  which argues the spread number is noise. (3) recommended hours [5,16] are n=5
+  buckets.
+- **Decision:** operator chose to WAIT for the 2026-06-15 review (sample ~doubles)
+  rather than ship a code change for a 14-play signal. No config/code changed.
+- **Two gotchas for WHEN we promote (don't re-derive):**
+  1. Adding the combo to `SIGNAL_BEST_COMBOS` alone does NOT route WNBA spreads
+     to the main channel — while `discord_webhook_pinnacle_divergence_wnba` is
+     set, `_raw_pd_webhook` sends ALL WNBA PD to raw (all-or-nothing per sport).
+     A **code change** in `discord.py send_signals` is required to graduate
+     qualifying signals out of raw → main while keeping non-promoted markets
+     (totals/h2h) in raw collection. Sketch: `if raw_url is not None and
+     q_count > 0: raw_url = None`.
+  2. `SIGNAL_BEST_HOURS` has a GENERIC `pinnacle_divergence: [5,6,8,9,12,14,16,17]`
+     fallback. WNBA would inherit it → Best Combo + Best Hour = 2 qualifiers =
+     Elite/2U. To keep it at 1U, add `"pinnacle_divergence:basketball_wnba": []`
+     (mirrors the existing MLB `[]` override).
+
 ### 2026-06-01 — PD sharp-direction annotation (measurement only, h2h + spreads)
 - **Change:** `PinnacleDivergenceDetector` (`sharp_seeker/engine/
   pinnacle_divergence.py`) now tags every h2h/spread signal with
