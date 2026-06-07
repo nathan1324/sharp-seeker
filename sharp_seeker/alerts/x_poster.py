@@ -162,6 +162,7 @@ class XPoster:
         self._free_play_hourly_cap = settings.x_free_play_hourly_cap
         self._free_play_interval = settings.x_free_play_interval
         self._free_play_combos: set[str] = set(settings.x_free_play_combos)
+        self._fp_excluded_sports: set[str] = set(settings.x_free_play_excluded_sports)
         self._fp_eligible_count = 0
         self._fp_eligible_date: str = ""
         self._max_strength = settings.x_max_strength
@@ -231,6 +232,14 @@ class XPoster:
             free_play_picks: list[Signal] = []
             for s in signals:
                 if not self._matches_free_play_combo(s):
+                    continue
+                # Sport parked out of free plays (edge still under test).
+                if s.sport_key in self._fp_excluded_sports:
+                    log.info(
+                        "x_free_play_excluded_sport_skip",
+                        event_id=s.event_id,
+                        sport_key=s.sport_key,
+                    )
                     continue
                 # Policy: spread free plays must be Steam type only.
                 if s.market_key == "spreads" and s.signal_type != SignalType.STEAM_MOVE:

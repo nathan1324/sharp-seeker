@@ -130,6 +130,45 @@ async def test_non_whitelisted_combo_no_free_play(settings, repo):
 
 
 @pytest.mark.asyncio
+async def test_excluded_sport_no_free_play(settings, repo):
+    """A signal matching a combo but in an excluded sport is benched."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+
+    poster._free_play_combos = {"pinnacle_divergence:*:totals"}
+    poster._fp_excluded_sports = {"basketball_wnba"}
+    poster._free_play_interval = 1
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    details = {
+        "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 165.5}],
+    }
+    wnba = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="totals",
+        outcome_name="Over",
+        sport_key="basketball_wnba",
+        details=details,
+    )
+    nba = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="totals",
+        outcome_name="Over",
+        sport_key="basketball_nba",
+        details=details,
+    )
+    nba.event_id = "evt_nba"
+
+    await poster.post_signals([wnba, nba])
+
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    free_plays = [t for t in calls if "FREE PLAY" in t]
+    # WNBA benched, NBA (same combo, not excluded) still posts.
+    assert len(free_plays) == 1
+
+
+@pytest.mark.asyncio
 async def test_interval_skips_early_signals(settings, repo):
     """With interval=3, only every 3rd eligible signal becomes a free play."""
     poster = XPoster(settings, repo)

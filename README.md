@@ -213,6 +213,7 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `X_FREE_PLAY_HOURLY_CAP` | `1` | Max free plays per UTC hour (`0` = unlimited) |
 | `X_FREE_PLAY_INTERVAL` | `3` | Post a free play every Nth eligible signal (`1` = post every eligible signal, no throttle) |
 | `X_FREE_PLAY_COMBOS` | `[]` | Whitelist of `type:sport:market` combos eligible for free plays (JSON array, empty = none). A `*` in any segment is a wildcard, e.g. `*:*:totals` = every totals signal, `pinnacle_divergence:*:totals` = PD totals in every sport |
+| `X_FREE_PLAY_EXCLUDED_SPORTS` | `[]` | Sport keys benched out of free plays even if they match a combo (JSON array). Use to park a sport whose edge is still under test without editing the combo list |
 | `X_TEASER_HOURS` | `[]` | UTC hours to allow teaser tweets (JSON array, empty = always) |
 | `X_MAX_STRENGTH` | `1.0` | Skip PD signals >= this strength for X tweets (0.0–1.0) |
 | `X_TWEET_SIGNAL_TYPES` | `["pinnacle_divergence", "rapid_change"]` | Signal types eligible for X tweets (JSON array) |
