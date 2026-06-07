@@ -414,76 +414,37 @@ class XPoster:
         log.info("x_weekly_recap_posted", free_plays=len(results))
 
     def _format_weekly_recap(self, results: list) -> str:
-        """Format a weekly recap tweet from free play results (max 280 chars)."""
-        _RESULT_EMOJI = {
-            "won": "\u2705",
-            "lost": "\u274c",
-            "push": "\u21a9\ufe0f",
-        }
+        """Format a weekly recap tweet: record + net units only.
+
+        A full week of free plays never fits in 280 chars, so the weekly recap
+        is a summary - the week's win-loss record and net risk-adjusted units -
+        not a per-pick list. Pending plays are noted so an incomplete record
+        doesn't read as if it's hiding unresolved bets.
+        """
         header = "\U0001f4ca Weekly Free Plays"
 
-        # Build per-pick lines
-        lines: list[str] = []
-        wins = losses = 0
+        wins = losses = pending = 0
+        week_units = 0.0
         for row in results:
             row_dict = dict(row) if not isinstance(row, dict) else row
             result = row_dict.get("result")
-            outcome = row_dict["outcome_name"]
-            market = row_dict["market_key"]
+            if result == "won":
+                wins += 1
+            elif result == "lost":
+                losses += 1
+            elif not result:
+                pending += 1
+            week_units += _units_from_row(row_dict)
 
-            odds_str = ""
-            tier_badge = ""
-            details_raw = row_dict.get("details_json")
-            if details_raw:
-                try:
-                    details = json.loads(details_raw) if isinstance(details_raw, str) else details_raw
-                    value_books = details.get("value_books", [])
-                    if value_books:
-                        best = value_books[0]
-                        odds_str = " " + _format_odds(market, best.get("price"), best.get("point"))
-                    q_count = details.get("qualifier_count", 0)
-                    if q_count >= 2:
-                        tier_badge = " \U0001f3c6"  # Elite
-                except (json.JSONDecodeError, TypeError):
-                    pass
+        lines = [header, ""]
+        if wins + losses > 0:
+            lines.append(f"Record: {wins}-{losses} ({_fmt_units(week_units)})")
+        else:
+            lines.append("No decided plays this week.")
+        if pending:
+            lines.append(f"{pending} still pending")
 
-            if result:
-                emoji = _RESULT_EMOJI.get(result, "\u2753")
-                label = result.upper()
-                lines.append(f"{emoji} {outcome}{odds_str}{tier_badge} \u2014 {label}")
-                if result == "won":
-                    wins += 1
-                elif result == "lost":
-                    losses += 1
-            else:
-                lines.append(f"\u23f3 {outcome}{odds_str}{tier_badge} \u2014 PENDING")
-
-        # Fixed footer — always shown
-        footer_parts: list[str] = []
-        decided = wins + losses
-        if decided > 0:
-            footer_parts.append(f"Record: {wins}-{losses}")
-        footer = "\n".join(footer_parts)
-
-        # Try all lines first
-        body = "\n".join(lines)
-        tweet = f"{header}\n\n{body}\n\n{footer}" if footer else f"{header}\n\n{body}"
-        if len(tweet) <= 280:
-            return tweet
-
-        # Remove lines from the end until it fits with "...and N more"
-        for show in range(len(lines) - 1, 0, -1):
-            omitted = len(lines) - show
-            body = "\n".join(lines[:show])
-            suffix = f"\n...and {omitted} more"
-            tweet = f"{header}\n\n{body}{suffix}\n\n{footer}" if footer else f"{header}\n\n{body}{suffix}"
-            if len(tweet) <= 280:
-                return tweet
-
-        # Fallback: header + count + footer only
-        total = len(lines)
-        tweet = f"{header}\n\n...and {total} more\n\n{footer}" if footer else f"{header}\n\n...and {total} more"
-        return tweet
+        return "\n".join(lines)
 
     def _format_recap(self, results: list, mtd_results: list | None = None) -> str:
         """Format a recap tweet from free play results.
