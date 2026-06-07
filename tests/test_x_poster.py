@@ -992,55 +992,63 @@ async def test_rapid_change_not_free_play_unless_whitelisted(settings, repo):
 
 
 def test_format_weekly_recap_with_results(settings, repo):
-    """Won/lost results format correctly in the weekly recap."""
+    """Weekly recap is a summary: record + net units, no per-pick list."""
     poster = XPoster(settings, repo)
 
     results = [
         {"outcome_name": "Lakers", "market_key": "spreads", "result": "won",
-         "signal_strength": 0.85, "event_id": "e1", "sent_at": "2099-01-15",
          "details_json": json.dumps({"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]})},
         {"outcome_name": "Chiefs", "market_key": "h2h", "result": "lost",
-         "signal_strength": 0.70, "event_id": "e2", "sent_at": "2099-01-15",
          "details_json": json.dumps({"value_books": [{"bookmaker": "fanduel", "price": 150}]})},
         {"outcome_name": "Celtics", "market_key": "spreads", "result": "won",
-         "signal_strength": 0.80, "event_id": "e3", "sent_at": "2099-01-16",
          "details_json": json.dumps({"value_books": [{"bookmaker": "betmgm", "price": -105, "point": -2.5}]})},
     ]
 
     text = poster._format_weekly_recap(results)
     assert "Weekly Free Plays" in text
-    assert "\u2705" in text  # won emoji
-    assert "\u274c" in text  # lost emoji
-    assert "Lakers" in text
-    assert "Chiefs" in text
-    assert "Celtics" in text
-    assert "Record: 2-1" in text
-    assert "Get all picks" not in text
+    # Units: Lakers won @-110 = +1.0u, Chiefs lost @+150 = -0.7u,
+    # Celtics won @-105 = +1.0u -> net +1.3u
+    assert "Record: 2-1 (+1.3u)" in text
+    # Summary only: individual picks are not listed.
+    assert "Lakers" not in text
+    assert "Chiefs" not in text
     assert len(text) <= 280
 
 
-def test_format_weekly_recap_truncation(settings, repo):
-    """Many picks should truncate with '...and N more' and stay <= 280 chars."""
+def test_format_weekly_recap_pending(settings, repo):
+    """Undecided plays are surfaced as a pending count, not hidden."""
+    poster = XPoster(settings, repo)
+
+    results = [
+        {"outcome_name": "Lakers", "market_key": "spreads", "result": "won",
+         "details_json": json.dumps({"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]})},
+        {"outcome_name": "Bulls", "market_key": "spreads", "result": None,
+         "details_json": json.dumps({"value_books": [{"bookmaker": "draftkings", "price": -110, "point": 2.5}]})},
+    ]
+
+    text = poster._format_weekly_recap(results)
+    assert "Record: 1-0 (+1.0u)" in text
+    assert "1 still pending" in text
+
+
+def test_format_weekly_recap_stays_compact(settings, repo):
+    """Many picks still collapse to a single record line under 280 chars."""
     poster = XPoster(settings, repo)
 
     results = []
-    for i in range(15):
+    for i in range(40):
         results.append({
             "outcome_name": f"Team{i}LongName",
             "market_key": "spreads",
             "result": "won" if i % 2 == 0 else "lost",
-            "signal_strength": 0.70,
-            "event_id": f"e{i}",
-            "sent_at": "2099-01-15",
             "details_json": json.dumps({"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]}),
         })
 
     text = poster._format_weekly_recap(results)
     assert len(text) <= 280
-    assert "...and" in text
-    assert "more" in text
-    assert "Weekly Free Plays" in text
-    assert "Record:" in text
+    assert "Record: 20-20" in text
+    assert "...and" not in text  # no per-pick truncation, it is a summary
+    assert "Team0LongName" not in text
 
 
 @pytest.mark.asyncio
@@ -1078,7 +1086,8 @@ async def test_post_weekly_recap_calls_tweepy(settings, repo):
     poster._client.create_tweet.assert_called_once()
     call_text = poster._client.create_tweet.call_args.kwargs["text"]
     assert "Weekly Free Plays" in call_text
-    assert "Lakers" in call_text
+    # Summary only — the ungraded play shows as pending, not by name.
+    assert "1 still pending" in call_text
 
 
 # ── Daily recap with card image attachment ─────────────────────────
