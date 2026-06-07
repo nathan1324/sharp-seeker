@@ -179,9 +179,12 @@ def run():
         _add(by_hour[hour], result, price)
         _add(by_book[book], result, price)
         _add(before if date < SPLIT_DATE else after, result, price)
-        if hour in BLEED_HOURS:
-            _add(bleed, result, price)
         is_pd = r["signal_type"] == "pinnacle_divergence"
+        # Quiet-hours fix is PD-specific: only pinnacle_divergence:baseball_mlb
+        # is quiet at 12/13. Steam/Rapid legitimately fire there, so scope the
+        # audit to PD or it false-alarms on other signal types.
+        if is_pd and hour in BLEED_HOURS:
+            _add(bleed, result, price)
         if is_pd and book == "draftkings":
             _add(pd_dk, result, price)
         if is_pd and hour in exposed_hours:
@@ -219,9 +222,9 @@ def run():
     print("\n=== AUDIT: ARE OUR MLB FIXES ACTUALLY LIVE? ===")
     bleed_n = bleed["w"] + bleed["l"] + bleed["p"]
     if bleed_n == 0:
-        print("  [OK]   Quiet hours: no MLB signals at 12/13 UTC. Fix is live.")
+        print("  [OK]   Quiet hours: no MLB PD signals at 12/13 UTC. Fix is live.")
     else:
-        print(f"  [WARN] Quiet hours NOT live: {bleed_n} MLB signals survived at "
+        print(f"  [WARN] Quiet hours NOT live: {bleed_n} MLB PD signals survived at "
               f"12/13 UTC -> {_fmt(bleed)}")
         print("         SIGNAL_QUIET_HOURS['pinnacle_divergence:baseball_mlb'] is "
               "likely [] or missing in the server .env.")
@@ -246,8 +249,13 @@ def run():
         if exp_n == 0:
             print("  No MLB PD signals landed in those hours -> not the cause.")
         else:
+            exp_dec = exposed_pd["w"] + exposed_pd["l"]
             print(f"  MLB PD perf in those exposed hours: {_fmt(exposed_pd)}")
-            if exposed_pd["u"] < 0:
+            if exp_dec < 30:
+                print(f"  -> inconclusive: only n={exp_dec} decided across "
+                      f"{len(exposed_hours)} hours (~{exp_dec // max(len(exposed_hours), 1)}/hr); "
+                      "too small to act on. Re-check on a wider window.")
+            elif exposed_pd["u"] < 0:
                 print("  -> NEGATIVE: narrowing to [12,13] re-opened bleed hours. "
                       "Consider restoring suppression for the losing ones.")
             else:
