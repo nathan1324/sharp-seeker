@@ -144,6 +144,35 @@ combos/hours yet. Pipeline filters above are NOT bypassed.
 Append a dated entry for every signaling change. Include: what changed, why
 (data snapshot, date range, sample size, win%/units/ROI), and file touched.
 
+### 2026-06-07 — MLB "getting killed" investigation (NO CHANGE — loss is historical)
+- **Trigger:** operator observed MLB losing on Discord grades and suspected our
+  recent changes caused it. Built `scripts/diagnose_mlb_regression.py` to
+  separate a real regression from variance and to audit whether the merged MLB
+  bleed-fixes are actually live in the running config.
+- **Finding (all-time, n=1355 graded MLB): −99.96u overall, but it's a historical
+  hole, not a current one.** Before 2026-05-31: −99.16u (n=1293); after: −0.80u
+  (n=62, break-even). Weekly trend: damage is W15/W17/W18 (Apr 6–May 3: −38.6,
+  −63.6, −37.7u); W19 onward (May 4+) is net positive (W19 +25.5, W22 +15.7).
+  Last 7 days: −0.80u overall, core PD totals +3.17u/58%.
+- **Root of the historical loss = the two bleeds we already fixed:** DraftKings
+  on MLB PD (−82.98u @ 28%, addressed by the 2026-04-25 DK exclusion) and 12/13
+  UTC overnight (−68.80u, addressed by the 2026-05-31 quiet hours). 7-day audit
+  confirms both fixes are LIVE: zero DK picks on MLB PD, and hour 13 has zero
+  signals. So changes *followed* the bleed and correlate with the recovery.
+- **Override-gap hypothesis (raised, then REFUTED):** narrowing MLB quiet hours
+  to a `[12,13]`-only override means MLB PD fires at the generic PD quiet hours
+  `[3,4,14,17,18,20,22]`. All-time those hours are **+13.24u (n=71)** — net
+  positive, not a bleed. (A 7-day window showed −4.31u on n=23, but that's ~3
+  plays/hour = noise; the diagnostic now reports such samples as inconclusive.)
+- **Decision:** no config/code change. Do NOT widen MLB quiet hours. The
+  diagnostic had two false-positive audits in its first cut (counted pre-fix
+  history all-time; flagged the override gap on tiny n) — both tightened in
+  `diagnose_mlb_regression.py` (scope quiet-hours audit to PD; gate the override
+  verdict at n>=30).
+- **Monitor-only (no action):** all-time UTC hours 16/23/00 each show ~−13 to
+  −25u, but likely pre-fix; only revisit if a wider recent window shows them
+  still bleeding.
+
 ### 2026-06-06 — Bench WNBA from X free plays until the 2026-06-15 review
 - **Change:** added `x_free_play_excluded_sports` (list, default `[]`) to
   `sharp_seeker/config.py`; `XPoster` (`sharp_seeker/alerts/x_poster.py`) now
