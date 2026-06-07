@@ -130,6 +130,7 @@ combos/hours yet. Pipeline filters above are NOT bypassed.
 | `quiet_hours_start` / `quiet_hours_end` | 5 / 14 | UTC hours to skip polling entirely |
 | `alert_cooldown_minutes` | 60 | Per (event, type, market, outcome) dedup |
 | `x_free_play_combos` | `[]` | Combos eligible to post as X free plays |
+| `x_free_play_excluded_sports` | `[]` | Sport keys benched out of free plays even if they match a combo |
 | `x_free_play_sport_cap` | 3 | Free plays per sport per day |
 | `x_free_play_hourly_cap` | 1 | Free plays per UTC hour |
 | `x_max_strength` | 1.0 | Skip PD X tweets at/above this strength |
@@ -142,6 +143,34 @@ combos/hours yet. Pipeline filters above are NOT bypassed.
 
 Append a dated entry for every signaling change. Include: what changed, why
 (data snapshot, date range, sample size, win%/units/ROI), and file touched.
+
+### 2026-06-06 — Bench WNBA from X free plays until the 2026-06-15 review
+- **Change:** added `x_free_play_excluded_sports` (list, default `[]`) to
+  `sharp_seeker/config.py`; `XPoster` (`sharp_seeker/alerts/x_poster.py`) now
+  skips any free-play candidate whose `sport_key` is in the set, logging
+  `x_free_play_excluded_sport_skip`. Production `.env` set to
+  `X_FREE_PLAY_EXCLUDED_SPORTS=["basketball_wnba"]`.
+- **Why (the trap):** the same-day free-play refactor scoped X free plays to the
+  wildcard `pinnacle_divergence:*:totals`, which makes **WNBA PD totals**
+  eligible. But WNBA PD **spreads** — the only market with a tentative edge in
+  the 06-06 backtest (10-4, +38.8%) — are blocked from X by the Steam-only-
+  spreads policy (`x_poster.py`). So the *only* WNBA market reaching the public
+  feed was totals: **50% WR, −0.68u (n=10)** — the inferior one. We were publicly
+  posting the losing market and suppressing the (maybe) winning one, during a
+  test we had explicitly deferred.
+- **Why a sport-exclusion (not editing the combo list):** keeps the deliberate
+  wildcard intact and makes the un-park a one-token removal at review time,
+  rather than re-enumerating every other sport's totals combo.
+- **Scope:** WNBA PD signals still flow uncensored to the dedicated raw Discord
+  channel (`discord_webhook_pinnacle_divergence_wnba`) — data collection is
+  unaffected; only the public X free play is benched. No detector/threshold/
+  Discord behavior changed.
+- **Server action:** production `.env` add
+  `X_FREE_PLAY_EXCLUDED_SPORTS=["basketball_wnba"]`, then
+  `docker compose up -d --build` (code change in `x_poster.py`).
+- **Review date:** 2026-06-15 (same as the WNBA PD review below). If the matured
+  sample promotes a WNBA market, remove `basketball_wnba` from the exclusion as
+  part of that promotion.
 
 ### 2026-06-06 — Early WNBA PD backtest (DEFERRED to 2026-06-15 review, no change)
 - **Trigger:** noticed a WNBA PD firing during assumed "quiet hours" — it isn't
