@@ -34,21 +34,27 @@ HOURS = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1] else 24
 DB_PATH = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else "/app/data/sharp_seeker.db"
 
 
-def _units(details_json, result):
-    """Risk-adjusted units (mirror of reports._compute_units)."""
+def _units(details_json, result, signal_type=None):
+    """Risk-adjusted units (mirror of reports._units_from_signal)."""
+    d = None
+    if details_json:
+        try:
+            d = json.loads(details_json) if isinstance(details_json, str) else details_json
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            d = None
+    # Arbitrage: count its guaranteed profit_pct (~0 impact), not the side-A swing.
+    if signal_type == "arbitrage":
+        pct = d.get("profit_pct") if d else None
+        return round(pct / 100.0, 4) if pct is not None else 0.0
     if result == "push":
         return 0.0
     price = None
     qcount = 0
-    if details_json:
-        try:
-            d = json.loads(details_json) if isinstance(details_json, str) else details_json
-            vb = d.get("value_books", [])
-            if vb:
-                price = vb[0].get("price")
-            qcount = d.get("qualifier_count", 0)
-        except (json.JSONDecodeError, TypeError, AttributeError):
-            pass
+    if d:
+        vb = d.get("value_books", [])
+        if vb:
+            price = vb[0].get("price")
+        qcount = d.get("qualifier_count", 0)
     if price is None:
         return 0.0
     mult = 2 if qcount >= 2 else 1
@@ -126,7 +132,7 @@ def main():
 
     for row in cur:
         result = row["result"]
-        u = _units(row["details_json"], result)
+        u = _units(row["details_json"], result, row["signal_type"])
         q = _qcount(row["details_json"])
         was_sent = bool(row["was_sent"])
         signal_at = row["signal_at"] or ""

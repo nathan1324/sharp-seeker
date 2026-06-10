@@ -484,6 +484,30 @@ def test_compute_units_missing_price():
     assert _compute_units(None, "lost") == 0.0
 
 
+def test_arbitrage_units_use_profit_pct_not_side_a_swing():
+    """An arb is recorded as a single side-A row, but a properly-sized arb is
+    ~flat: it should count its guaranteed profit_pct, not a full +/-1u swing on
+    whether side A won or lost."""
+    from sharp_seeker.analysis.reports import _units_from_signal
+
+    details = '{"profit_pct": 2.0, "side_a": {"outcome": "Over"}}'
+    # Side A graded a loss — a naive 1u bet would be about -1.1u.
+    arb_lost = {
+        "signal_type": "arbitrage", "result": "lost", "details_json": details,
+    }
+    assert _units_from_signal(arb_lost) == 0.02
+    # Side A graded a win — still just the guaranteed edge, not +1u.
+    arb_won = {
+        "signal_type": "arbitrage", "result": "won", "details_json": details,
+    }
+    assert _units_from_signal(arb_won) == 0.02
+    # No profit_pct stored -> 0 impact, never a full swing.
+    arb_missing = {
+        "signal_type": "arbitrage", "result": "won", "details_json": "{}",
+    }
+    assert _units_from_signal(arb_missing) == 0.0
+
+
 def test_units_from_signal_applies_elite_multiplier():
     """qualifier_count >= 2 triggers 2x sizing."""
     from sharp_seeker.analysis.reports import _units_from_signal

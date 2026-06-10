@@ -100,8 +100,31 @@ def _compute_units(price: float | None, result: str, multiplier: int = 1) -> flo
     return 0.0
 
 
+def _arb_units(details_json_str: str | None) -> float:
+    """Units for an arbitrage: its guaranteed profit_pct (as a fraction of a 1u
+    total stake), regardless of which side won.
+
+    An arb is recorded as a single side-A row, but a properly-sized arb stakes
+    both sides and collects the same small profit no matter the result. Counting
+    side A's win/loss as a full ±1u swing would inject variance the position
+    never carried, so we use the stored profit_pct instead (≈0 impact).
+    """
+    if not details_json_str:
+        return 0.0
+    try:
+        details = json.loads(details_json_str) if isinstance(details_json_str, str) else details_json_str
+    except (json.JSONDecodeError, TypeError):
+        return 0.0
+    pct = details.get("profit_pct")
+    if pct is None:
+        return 0.0
+    return round(pct / 100.0, 4)
+
+
 def _units_from_signal(sig_dict: dict) -> float:
     """Compute units for a single resolved signal row."""
+    if sig_dict.get("signal_type") == SignalType.ARBITRAGE.value:
+        return _arb_units(sig_dict.get("details_json"))
     price, qualifier_count = _parse_price_and_qualifier(sig_dict.get("details_json"))
     multiplier = 2 if qualifier_count >= 2 else 1
     return _compute_units(price, sig_dict["result"], multiplier)
