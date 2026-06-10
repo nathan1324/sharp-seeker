@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -137,6 +138,45 @@ async def test_performance_stats_by_market(settings, repo):
     )
     assert "h2h" not in stats_recent
     assert "spreads" in stats_recent
+
+
+@pytest.mark.asyncio
+async def test_window_by_resolved_at_captures_early_signals(settings, repo):
+    """A signal that fired long before the window but was graded inside it must
+    appear when windowing by resolved_at — the daily-recap bug fix.
+
+    Recaps run shortly after grading; a play that fired 3 days ahead of the game
+    has signal_at far outside the 24h window but resolved_at inside it.
+    """
+    tracker = PerformanceTracker(repo)
+
+    fired_at = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+    await tracker.record_signals([_signal("e_early", SignalType.STEAM_MOVE)], fired_at)
+
+    # Grade it now (resolve_signal stamps resolved_at = now).
+    row = dict((await repo.get_unresolved_signals())[0])
+    await repo.resolve_signal(
+        row["event_id"], row["signal_type"], row["market_key"],
+        row["outcome_name"], row["signal_at"], "won",
+    )
+
+    since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+
+    # Old behavior: windowing by fire time drops the early signal.
+    by_signal = await repo.get_performance_stats(since, window_by="signal_at")
+    assert "steam_move" not in by_signal
+
+    # Fixed behavior: windowing by grading time captures it.
+    by_resolved = await repo.get_performance_stats(since, window_by="resolved_at")
+    assert by_resolved["steam_move"]["won"] == 1
+
+    # And the row-returning + by-market queries agree.
+    resolved_rows = await repo.get_resolved_signals_since(since, window_by="resolved_at")
+    assert len(resolved_rows) == 1
+    by_market = await repo.get_performance_stats_by_market(
+        since, window_by="resolved_at"
+    )
+    assert by_market["spreads"]["won"] == 1
 
 
 # ── CSV generation + attachment tests ──────────────────────────

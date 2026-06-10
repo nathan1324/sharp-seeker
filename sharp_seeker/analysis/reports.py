@@ -19,6 +19,12 @@ log = structlog.get_logger()
 
 LOGO_URL = "https://raw.githubusercontent.com/nathan1324/sharp-seeker/main/assets/logo-square.png"
 
+# Recaps window performance by grading time, not fire time: a play graded today
+# belongs in today's report no matter how far ahead of the game it fired. (The
+# detection/alert COUNTS still window by signal_at/sent_at — those measure
+# activity in the period, not gradings.)
+_RECAP_WINDOW = "resolved_at"
+
 # Map signal_type DB values to their per-channel webhook setting names
 _SIGNAL_WEBHOOK_ATTRS: dict[str, str] = {
     SignalType.STEAM_MOVE.value: "discord_webhook_steam_move",
@@ -195,7 +201,7 @@ class ReportGenerator:
                 override_sports.setdefault(parts[0], []).append(parts[1])
 
         all_types_stats = await self._repo.get_performance_stats(
-            since, sent_only=True,
+            since, sent_only=True, window_by=_RECAP_WINDOW,
         )
         if not all_types_stats:
             return
@@ -208,6 +214,7 @@ class ReportGenerator:
             # Re-query stats excluding overridden sports for this signal type
             type_stats = await self._repo.get_performance_stats(
                 since, exclude_sports=exclude, sent_only=True,
+                window_by=_RECAP_WINDOW,
             )
             counts = type_stats.get(signal_type_val)
             if not counts:
@@ -215,7 +222,7 @@ class ReportGenerator:
 
             resolved = await self._repo.get_resolved_signals_since(
                 since, signal_type=signal_type_val, exclude_sports=exclude,
-                sent_only=True,
+                sent_only=True, window_by=_RECAP_WINDOW,
             )
 
             total_units, units_by_market, _ = _aggregate_units(resolved)
@@ -260,7 +267,7 @@ class ReportGenerator:
             # Per-market breakdown for this signal type
             market_stats = await self._repo.get_performance_stats_by_market(
                 since, signal_type=signal_type_val, exclude_sports=exclude,
-                sent_only=True,
+                sent_only=True, window_by=_RECAP_WINDOW,
             )
             if market_stats:
                 mlines = []
@@ -327,6 +334,7 @@ class ReportGenerator:
 
             stats = await self._repo.get_performance_stats(
                 since, sport_key=sport_key, sent_only=sent_only,
+                window_by=_RECAP_WINDOW,
             )
             counts = stats.get(signal_type_val)
             if not counts:
@@ -334,7 +342,7 @@ class ReportGenerator:
 
             resolved = await self._repo.get_resolved_signals_since(
                 since, signal_type=signal_type_val, sport_key=sport_key,
-                sent_only=sent_only,
+                sent_only=sent_only, window_by=_RECAP_WINDOW,
             )
             total_units, units_by_market, _ = _aggregate_units(resolved)
 
@@ -377,7 +385,7 @@ class ReportGenerator:
 
             market_stats = await self._repo.get_performance_stats_by_market(
                 since, signal_type=signal_type_val, sport_key=sport_key,
-                sent_only=sent_only,
+                sent_only=sent_only, window_by=_RECAP_WINDOW,
             )
             if market_stats:
                 mlines = []
@@ -423,11 +431,13 @@ class ReportGenerator:
     # ── Combined summary (default channel) ──────────────────────
 
     async def _send_combined_report(self, title: str, since: str) -> None:
-        stats = await self._repo.get_performance_stats(since, sent_only=True)
+        stats = await self._repo.get_performance_stats(
+            since, sent_only=True, window_by=_RECAP_WINDOW,
+        )
         signal_count = await self._repo.get_signal_count_since(since)
         alert_count = await self._repo.get_alerts_count_since(since)
         resolved = await self._repo.get_resolved_signals_since(
-            since, sent_only=True,
+            since, sent_only=True, window_by=_RECAP_WINDOW,
         )
         total_units, units_by_market, units_by_detector = _aggregate_units(resolved)
 
@@ -474,7 +484,7 @@ class ReportGenerator:
 
             # Overall market breakdown
             market_stats = await self._repo.get_performance_stats_by_market(
-                since, sent_only=True,
+                since, sent_only=True, window_by=_RECAP_WINDOW,
             )
             if market_stats:
                 mlines = []
@@ -524,6 +534,7 @@ class ReportGenerator:
         rows = await self._repo.get_resolved_signals_since(
             since, signal_type=signal_type, sport_key=sport_key,
             exclude_sports=exclude_sports, sent_only=sent_only,
+            window_by=_RECAP_WINDOW,
         )
         if not rows:
             return None
