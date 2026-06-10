@@ -179,13 +179,50 @@ async def test_window_by_resolved_at_captures_early_signals(settings, repo):
     assert by_market["spreads"]["won"] == 1
 
 
+@pytest.mark.asyncio
+async def test_sent_only_counts_raw_pd_sends_not_suppressed(repo):
+    """sent_only must mean "published to Discord" (a sent_alerts row exists),
+    NOT qualifier_count>0. A raw-PD MLB send (qualifier_count=0 but recorded in
+    sent_alerts) belongs in the combined recap; a truly-suppressed 0-qualifier
+    signal (never recorded) must not. This is the missing-MLB-signals fix.
+    """
+    # Raw-PD MLB send: qualifier_count=0 but it WAS sent to the MLB channel.
+    await _seed_resolved_signal(
+        repo, event_id="mlb_raw", signal_type="pinnacle_divergence",
+        sport_key="baseball_mlb", result="won",
+        details_json='{"qualifier_count": 0, "value_books": [{"price": -110}]}',
+        sent=True,
+    )
+    # Truly suppressed: 0 qualifiers, no raw channel — never reached Discord.
+    await _seed_resolved_signal(
+        repo, event_id="nba_suppressed", signal_type="pinnacle_divergence",
+        sport_key="basketball_nba", result="won",
+        details_json='{"qualifier_count": 0, "value_books": [{"price": -110}]}',
+        sent=False,
+    )
+
+    since = "2025-01-01T00:00:00+00:00"
+    stats = await repo.get_performance_stats(since, sent_only=True)
+
+    # The raw-PD send counts; the suppressed signal does not -> exactly 1 win.
+    assert stats.get("pinnacle_divergence", {}).get("won") == 1
+    rows = await repo.get_resolved_signals_since(since, sent_only=True)
+    assert [dict(r)["event_id"] for r in rows] == ["mlb_raw"]
+
+
 # ── CSV generation + attachment tests ──────────────────────────
 
 
 async def _seed_resolved_signal(repo, event_id="e1", signal_type="steam_move",
                                  sport_key="basketball_nba", result="won",
-                                 details_json=None):
-    """Insert a resolved signal and an odds snapshot for team lookup."""
+                                 details_json=None, sent=True):
+    """Insert a resolved signal and an odds snapshot for team lookup.
+
+    When sent=True (default) also records a sent_alerts row, since recaps now
+    define "sent" as "a sent_alerts row exists" rather than qualifier_count>0.
+    Pass sent=False to model a truly-suppressed signal that never reached
+    Discord.
+    """
     await repo.record_signal_result(
         event_id=event_id,
         signal_type=signal_type,
@@ -201,6 +238,12 @@ async def _seed_resolved_signal(repo, event_id="e1", signal_type="steam_move",
         event_id, signal_type, "spreads", "Lakers",
         "2025-01-15T12:00:00+00:00", result,
     )
+    if sent:
+        await repo.record_alert(
+            event_id=event_id, alert_type=signal_type,
+            market_key="spreads", outcome_name="Lakers",
+            details_json=details_json,
+        )
     # Insert a snapshot so get_event_teams returns data
     await repo._db.execute(
         """INSERT INTO odds_snapshots

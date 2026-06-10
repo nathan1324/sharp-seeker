@@ -10,6 +10,19 @@ import structlog
 
 log = structlog.get_logger()
 
+# "Sent to Discord" = a sent_alerts row exists for this play. This is the ground
+# truth, NOT qualifier_count > 0: raw-PD channel sends (MLB/WNBA) and arbitrage
+# are published to Discord but stored with qualifier_count = 0 (they bypass the
+# qualifier gate in discord.send_signals), yet they ARE recorded in sent_alerts.
+# Truly-suppressed 0-qualifier signals are never recorded, so they're excluded.
+_SENT_ALERTS_EXISTS = (
+    " AND EXISTS (SELECT 1 FROM sent_alerts sa"
+    " WHERE sa.event_id = signal_results.event_id"
+    " AND sa.alert_type = signal_results.signal_type"
+    " AND sa.market_key = signal_results.market_key"
+    " AND sa.outcome_name = signal_results.outcome_name)"
+)
+
 
 class Repository:
     def __init__(self, db: aiosqlite.Connection) -> None:
@@ -320,8 +333,11 @@ class Repository:
         Deduplicates by (event_id, signal_type, market_key, outcome_name),
         counting each unique play only once.
 
-        If sent_only=True, excludes suppressed signals (qualifier_count=0)
-        that were never sent to Discord.
+        If sent_only=True, restricts to plays actually published to Discord
+        (a sent_alerts row exists). This INCLUDES raw-PD channel sends
+        (MLB/WNBA) and arbitrage — qualifier_count=0 but genuinely sent — and
+        excludes only truly-suppressed 0-qualifier signals. See
+        _SENT_ALERTS_EXISTS.
 
         window_by selects which timestamp `since` filters on: "signal_at"
         (when the signal fired, default) or "resolved_at" (when it was graded).
@@ -332,9 +348,7 @@ class Repository:
         where = "WHERE result IS NOT NULL"
         params: list[str] = []
         if sent_only:
-            where += (" AND (COALESCE(json_extract(details_json,"
-                      " '$.qualifier_count'), 1) > 0"
-                      " OR signal_type = 'arbitrage')")
+            where += _SENT_ALERTS_EXISTS
 
         if since:
             where += f" AND {window_col} >= ?"
@@ -392,9 +406,7 @@ class Repository:
         where = "WHERE result IS NOT NULL"
         params: list[str] = []
         if sent_only:
-            where += (" AND (COALESCE(json_extract(details_json,"
-                      " '$.qualifier_count'), 1) > 0"
-                      " OR signal_type = 'arbitrage')")
+            where += _SENT_ALERTS_EXISTS
 
         if since:
             where += f" AND {window_col} >= ?"
@@ -503,9 +515,7 @@ class Repository:
         where = f"WHERE result IS NOT NULL AND {window_col} >= ?"
         params: list[str] = [since]
         if sent_only:
-            where += (" AND (COALESCE(json_extract(details_json,"
-                      " '$.qualifier_count'), 1) > 0"
-                      " OR signal_type = 'arbitrage')")
+            where += _SENT_ALERTS_EXISTS
 
         if signal_type:
             where += " AND signal_type = ?"
