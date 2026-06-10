@@ -163,6 +163,7 @@ class XPoster:
         self._free_play_interval = settings.x_free_play_interval
         self._free_play_combos: set[str] = set(settings.x_free_play_combos)
         self._fp_excluded_sports: set[str] = set(settings.x_free_play_excluded_sports)
+        self._fp_excluded_combos: set[str] = set(settings.x_free_play_excluded_combos)
         self._fp_eligible_count = 0
         self._fp_eligible_date: str = ""
         self._max_strength = settings.x_max_strength
@@ -239,6 +240,19 @@ class XPoster:
                         "x_free_play_excluded_sport_skip",
                         event_id=s.event_id,
                         sport_key=s.sport_key,
+                    )
+                    continue
+                # Sport+market combo carved out (this market has no edge for this
+                # sport, even though the blanket combo still serves other sports).
+                if self._fp_excluded_combos and self._combo_matches(
+                    s, self._fp_excluded_combos
+                ):
+                    log.info(
+                        "x_free_play_excluded_combo_skip",
+                        event_id=s.event_id,
+                        signal_type=s.signal_type.value,
+                        sport_key=s.sport_key,
+                        market_key=s.market_key,
                     )
                     continue
                 # Policy: spread free plays must be Steam type only.
@@ -322,8 +336,17 @@ class XPoster:
         wildcard, so `pinnacle_divergence:*:totals` matches PD totals in every
         sport (used to open all-sport PD totals to free plays).
         """
+        return self._combo_matches(signal, self._free_play_combos)
+
+    @staticmethod
+    def _combo_matches(signal: Signal, combos: set[str]) -> bool:
+        """True if the signal matches any `type:sport:market` combo in `combos`.
+
+        A `*` in any of the 3 segments is a wildcard. Shared by the free-play
+        whitelist and the exclusion list.
+        """
         parts = (signal.signal_type.value, signal.sport_key, signal.market_key)
-        for combo in self._free_play_combos:
+        for combo in combos:
             cp = combo.split(":")
             if len(cp) == 3 and all(c == "*" or c == p for c, p in zip(cp, parts)):
                 return True

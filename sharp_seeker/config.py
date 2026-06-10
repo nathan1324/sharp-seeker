@@ -172,6 +172,11 @@ class Settings(BaseSettings):
     # (JSON array in .env). Used to bench a sport whose edge is still under test
     # without disturbing the combo whitelist/wildcard. Empty list = no exclusions.
     x_free_play_excluded_sports: list[str] = Field(default_factory=list)
+    # type:sport:market combos carved OUT of free plays even if they match a
+    # combo above (JSON array in .env). Same `*` wildcard syntax as the whitelist.
+    # Used to drop ONE market for ONE sport (e.g. a sport whose totals lose while
+    # its blanket `*:totals` whitelist still serves the other sports). Empty = none.
+    x_free_play_excluded_combos: list[str] = Field(default_factory=list)
     # UTC hours when teaser tweets are allowed (JSON array in .env)
     # Free play tweets are always sent regardless of this setting.
     x_teaser_hours: list[int] = Field(default_factory=list)
