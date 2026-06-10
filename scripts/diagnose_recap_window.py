@@ -135,7 +135,7 @@ def main():
     conn.close()
 
     pct = (100.0 * tot_missed / tot_graded) if tot_graded else 0.0
-    print("Recap window diagnostic — DB: " + DB_PATH)
+    print("Recap window diagnostic - DB: " + DB_PATH)
     print("Window: last " + str(DAYS) + " days of gradings (since " + since[:16] + ")")
     print("Miss rule: signal_at more than 24h before resolved_at (sent-to-Discord plays)\n")
     print("Graded plays in window:        " + str(tot_graded))
