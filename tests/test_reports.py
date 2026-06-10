@@ -210,6 +210,42 @@ async def test_sent_only_counts_raw_pd_sends_not_suppressed(repo):
     assert [dict(r)["event_id"] for r in rows] == ["mlb_raw"]
 
 
+@pytest.mark.asyncio
+async def test_exclude_types_drops_arbitrage_from_recap(repo):
+    """exclude_types removes arbs from the recap at SQL level, including the
+    by-market breakdown (where arb h2h would otherwise lump in with PD h2h)."""
+    await _seed_resolved_signal(
+        repo, event_id="arb1", signal_type="arbitrage",
+        sport_key="baseball_mlb", result="lost",
+        details_json='{"profit_pct": 2.0}', sent=True,
+    )
+    await _seed_resolved_signal(
+        repo, event_id="pd1", signal_type="pinnacle_divergence",
+        sport_key="baseball_mlb", result="won",
+        details_json='{"qualifier_count": 0, "value_books": [{"price": -110}]}',
+        sent=True,
+    )
+    since = "2025-01-01T00:00:00+00:00"
+
+    stats = await repo.get_performance_stats(
+        since, sent_only=True, exclude_types=["arbitrage"]
+    )
+    assert "arbitrage" not in stats
+    assert stats["pinnacle_divergence"]["won"] == 1
+
+    # Both used market "spreads" in the seed helper; arb must not inflate it.
+    by_market = await repo.get_performance_stats_by_market(
+        since, sent_only=True, exclude_types=["arbitrage"]
+    )
+    assert by_market["spreads"]["won"] == 1
+    assert by_market["spreads"].get("lost", 0) == 0
+
+    rows = await repo.get_resolved_signals_since(
+        since, sent_only=True, exclude_types=["arbitrage"]
+    )
+    assert [dict(r)["event_id"] for r in rows] == ["pd1"]
+
+
 # ── CSV generation + attachment tests ──────────────────────────
 
 

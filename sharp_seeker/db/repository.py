@@ -327,6 +327,7 @@ class Repository:
         exclude_sports: list[str] | None = None,
         sent_only: bool = False,
         window_by: str = "signal_at",
+        exclude_types: list[str] | None = None,
     ) -> dict[str, dict[str, int]]:
         """Get win/loss/push counts grouped by signal type.
 
@@ -360,6 +361,10 @@ class Repository:
             placeholders = ",".join("?" * len(exclude_sports))
             where += f" AND sport_key NOT IN ({placeholders})"
             params.extend(exclude_sports)
+        if exclude_types:
+            type_ph = ",".join("?" * len(exclude_types))
+            where += f" AND signal_type NOT IN ({type_ph})"
+            params.extend(exclude_types)
 
         sql = f"""
             SELECT signal_type, result, COUNT(*) AS cnt
@@ -394,6 +399,7 @@ class Repository:
         exclude_sports: list[str] | None = None,
         sent_only: bool = False,
         window_by: str = "signal_at",
+        exclude_types: list[str] | None = None,
     ) -> dict[str, dict[str, int]]:
         """Get win/loss/push counts grouped by market_key.
 
@@ -421,6 +427,10 @@ class Repository:
             placeholders = ",".join("?" * len(exclude_sports))
             where += f" AND sport_key NOT IN ({placeholders})"
             params.extend(exclude_sports)
+        if exclude_types:
+            type_ph = ",".join("?" * len(exclude_types))
+            where += f" AND signal_type NOT IN ({type_ph})"
+            params.extend(exclude_types)
 
         sql = f"""
             SELECT market_key, result, COUNT(*) AS cnt
@@ -501,6 +511,7 @@ class Repository:
         exclude_sports: list[str] | None = None,
         sent_only: bool = False,
         window_by: str = "signal_at",
+        exclude_types: list[str] | None = None,
     ) -> list[aiosqlite.Row]:
         """Get resolved signals since a timestamp, optionally filtered by type/sport.
 
@@ -527,6 +538,10 @@ class Repository:
             placeholders = ",".join("?" * len(exclude_sports))
             where += f" AND sport_key NOT IN ({placeholders})"
             params.extend(exclude_sports)
+        if exclude_types:
+            type_ph = ",".join("?" * len(exclude_types))
+            where += f" AND signal_type NOT IN ({type_ph})"
+            params.extend(exclude_types)
         sql = f"""
             SELECT * FROM signal_results
             {where}

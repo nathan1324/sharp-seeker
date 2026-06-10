@@ -25,6 +25,12 @@ LOGO_URL = "https://raw.githubusercontent.com/nathan1324/sharp-seeker/main/asset
 # activity in the period, not gradings.)
 _RECAP_WINDOW = "resolved_at"
 
+# Signal types excluded from the recap entirely. Arbitrage is a guaranteed-profit
+# instrument (sized to net flat), not a directional play — counting it as a
+# side-A win/loss pollutes win% and it doesn't belong in a units/record recap.
+# Arbs still fire their own real-time Discord alert to the arb channel.
+_RECAP_EXCLUDE_TYPES = ["arbitrage"]
+
 # Map signal_type DB values to their per-channel webhook setting names
 _SIGNAL_WEBHOOK_ATTRS: dict[str, str] = {
     SignalType.STEAM_MOVE.value: "discord_webhook_steam_move",
@@ -225,6 +231,7 @@ class ReportGenerator:
 
         all_types_stats = await self._repo.get_performance_stats(
             since, sent_only=True, window_by=_RECAP_WINDOW,
+            exclude_types=_RECAP_EXCLUDE_TYPES,
         )
         if not all_types_stats:
             return
@@ -456,11 +463,13 @@ class ReportGenerator:
     async def _send_combined_report(self, title: str, since: str) -> None:
         stats = await self._repo.get_performance_stats(
             since, sent_only=True, window_by=_RECAP_WINDOW,
+            exclude_types=_RECAP_EXCLUDE_TYPES,
         )
         signal_count = await self._repo.get_signal_count_since(since)
         alert_count = await self._repo.get_alerts_count_since(since)
         resolved = await self._repo.get_resolved_signals_since(
             since, sent_only=True, window_by=_RECAP_WINDOW,
+            exclude_types=_RECAP_EXCLUDE_TYPES,
         )
         total_units, units_by_market, units_by_detector = _aggregate_units(resolved)
 
@@ -508,6 +517,7 @@ class ReportGenerator:
             # Overall market breakdown
             market_stats = await self._repo.get_performance_stats_by_market(
                 since, sent_only=True, window_by=_RECAP_WINDOW,
+                exclude_types=_RECAP_EXCLUDE_TYPES,
             )
             if market_stats:
                 mlines = []
@@ -534,7 +544,9 @@ class ReportGenerator:
         embed.set_timestamp(datetime.now(timezone.utc).isoformat())
         embed.set_footer(text="Sandbox Sports", icon_url=LOGO_URL)
 
-        csv_bytes = await self._build_results_csv(since, sent_only=True)
+        csv_bytes = await self._build_results_csv(
+            since, sent_only=True, exclude_types=_RECAP_EXCLUDE_TYPES,
+        )
         date_str = since[:10]
         csv_name = f"all_results_{date_str}.csv"
 
@@ -552,12 +564,13 @@ class ReportGenerator:
         sport_key: str | None = None,
         exclude_sports: list[str] | None = None,
         sent_only: bool = False,
+        exclude_types: list[str] | None = None,
     ) -> bytes | None:
         """Build an in-memory CSV of resolved signals, returning UTF-8 bytes."""
         rows = await self._repo.get_resolved_signals_since(
             since, signal_type=signal_type, sport_key=sport_key,
             exclude_sports=exclude_sports, sent_only=sent_only,
-            window_by=_RECAP_WINDOW,
+            window_by=_RECAP_WINDOW, exclude_types=exclude_types,
         )
         if not rows:
             return None

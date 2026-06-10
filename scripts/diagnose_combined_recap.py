@@ -129,8 +129,15 @@ def main():
     by_reason = {}      # reason -> [cnt, units, w, l]
     by_combo = {}       # (sport, market) -> [...]  (recovered only)
     suppressed = 0      # graded but never sent (correctly excluded by both)
+    arbs_skipped = 0    # excluded from the recap by design (guaranteed-profit)
 
     for row in cur:
+        # Arbitrage is excluded from the recap entirely (guaranteed-profit, not a
+        # directional play) — skip so these numbers match what the recap shows.
+        if row["signal_type"] == "arbitrage":
+            arbs_skipped += 1
+            continue
+
         result = row["result"]
         u = _units(row["details_json"], result, row["signal_type"])
         q = _qcount(row["details_json"])
@@ -149,8 +156,8 @@ def main():
         elif result == "lost":
             new_l += 1
 
-        # OLD combined recap: qualifier>0 (or arb) AND signal_at in 24h window.
-        old_qualified = q > 0 or row["signal_type"] == "arbitrage"
+        # OLD combined recap: qualifier>0 AND signal_at in 24h window.
+        old_qualified = q > 0
         old_windowed = signal_at >= recap_since
         if old_qualified and old_windowed:
             old_in += 1
@@ -179,7 +186,8 @@ def main():
     print("  Already shown by OLD recap:              " + str(old_in))
     print("  RECOVERED by the fix:                    " + str(recovered)
           + "  -> " + format(recovered_units, "+.2f") + "u")
-    print("Graded but never sent (excluded by both):  " + str(suppressed) + "\n")
+    print("Graded but never sent (excluded by both):  " + str(suppressed))
+    print("Arbitrage (excluded from recap by design):  " + str(arbs_skipped) + "\n")
     if recovered:
         _print_breakdown("Recovered, by reason:", by_reason)
         print("")
