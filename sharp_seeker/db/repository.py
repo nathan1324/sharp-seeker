@@ -10,6 +10,19 @@ import structlog
 
 log = structlog.get_logger()
 
+# "Sent to Discord" = a sent_alerts row exists for this play. This is the ground
+# truth, NOT qualifier_count > 0: raw-PD channel sends (MLB/WNBA) and arbitrage
+# are published to Discord but stored with qualifier_count = 0 (they bypass the
+# qualifier gate in discord.send_signals), yet they ARE recorded in sent_alerts.
+# Truly-suppressed 0-qualifier signals are never recorded, so they're excluded.
+_SENT_ALERTS_EXISTS = (
+    " AND EXISTS (SELECT 1 FROM sent_alerts sa"
+    " WHERE sa.event_id = signal_results.event_id"
+    " AND sa.alert_type = signal_results.signal_type"
+    " AND sa.market_key = signal_results.market_key"
+    " AND sa.outcome_name = signal_results.outcome_name)"
+)
+
 
 class Repository:
     def __init__(self, db: aiosqlite.Connection) -> None:
@@ -313,24 +326,32 @@ class Repository:
         self, since: str | None = None, sport_key: str | None = None,
         exclude_sports: list[str] | None = None,
         sent_only: bool = False,
+        window_by: str = "signal_at",
     ) -> dict[str, dict[str, int]]:
         """Get win/loss/push counts grouped by signal type.
 
         Deduplicates by (event_id, signal_type, market_key, outcome_name),
         counting each unique play only once.
 
-        If sent_only=True, excludes suppressed signals (qualifier_count=0)
-        that were never sent to Discord.
+        If sent_only=True, restricts to plays actually published to Discord
+        (a sent_alerts row exists). This INCLUDES raw-PD channel sends
+        (MLB/WNBA) and arbitrage — qualifier_count=0 but genuinely sent — and
+        excludes only truly-suppressed 0-qualifier signals. See
+        _SENT_ALERTS_EXISTS.
+
+        window_by selects which timestamp `since` filters on: "signal_at"
+        (when the signal fired, default) or "resolved_at" (when it was graded).
+        Recaps use "resolved_at" so a play graded today appears in today's
+        report regardless of how far ahead of the game it fired.
         """
+        window_col = "resolved_at" if window_by == "resolved_at" else "signal_at"
         where = "WHERE result IS NOT NULL"
         params: list[str] = []
         if sent_only:
-            where += (" AND (COALESCE(json_extract(details_json,"
-                      " '$.qualifier_count'), 1) > 0"
-                      " OR signal_type = 'arbitrage')")
+            where += _SENT_ALERTS_EXISTS
 
         if since:
-            where += " AND signal_at >= ?"
+            where += f" AND {window_col} >= ?"
             params.append(since)
         if sport_key:
             where += " AND sport_key = ?"
@@ -372,20 +393,23 @@ class Repository:
         sport_key: str | None = None,
         exclude_sports: list[str] | None = None,
         sent_only: bool = False,
+        window_by: str = "signal_at",
     ) -> dict[str, dict[str, int]]:
         """Get win/loss/push counts grouped by market_key.
 
         Deduplicates by (event_id, signal_type, market_key, outcome_name).
+
+        window_by: "signal_at" (default) or "resolved_at" — see
+        get_performance_stats.
         """
+        window_col = "resolved_at" if window_by == "resolved_at" else "signal_at"
         where = "WHERE result IS NOT NULL"
         params: list[str] = []
         if sent_only:
-            where += (" AND (COALESCE(json_extract(details_json,"
-                      " '$.qualifier_count'), 1) > 0"
-                      " OR signal_type = 'arbitrage')")
+            where += _SENT_ALERTS_EXISTS
 
         if since:
-            where += " AND signal_at >= ?"
+            where += f" AND {window_col} >= ?"
             params.append(since)
         if signal_type:
             where += " AND signal_type = ?"
@@ -476,19 +500,22 @@ class Repository:
         sport_key: str | None = None,
         exclude_sports: list[str] | None = None,
         sent_only: bool = False,
+        window_by: str = "signal_at",
     ) -> list[aiosqlite.Row]:
         """Get resolved signals since a timestamp, optionally filtered by type/sport.
 
         Deduplicates by (event_id, signal_type, market_key, outcome_name),
         keeping only the latest signal_at per group to avoid repeated entries
         from multiple poll cycles.
+
+        window_by: "signal_at" (default) or "resolved_at" — see
+        get_performance_stats. Dedup always keeps the latest signal_at row.
         """
-        where = "WHERE result IS NOT NULL AND signal_at >= ?"
+        window_col = "resolved_at" if window_by == "resolved_at" else "signal_at"
+        where = f"WHERE result IS NOT NULL AND {window_col} >= ?"
         params: list[str] = [since]
         if sent_only:
-            where += (" AND (COALESCE(json_extract(details_json,"
-                      " '$.qualifier_count'), 1) > 0"
-                      " OR signal_type = 'arbitrage')")
+            where += _SENT_ALERTS_EXISTS
 
         if signal_type:
             where += " AND signal_type = ?"

@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -139,13 +140,89 @@ async def test_performance_stats_by_market(settings, repo):
     assert "spreads" in stats_recent
 
 
+@pytest.mark.asyncio
+async def test_window_by_resolved_at_captures_early_signals(settings, repo):
+    """A signal that fired long before the window but was graded inside it must
+    appear when windowing by resolved_at — the daily-recap bug fix.
+
+    Recaps run shortly after grading; a play that fired 3 days ahead of the game
+    has signal_at far outside the 24h window but resolved_at inside it.
+    """
+    tracker = PerformanceTracker(repo)
+
+    fired_at = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+    await tracker.record_signals([_signal("e_early", SignalType.STEAM_MOVE)], fired_at)
+
+    # Grade it now (resolve_signal stamps resolved_at = now).
+    row = dict((await repo.get_unresolved_signals())[0])
+    await repo.resolve_signal(
+        row["event_id"], row["signal_type"], row["market_key"],
+        row["outcome_name"], row["signal_at"], "won",
+    )
+
+    since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+
+    # Old behavior: windowing by fire time drops the early signal.
+    by_signal = await repo.get_performance_stats(since, window_by="signal_at")
+    assert "steam_move" not in by_signal
+
+    # Fixed behavior: windowing by grading time captures it.
+    by_resolved = await repo.get_performance_stats(since, window_by="resolved_at")
+    assert by_resolved["steam_move"]["won"] == 1
+
+    # And the row-returning + by-market queries agree.
+    resolved_rows = await repo.get_resolved_signals_since(since, window_by="resolved_at")
+    assert len(resolved_rows) == 1
+    by_market = await repo.get_performance_stats_by_market(
+        since, window_by="resolved_at"
+    )
+    assert by_market["spreads"]["won"] == 1
+
+
+@pytest.mark.asyncio
+async def test_sent_only_counts_raw_pd_sends_not_suppressed(repo):
+    """sent_only must mean "published to Discord" (a sent_alerts row exists),
+    NOT qualifier_count>0. A raw-PD MLB send (qualifier_count=0 but recorded in
+    sent_alerts) belongs in the combined recap; a truly-suppressed 0-qualifier
+    signal (never recorded) must not. This is the missing-MLB-signals fix.
+    """
+    # Raw-PD MLB send: qualifier_count=0 but it WAS sent to the MLB channel.
+    await _seed_resolved_signal(
+        repo, event_id="mlb_raw", signal_type="pinnacle_divergence",
+        sport_key="baseball_mlb", result="won",
+        details_json='{"qualifier_count": 0, "value_books": [{"price": -110}]}',
+        sent=True,
+    )
+    # Truly suppressed: 0 qualifiers, no raw channel — never reached Discord.
+    await _seed_resolved_signal(
+        repo, event_id="nba_suppressed", signal_type="pinnacle_divergence",
+        sport_key="basketball_nba", result="won",
+        details_json='{"qualifier_count": 0, "value_books": [{"price": -110}]}',
+        sent=False,
+    )
+
+    since = "2025-01-01T00:00:00+00:00"
+    stats = await repo.get_performance_stats(since, sent_only=True)
+
+    # The raw-PD send counts; the suppressed signal does not -> exactly 1 win.
+    assert stats.get("pinnacle_divergence", {}).get("won") == 1
+    rows = await repo.get_resolved_signals_since(since, sent_only=True)
+    assert [dict(r)["event_id"] for r in rows] == ["mlb_raw"]
+
+
 # ── CSV generation + attachment tests ──────────────────────────
 
 
 async def _seed_resolved_signal(repo, event_id="e1", signal_type="steam_move",
                                  sport_key="basketball_nba", result="won",
-                                 details_json=None):
-    """Insert a resolved signal and an odds snapshot for team lookup."""
+                                 details_json=None, sent=True):
+    """Insert a resolved signal and an odds snapshot for team lookup.
+
+    When sent=True (default) also records a sent_alerts row, since recaps now
+    define "sent" as "a sent_alerts row exists" rather than qualifier_count>0.
+    Pass sent=False to model a truly-suppressed signal that never reached
+    Discord.
+    """
     await repo.record_signal_result(
         event_id=event_id,
         signal_type=signal_type,
@@ -161,6 +238,12 @@ async def _seed_resolved_signal(repo, event_id="e1", signal_type="steam_move",
         event_id, signal_type, "spreads", "Lakers",
         "2025-01-15T12:00:00+00:00", result,
     )
+    if sent:
+        await repo.record_alert(
+            event_id=event_id, alert_type=signal_type,
+            market_key="spreads", outcome_name="Lakers",
+            details_json=details_json,
+        )
     # Insert a snapshot so get_event_teams returns data
     await repo._db.execute(
         """INSERT INTO odds_snapshots
