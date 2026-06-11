@@ -10,6 +10,13 @@ Scope: defaults to the last 50 days so it reflects the CURRENT book regime
 (DraftKings was excluded from MLB PD on 2026-04-25; older data is full of the
 DK-driven losses and would mislead the by-hour read). Override with [days].
 
+Counts only signals actually SENT to Discord (a sent_alerts row exists). This is
+the decision-relevant population: quiet-hours and other pipeline filters drop
+signals that are still recorded in signal_results for analysis but never reach
+Discord, so a best-hour tag on those hours would be dead weight. Filtering to
+sent-only excludes them via ground truth, without re-deriving the quiet-hours
+config. Pass "all" as the 3rd arg to include unsent (recorded-only) signals too.
+
 Dedups by (event_id, outcome_name) keeping the latest signal_at, mirroring the
 recap/stats queries. Read-only; streams rows (server has ~954MB RAM).
 
@@ -27,6 +34,9 @@ from datetime import datetime, timedelta, timezone
 
 DAYS = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1] else 50
 DB_PATH = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else "/app/data/sharp_seeker.db"
+# Pass "all" as the 3rd arg to include recorded-but-unsent signals; default is
+# sent-to-Discord only (the population a best-hour qualifier could actually act on).
+SENT_ONLY = not (len(sys.argv) > 3 and sys.argv[3] == "all")
 
 # A slice must clear all three to be suggested as a best hour.
 MIN_N = 6
@@ -102,7 +112,17 @@ def main():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
 
-    # All resolved MLB PD totals in the window, deduped to the latest fire per play.
+    # Resolved MLB PD totals in the window, deduped to the latest fire per play.
+    # When SENT_ONLY, restrict to plays actually published to Discord.
+    sent_clause = ""
+    if SENT_ONLY:
+        sent_clause = (
+            " AND EXISTS (SELECT 1 FROM sent_alerts sa"
+            " WHERE sa.event_id = signal_results.event_id"
+            " AND sa.alert_type = 'pinnacle_divergence'"
+            " AND sa.market_key = 'totals'"
+            " AND sa.outcome_name = signal_results.outcome_name)"
+        )
     sql = """
         SELECT signal_at, result, signal_strength, details_json
         FROM (
@@ -116,11 +136,11 @@ def main():
               AND sport_key = 'baseball_mlb'
               AND signal_type = 'pinnacle_divergence'
               AND market_key = 'totals'
-              AND signal_at >= ?
+              AND signal_at >= ?{sent}
         )
         WHERE rn = 1
         ORDER BY signal_at ASC
-    """
+    """.format(sent=sent_clause)
     cur = conn.execute(sql, (since,))
 
     overall = _new_bucket()
@@ -156,9 +176,10 @@ def main():
 
     conn.close()
 
+    scope = "SENT to Discord only" if SENT_ONLY else "ALL recorded (incl. unsent)"
     print("MLB PD totals by-hour analysis - DB: " + DB_PATH)
     print("Window: last " + str(DAYS) + " days (since " + since[:10]
-          + "); dedup latest fire per play; current book regime\n")
+          + "); " + scope + "; dedup latest fire per play\n")
     print("OVERALL: " + _fmt(overall))
     print("  last " + str(RECENT_DAYS) + "d:  " + _fmt(recent))
     print("  earlier:   " + _fmt(older) + "\n")
