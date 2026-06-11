@@ -64,8 +64,9 @@ def _utc_for_mst_hour(hour: int) -> datetime:
 
 
 @patch("sharp_seeker.alerts.discord.DiscordWebhook")
-def test_best_combo_no_badge(mock_webhook_cls):
-    """Signal with 1 qualifier (best combo only) shows no tier badge."""
+def test_best_combo_one_qualifier_top_performer(mock_webhook_cls):
+    """Signal with 1 qualifier (best combo only) shows the Top Performer badge,
+    not Elite/2U."""
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_instance = MagicMock()
@@ -84,7 +85,8 @@ def test_best_combo_no_badge(mock_webhook_cls):
 
     embed = mock_instance.add_embed.call_args[0][0]
     field_names = [f["name"] for f in embed.fields]
-    # 1 qualifier = no badge (only 2U gets a badge)
+    # 1 qualifier = Top Performer badge, not Elite/2U
+    assert "⭐ Top Performer" in field_names
     assert "\U0001f525 2U PLAY" not in field_names
     assert "\U0001f3c6 Elite Signal" not in field_names
 
@@ -142,8 +144,9 @@ def test_best_combo_empty_config(mock_webhook_cls):
 
 @patch("sharp_seeker.alerts.discord.datetime")
 @patch("sharp_seeker.alerts.discord.DiscordWebhook")
-def test_best_hour_no_badge(mock_webhook_cls, mock_dt):
-    """Signal with 1 qualifier (best hour only) shows no tier badge."""
+def test_best_hour_one_qualifier_top_performer(mock_webhook_cls, mock_dt):
+    """Signal with 1 qualifier (best hour only) shows the Top Performer badge —
+    this is the MLB PD totals case (Best Hour, no combo)."""
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_instance = MagicMock()
@@ -166,6 +169,7 @@ def test_best_hour_no_badge(mock_webhook_cls, mock_dt):
 
     embed = mock_instance.add_embed.call_args[0][0]
     field_names = [f["name"] for f in embed.fields]
+    assert "⭐ Top Performer" in field_names
     assert "\U0001f525 2U PLAY" not in field_names
     assert "\U0001f3c6 Elite Signal" not in field_names
 
@@ -173,7 +177,7 @@ def test_best_hour_no_badge(mock_webhook_cls, mock_dt):
 @patch("sharp_seeker.alerts.discord.datetime")
 @patch("sharp_seeker.alerts.discord.DiscordWebhook")
 def test_best_hour_badge_not_shown(mock_webhook_cls, mock_dt):
-    """Signal NOT matching a best hour should have no badge."""
+    """Signal NOT matching a best hour (0 qualifiers) should have no badge."""
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_instance = MagicMock()
@@ -197,12 +201,14 @@ def test_best_hour_badge_not_shown(mock_webhook_cls, mock_dt):
     embed = mock_instance.add_embed.call_args[0][0]
     field_names = [f["name"] for f in embed.fields]
     assert "\U0001f3c6 Elite Signal" not in field_names
+    assert "⭐ Top Performer" not in field_names
 
 
 @patch("sharp_seeker.alerts.discord.datetime")
 @patch("sharp_seeker.alerts.discord.DiscordWebhook")
-def test_best_hour_only_no_badge(mock_webhook_cls, mock_dt):
-    """Signal matches best hour but NOT best combo — no badge (only 2U gets badge)."""
+def test_best_hour_only_top_performer(mock_webhook_cls, mock_dt):
+    """Signal matches best hour but NOT best combo (1 qualifier) — Top Performer
+    badge, not Elite/2U."""
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_instance = MagicMock()
@@ -226,6 +232,7 @@ def test_best_hour_only_no_badge(mock_webhook_cls, mock_dt):
 
     embed = mock_instance.add_embed.call_args[0][0]
     field_names = [f["name"] for f in embed.fields]
+    assert "⭐ Top Performer" in field_names
     assert "\U0001f525 2U PLAY" not in field_names
     assert "\U0001f3c6 Elite Signal" not in field_names
 
@@ -256,8 +263,8 @@ def test_elite_badge_two_qualifiers(mock_webhook_cls):
 
 
 @patch("sharp_seeker.alerts.discord.DiscordWebhook")
-def test_one_qualifier_no_badge(mock_webhook_cls):
-    """Signal with 1 qualifier shows no tier badge (only 2U gets badge)."""
+def test_one_qualifier_top_performer_badge(mock_webhook_cls):
+    """Signal with 1 qualifier gets the Top Performer badge (not Elite/2U)."""
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_instance = MagicMock()
@@ -274,6 +281,7 @@ def test_one_qualifier_no_badge(mock_webhook_cls):
 
     embed = mock_instance.add_embed.call_args[0][0]
     field_names = [f["name"] for f in embed.fields]
+    assert "⭐ Top Performer" in field_names
     assert "\U0001f3c6 Elite Signal" not in field_names
     assert "\U0001f525 2U PLAY" not in field_names
 
