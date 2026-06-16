@@ -177,6 +177,15 @@ class Settings(BaseSettings):
     # Used to drop ONE market for ONE sport (e.g. a sport whose totals lose while
     # its blanket `*:totals` whitelist still serves the other sports). Empty = none.
     x_free_play_excluded_combos: list[str] = Field(default_factory=list)
+    # "Raw" free-play combos — mirror the Discord raw-PD channel on X (JSON array
+    # in .env). Same `*` wildcard `type:sport:market` syntax. A signal matching one
+    # of these becomes a free play the same way it reaches the Discord raw channel:
+    # bypassing the qualifier gate, the spreads-must-be-steam policy, and the
+    # interval/hourly/sport throttles. Use for a sport whose FULL PD population is
+    # profitable on Discord but whose qualifier-filtered subset adversely selects
+    # losers on X (e.g. `["pinnacle_divergence:baseball_mlb:*"]`). Still respects
+    # the excluded-sports/combos kill switches and per-event dedup. Empty = none.
+    x_free_play_raw_combos: list[str] = Field(default_factory=list)
     # UTC hours when teaser tweets are allowed (JSON array in .env)
     # Free play tweets are always sent regardless of this setting.
     x_teaser_hours: list[int] = Field(default_factory=list)
