@@ -1003,6 +1003,164 @@ async def test_zero_qualifier_skipped(settings, repo):
     assert all("FREE PLAY" not in t for t in calls)
 
 
+# ── Raw combos: mirror the Discord raw-PD channel ──────────────
+
+
+@pytest.mark.asyncio
+async def test_raw_combo_bypasses_qualifier_gate(settings, repo):
+    """A raw combo posts a 0-qualifier signal (the Discord raw channel does too)."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+
+    poster._free_play_combos = set()
+    poster._fp_raw_combos = {"pinnacle_divergence:baseball_mlb:*"}
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    sig = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="totals",
+        outcome_name="Over",
+        sport_key="baseball_mlb",
+        qualifier_count=0,
+        details={
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 8.5}],
+        },
+    )
+
+    await poster.post_signals([sig])
+
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    assert any("FREE PLAY" in t for t in calls)
+
+
+@pytest.mark.asyncio
+async def test_raw_combo_bypasses_spreads_steam_policy(settings, repo):
+    """A raw combo posts a PD spread, which the steam-only policy would block."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+
+    poster._free_play_combos = set()
+    poster._fp_raw_combos = {"pinnacle_divergence:baseball_mlb:*"}
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    sig = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="spreads",
+        outcome_name="Yankees",
+        sport_key="baseball_mlb",
+        qualifier_count=0,
+        details={
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": -1.5}],
+        },
+    )
+
+    await poster.post_signals([sig])
+
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    assert any("FREE PLAY" in t for t in calls)
+
+
+@pytest.mark.asyncio
+async def test_raw_combo_bypasses_interval_and_caps(settings, repo):
+    """Raw combos ignore interval/hourly/sport throttles — every one posts."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+
+    poster._free_play_combos = set()
+    poster._fp_raw_combos = {"pinnacle_divergence:baseball_mlb:*"}
+    poster._free_play_interval = 3  # would normally drop 2 of every 3
+    poster._free_play_hourly_cap = 1  # would normally cap at 1/hour
+    poster._free_play_sport_cap = 1  # would normally cap at 1/sport/day
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    sigs = []
+    for i in range(4):
+        sig = _make_signal(
+            signal_type=SignalType.PINNACLE_DIVERGENCE,
+            market_key="totals",
+            outcome_name="Over",
+            sport_key="baseball_mlb",
+            qualifier_count=0,
+            details={
+                "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 8.5}],
+            },
+        )
+        sig.event_id = f"evt_raw_{i}"
+        sigs.append(sig)
+
+    await poster.post_signals(sigs)
+
+    free_plays = [
+        c.kwargs["text"]
+        for c in poster._client.create_tweet.call_args_list
+        if "FREE PLAY" in c.kwargs["text"]
+    ]
+    assert len(free_plays) == 4  # no throttling for raw combos
+
+
+@pytest.mark.asyncio
+async def test_raw_combo_still_respects_excluded_sport(settings, repo):
+    """Excluded sports remain a kill switch even for raw combos (WNBA stays benched)."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+
+    poster._free_play_combos = set()
+    poster._fp_raw_combos = {"pinnacle_divergence:*:*"}
+    poster._fp_excluded_sports = {"basketball_wnba"}
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    sig = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="totals",
+        outcome_name="Over",
+        sport_key="basketball_wnba",
+        qualifier_count=0,
+        details={
+            "value_books": [{"bookmaker": "draftkings", "price": -110, "point": 165.5}],
+        },
+    )
+
+    await poster.post_signals([sig])
+
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    assert all("FREE PLAY" not in t for t in calls)
+
+
+@pytest.mark.asyncio
+async def test_raw_combo_still_dedupes_repeat_event(settings, repo):
+    """Raw combos still skip an event that already had a free play (no double-post)."""
+    poster = XPoster(settings, repo)
+    poster._enabled = True
+
+    poster._free_play_combos = set()
+    poster._fp_raw_combos = {"pinnacle_divergence:baseball_mlb:*"}
+    poster._client = MagicMock()
+    poster._client.create_tweet = MagicMock()
+
+    await repo.record_alert(
+        event_id="evt_123", alert_type="pinnacle_divergence",
+        market_key="totals", outcome_name="Over", is_free_play=True,
+    )
+
+    sig = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        market_key="h2h",
+        outcome_name="Yankees",
+        sport_key="baseball_mlb",
+        qualifier_count=0,
+        details={"value_books": [{"bookmaker": "draftkings", "price": 150}]},
+    )
+
+    await poster.post_signals([sig])
+
+    calls = [c.kwargs["text"] for c in poster._client.create_tweet.call_args_list]
+    assert all("FREE PLAY" not in t for t in calls)
+
+
 @pytest.mark.asyncio
 async def test_rapid_change_not_free_play_unless_whitelisted(settings, repo):
     """Rapid change signal should NOT become a free play unless in combo whitelist."""

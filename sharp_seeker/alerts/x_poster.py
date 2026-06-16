@@ -164,6 +164,7 @@ class XPoster:
         self._free_play_combos: set[str] = set(settings.x_free_play_combos)
         self._fp_excluded_sports: set[str] = set(settings.x_free_play_excluded_sports)
         self._fp_excluded_combos: set[str] = set(settings.x_free_play_excluded_combos)
+        self._fp_raw_combos: set[str] = set(settings.x_free_play_raw_combos)
         self._fp_eligible_count = 0
         self._fp_eligible_date: str = ""
         self._max_strength = settings.x_max_strength
@@ -209,7 +210,7 @@ class XPoster:
         # Free plays: signals matching whitelisted type:sport:market combos.
         # Every Nth eligible signal becomes a free play (interval).
         # Additional caps: per sport per day, per hour, unique event.
-        if not self._free_play_combos:
+        if not self._free_play_combos and not self._fp_raw_combos:
             free_play_picks: list[Signal] = []
         else:
             # Reset eligible counter at the start of each UTC day
@@ -232,7 +233,12 @@ class XPoster:
 
             free_play_picks: list[Signal] = []
             for s in signals:
-                if not self._matches_free_play_combo(s):
+                # A "raw" combo mirrors the Discord raw-PD channel: it makes the
+                # signal eligible on its own and bypasses the qualifier gate, the
+                # spreads policy, and the interval/caps below. The excluded-sport/
+                # combo kill switches and per-event dedup still apply.
+                is_raw = self._combo_matches(s, self._fp_raw_combos)
+                if not is_raw and not self._matches_free_play_combo(s):
                     continue
                 # Sport parked out of free plays (edge still under test).
                 if s.sport_key in self._fp_excluded_sports:
@@ -256,7 +262,12 @@ class XPoster:
                     )
                     continue
                 # Policy: spread free plays must be Steam type only.
-                if s.market_key == "spreads" and s.signal_type != SignalType.STEAM_MOVE:
+                # Raw combos opt out (the Discord raw channel carries PD spreads).
+                if (
+                    not is_raw
+                    and s.market_key == "spreads"
+                    and s.signal_type != SignalType.STEAM_MOVE
+                ):
                     log.info(
                         "x_free_play_spreads_non_steam_skip",
                         event_id=s.event_id,
@@ -266,8 +277,10 @@ class XPoster:
                 # Mimic Discord: only post signals that cleared Discord's send
                 # gate (1+ qualifier). 0-qualifier signals are suppressed from
                 # the main Discord alert, so they don't become free plays either.
+                # Raw combos mirror the Discord raw-PD channel, which bypasses the
+                # qualifier gate — so they post the full population, gate and all.
                 q_count = (s.details or {}).get("qualifier_count", 0)
-                if q_count < 1:
+                if not is_raw and q_count < 1:
                     log.info(
                         "x_free_play_qualifier_skip",
                         event_id=s.event_id,
@@ -278,34 +291,37 @@ class XPoster:
                     continue
                 if self._excluded_books and self._get_book(s) in self._excluded_books:
                     continue
-                # Count every eligible signal; throttle to every Nth.
-                # interval <= 1 disables throttling (post every eligible signal).
-                self._fp_eligible_count += 1
-                if (
-                    self._free_play_interval > 1
-                    and self._fp_eligible_count % self._free_play_interval != 0
-                ):
-                    log.info(
-                        "x_free_play_interval_skip",
-                        event_id=s.event_id,
-                        eligible=self._fp_eligible_count,
-                        interval=self._free_play_interval,
+                # Raw combos mirror the Discord raw channel: post every one,
+                # skipping the interval throttle and the hourly/sport caps.
+                if not is_raw:
+                    # Count every eligible signal; throttle to every Nth.
+                    # interval <= 1 disables throttling (post every eligible signal).
+                    self._fp_eligible_count += 1
+                    if (
+                        self._free_play_interval > 1
+                        and self._fp_eligible_count % self._free_play_interval != 0
+                    ):
+                        log.info(
+                            "x_free_play_interval_skip",
+                            event_id=s.event_id,
+                            eligible=self._fp_eligible_count,
+                            interval=self._free_play_interval,
+                        )
+                        continue
+                    # Hourly cap (0 = unlimited)
+                    if (
+                        self._free_play_hourly_cap > 0
+                        and (hour_fp_count + len(free_play_picks)) >= self._free_play_hourly_cap
+                    ):
+                        log.info("x_free_play_hourly_capped", event_id=s.event_id)
+                        continue
+                    # Per-sport daily cap (0 = unlimited)
+                    sport_count = sport_fp_counts.get(s.sport_key, 0) + sum(
+                        1 for p in free_play_picks if p.sport_key == s.sport_key
                     )
-                    continue
-                # Hourly cap (0 = unlimited)
-                if (
-                    self._free_play_hourly_cap > 0
-                    and (hour_fp_count + len(free_play_picks)) >= self._free_play_hourly_cap
-                ):
-                    log.info("x_free_play_hourly_capped", event_id=s.event_id)
-                    continue
-                # Per-sport daily cap (0 = unlimited)
-                sport_count = sport_fp_counts.get(s.sport_key, 0) + sum(
-                    1 for p in free_play_picks if p.sport_key == s.sport_key
-                )
-                if self._free_play_sport_cap > 0 and sport_count >= self._free_play_sport_cap:
-                    log.info("x_free_play_sport_capped", event_id=s.event_id, sport=s.sport_key)
-                    continue
+                    if self._free_play_sport_cap > 0 and sport_count >= self._free_play_sport_cap:
+                        log.info("x_free_play_sport_capped", event_id=s.event_id, sport=s.sport_key)
+                        continue
                 free_play_picks.append(s)
 
         for pick in free_play_picks:
