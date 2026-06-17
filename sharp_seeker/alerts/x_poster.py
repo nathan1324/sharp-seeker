@@ -20,16 +20,6 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger()
 
-# Human-readable labels for signal types
-_SIGNAL_LABELS: dict[SignalType, str] = {
-    SignalType.STEAM_MOVE: "Steam Move",
-    SignalType.RAPID_CHANGE: "Rapid Change",
-    SignalType.PINNACLE_DIVERGENCE: "Pinnacle Divergence",
-    SignalType.REVERSE_LINE: "Reverse Line Movement",
-    SignalType.EXCHANGE_SHIFT: "Exchange Shift",
-    SignalType.ARBITRAGE: "Arbitrage",
-}
-
 
 _TEAM_ABBR: dict[str, str] = {
     # NBA
@@ -396,7 +386,6 @@ class XPoster:
             f"\U0001f3af FREE PLAY \u2014 {matchup} {market_name}",
             "",
             bet_line,
-            f"{_SIGNAL_LABELS.get(signal.signal_type, signal.signal_type.value)} \u2022 {signal.strength:.0%} strength",
         ]
         return "\n".join(lines)
 

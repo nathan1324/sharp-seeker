@@ -340,7 +340,6 @@ Sharp Seeker can automatically post to X when signals fire. By default, **Pinnac
 🎯 FREE PLAY — Lakers vs Celtics Spread
 
 💰 Bet Lakers -3.5 (-110) @ DraftKings
-Pinnacle Divergence • 85% strength
 ```
 
 ### Setup
