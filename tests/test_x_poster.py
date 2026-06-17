@@ -325,7 +325,9 @@ def test_format_free_play_with_value_books(settings, repo):
     assert "Lakers" in text
     assert "-3.5" in text
     assert "DraftKings" in text
-    assert "85%" in text
+    # Signal type / strength line was removed — bet line is the last content.
+    assert "strength" not in text
+    assert "Pinnacle Divergence" not in text
     assert "Get all picks" not in text
 
 
