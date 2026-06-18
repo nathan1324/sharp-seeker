@@ -325,10 +325,35 @@ def test_format_free_play_with_value_books(settings, repo):
     assert "Lakers" in text
     assert "-3.5" in text
     assert "DraftKings" in text
+    # Game date/time must be present so a pregame play can't read as a live bet.
+    assert "(ET)" in text
     # Signal type / strength line was removed — bet line is the last content.
     assert "strength" not in text
     assert "Pinnacle Divergence" not in text
     assert "Get all picks" not in text
+
+
+def test_format_free_play_includes_game_time(settings, repo):
+    """Free play tweet shows the game date/time (ET) to avoid live-bet confusion."""
+    poster = XPoster(settings, repo)
+    sig = _make_signal(
+        signal_type=SignalType.PINNACLE_DIVERGENCE,
+        details={"value_books": [{"bookmaker": "draftkings", "price": -110, "point": -3.5}]},
+    )
+    # 2099-01-15T00:00:00Z -> Jan 14, 7:00 PM ET (EST, UTC-5)
+    text = poster._format_free_play(sig)
+    assert "Jan 14" in text
+    assert "7:00 PM (ET)" in text
+
+
+def test_format_free_play_missing_commence_time(settings, repo):
+    """No commence_time -> no game-time line, but tweet still valid."""
+    poster = XPoster(settings, repo)
+    sig = _make_signal(signal_type=SignalType.PINNACLE_DIVERGENCE)
+    sig.commence_time = ""
+    text = poster._format_free_play(sig)
+    assert "FREE PLAY" in text
+    assert "(ET)" not in text
 
 
 def test_format_free_play_moneyline(settings, repo):
