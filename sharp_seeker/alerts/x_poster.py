@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import structlog
 import tweepy
@@ -67,6 +68,30 @@ _TEAM_ABBR: dict[str, str] = {
     "Tampa Bay Rays": "TB", "Texas Rangers": "TEX",
     "Toronto Blue Jays": "TOR", "Washington Nationals": "WSH",
 }
+
+
+_ET = ZoneInfo("America/New_York")
+
+
+def _format_game_time(commence_time: str) -> str:
+    """Format commence_time as a readable date/time in Eastern.
+
+    Mirrors the Discord alert so a free play can never be mistaken for a live
+    bet — the reader always sees when the game starts.
+    """
+    if not commence_time:
+        return ""
+    try:
+        ct = datetime.fromisoformat(commence_time)
+        if ct.tzinfo is None:
+            ct = ct.replace(tzinfo=timezone.utc)
+        ct_et = ct.astimezone(_ET)
+        day = ct_et.strftime("%a, %b")
+        dom = ct_et.day
+        hour = ct_et.strftime("%I:%M %p").lstrip("0")
+        return f"{day} {dom} • {hour} (ET)"
+    except (ValueError, TypeError):
+        return ""
 
 
 def _abbr(team: str) -> str:
@@ -387,6 +412,10 @@ class XPoster:
             "",
             bet_line,
         ]
+        # Game date/time so a pregame play can't be mistaken for a live bet.
+        game_time = _format_game_time(signal.commence_time)
+        if game_time:
+            lines.append(f"\U0001f4c5 {game_time}")
         return "\n".join(lines)
 
     async def post_digest(self) -> None:

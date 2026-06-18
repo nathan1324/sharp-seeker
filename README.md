@@ -340,7 +340,11 @@ Sharp Seeker can automatically post to X when signals fire. By default, **Pinnac
 🎯 FREE PLAY — Lakers vs Celtics Spread
 
 💰 Bet Lakers -3.5 (-110) @ DraftKings
+📅 Fri, Jan 14 • 7:00 PM (ET)
 ```
+
+The game date/time (Eastern) is always included so a pregame play can never be
+mistaken for a live bet — mirroring the Discord alerts.
 
 ### Setup
 
