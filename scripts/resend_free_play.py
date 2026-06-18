@@ -9,35 +9,71 @@ It does NOT insert a new sent_alerts row, so the daily recap is unaffected
 (the play is already recorded). The re-post differs from the original tweet
 (it has the new date line), so X won't reject it as a duplicate.
 
-Usage (server):
-    # dry run — print the tweet that WOULD be sent:
-    docker compose exec sharp-seeker python /app/scripts/resend_free_play.py Giants
-    # actually post it:
-    docker compose exec sharp-seeker python /app/scripts/resend_free_play.py Giants --send
+Safety: re-posting a game that has ALREADY STARTED would recreate the very
+live-bet confusion we're fixing, so --send is blocked once a game is underway
+(override with --force only if you truly mean to).
 
-Args: [team_substring] [--send] [db_path=/app/data/sharp_seeker.db]
+Usage (server):
+    # list matches with game time + status (no posting):
+    docker compose exec sharp-seeker python /app/scripts/resend_free_play.py Giants
+    # post a specific one (index from the list; default 0 = most recent):
+    docker compose exec sharp-seeker python /app/scripts/resend_free_play.py Giants --index 1 --send
+
+Args: [team_substring] [--index N] [--event ID] [--send] [--force] [db_path]
 """
 
 import json
 import sqlite3
 import sys
+from datetime import datetime, timezone
 
-from sharp_seeker.alerts.x_poster import XPoster
+from sharp_seeker.alerts.x_poster import XPoster, _format_game_time
 from sharp_seeker.config import Settings
 from sharp_seeker.engine.base import Signal, SignalType
 
-argv = [a for a in sys.argv[1:]]
+
+def _take(flag, default=None):
+    """Pop `--flag value` out of argv; return its value or default."""
+    if flag in argv:
+        i = argv.index(flag)
+        val = argv[i + 1] if i + 1 < len(argv) else default
+        del argv[i:i + 2]
+        return val
+    return default
+
+
+argv = list(sys.argv[1:])
 SEND = "--send" in argv
-argv = [a for a in argv if a != "--send"]
+FORCE = "--force" in argv
+argv = [a for a in argv if a not in ("--send", "--force")]
+INDEX = int(_take("--index", "0"))
+EVENT = _take("--event")
 TEAM = argv[0] if argv else "Giants"
 DB_PATH = argv[1] if len(argv) > 1 else "/app/data/sharp_seeker.db"
+
+
+def _status(commence_time, now):
+    """PREGAME/STARTED tag + countdown from commence_time."""
+    if not commence_time:
+        return "no game time"
+    try:
+        ct = datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return "bad game time"
+    if ct.tzinfo is None:
+        ct = ct.replace(tzinfo=timezone.utc)
+    delta = ct - now
+    mins = int(abs(delta).total_seconds()) // 60
+    hm = str(mins // 60) + "h " + str(mins % 60) + "m"
+    return "PREGAME (starts in " + hm + ")" if delta.total_seconds() > 0 \
+        else "STARTED (" + hm + " ago)"
 
 
 def main():
     db = sqlite3.connect(DB_PATH)
     db.row_factory = sqlite3.Row
+    now = datetime.now(timezone.utc)
 
-    # Most recent free play whose matchup or outcome mentions the team.
     sql = """
         SELECT sa.id, sa.event_id, sa.alert_type, sa.market_key, sa.outcome_name,
           sa.sent_at, sa.details_json,
@@ -60,16 +96,28 @@ def main():
         print("No free play found matching '" + TEAM + "'.")
         return
 
-    if len(rows) > 1:
-        print("Found " + str(len(rows)) + " matching free plays (using the most recent):")
-        for r in rows:
-            print("  " + str(r["sent_at"])[:16] + "  " + str(r["matchup"])
-                  + "  " + r["outcome_name"] + " (" + r["market_key"] + ")")
-        print("")
+    print("Matching free plays for '" + TEAM + "' (newest first):")
+    for i, r in enumerate(rows):
+        gt = _format_game_time(r["commence_time"] or "")
+        print("  [" + str(i) + "] sent " + str(r["sent_at"])[:16]
+              + "  " + str(r["matchup"]) + "  " + r["outcome_name"]
+              + " (" + r["market_key"] + ")")
+        print("        game: " + (gt or "?") + "   " + _status(r["commence_time"], now))
+    print("")
 
-    r = rows[0]
+    if EVENT:
+        match = [r for r in rows if r["event_id"] == EVENT]
+        if not match:
+            print("No match with event_id " + EVENT)
+            return
+        r = match[0]
+    else:
+        if INDEX < 0 or INDEX >= len(rows):
+            print("--index " + str(INDEX) + " out of range (0.." + str(len(rows) - 1) + ")")
+            return
+        r = rows[INDEX]
+
     details = json.loads(r["details_json"]) if r["details_json"] else {}
-
     sig = Signal(
         signal_type=SignalType(r["alert_type"]),
         event_id=r["event_id"],
@@ -88,13 +136,28 @@ def main():
     poster = XPoster(Settings(), repo=None)
     text = poster._format_free_play(sig)
 
-    print("Original sent_at: " + str(r["sent_at"]))
+    print("Selected: event " + r["event_id"] + "  (sent " + str(r["sent_at"]) + ")")
     print("-" * 50)
     print(text)
     print("-" * 50)
 
+    started = False
+    if r["commence_time"]:
+        try:
+            ct = datetime.fromisoformat(r["commence_time"].replace("Z", "+00:00"))
+            if ct.tzinfo is None:
+                ct = ct.replace(tzinfo=timezone.utc)
+            started = now >= ct
+        except (ValueError, TypeError):
+            pass
+
     if not SEND:
         print("DRY RUN — re-run with --send to actually post.")
+        return
+
+    if started and not FORCE:
+        print("BLOCKED: this game has already started — re-posting would look "
+              "like a live bet. Add --force only if you really mean to.")
         return
 
     url = poster._post_tweet(text)
