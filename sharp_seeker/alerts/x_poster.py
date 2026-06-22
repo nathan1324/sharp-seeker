@@ -440,7 +440,17 @@ class XPoster:
         mtd_since = _month_start_iso()
         mtd_results = await self._repo.get_free_play_results_resolved_since(mtd_since)
 
-        text = self._format_recap(results, mtd_results)
+        # Play + day streaks — computed by the card generator so the tweet
+        # lines and the card image always show the same numbers.
+        play_streak: tuple[int, str] | None = None
+        day_streak: tuple[int, str] | None = None
+        if self._card_gen is not None:
+            try:
+                play_streak, day_streak = await self._card_gen.compute_streaks()
+            except Exception:
+                log.exception("x_recap_streaks_error")
+
+        text = self._format_recap(results, mtd_results, day_streak, play_streak)
 
         # Card image only makes sense when there are plays to show
         media_ids = None
@@ -512,12 +522,23 @@ class XPoster:
 
         return "\n".join(lines)
 
-    def _format_recap(self, results: list, mtd_results: list | None = None) -> str:
+    def _format_recap(
+        self,
+        results: list,
+        mtd_results: list | None = None,
+        day_streak: tuple[int, str] | None = None,
+        play_streak: tuple[int, str] | None = None,
+    ) -> str:
         """Format a recap tweet from free play results.
 
         Adds per-pick units, daily unit total in the header, and a month-to-date
-        line in the footer if mtd_results is provided. Always returns text even
-        when results is empty (zero-play accountability post).
+        line in the footer if mtd_results is provided. Streak hype lines slot in
+        under the header: the day streak (2+ profitable/losing days) is the
+        headline metric and gets first claim on the 280-char budget; the play
+        streak (3+ winning/losing plays) is added only if it still fits — so
+        when room is tight the play streak is dropped, never the day streak.
+        Always returns text even when results is empty (zero-play
+        accountability post).
         """
         _RESULT_EMOJI = {"won": "\u2705", "lost": "\u274c", "push": "\u21a9\ufe0f"}
 
@@ -604,6 +625,29 @@ class XPoster:
             out.append(
                 f"{_month_label()}: {mtd_w}-{mtd_l} ({_fmt_units(mtd_units)})"
             )
+
+        # Streak hype lines under the header, in priority order: the day streak
+        # leads (with our volume a profitable-day run is the real story), the
+        # play streak follows. Add them greedily, dropping from the end — so a
+        # tight 280-char budget sheds the play streak before the day streak.
+        if out:
+            hype: list[str] = []
+            if day_streak and day_streak[0] >= 2:
+                if day_streak[1] == "W":
+                    hype.append(f"\U0001f525 {day_streak[0]} straight profitable days")
+                else:
+                    hype.append(f"\U0001f4c9 {day_streak[0]} straight losing days")
+            if play_streak and play_streak[0] >= 3:
+                if play_streak[1] == "W":
+                    hype.append(f"\U0001f525 {play_streak[0]} straight wins")
+                else:
+                    hype.append(f"\U0001f4c9 {play_streak[0]} straight losses")
+            while hype:
+                candidate = out[:1] + hype + out[1:]
+                if len("\n".join(candidate)) <= 280:
+                    out = candidate
+                    break
+                hype.pop()  # drop lowest priority (play streak) first
 
         return "\n".join(out)
 

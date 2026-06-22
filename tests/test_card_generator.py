@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -111,6 +112,34 @@ def test_compute_units_mixed():
     assert units == pytest.approx(2.0 - 100 / 150)
 
 
+def _make_elite_row(result: str, price: float) -> dict:
+    """A tally row for a 2+ qualifier (elite) play, staked at 2u."""
+    details = json.dumps(
+        {"value_books": [{"bookmaker": "fanduel", "price": price}], "qualifier_count": 2}
+    )
+    return {
+        "event_id": "e1", "market_key": "h2h", "outcome_name": "Lakers",
+        "sent_at": "2026-01-15T12:00:00+00:00", "details_json": details,
+        "result": result, "signal_strength": 0.8,
+    }
+
+
+def test_tally_elite_win_doubles_units():
+    """An elite win at -110 is staked 2u → +2.0u (matches the tweet)."""
+    gen = CardGenerator.__new__(CardGenerator)
+    w, l, units = gen._tally([_make_elite_row("won", -110)])
+    assert (w, l) == (1, 0)
+    assert units == pytest.approx(2.0)
+
+
+def test_tally_elite_loss_doubles_risk():
+    """An elite loss at -110 risks 2x → -2.2u (matches the tweet)."""
+    gen = CardGenerator.__new__(CardGenerator)
+    w, l, units = gen._tally([_make_elite_row("lost", -110)])
+    assert (w, l) == (0, 1)
+    assert units == pytest.approx(-2.2)
+
+
 # ── Streak tests ─────────────────────────────────────────────────────────────
 
 
@@ -176,6 +205,120 @@ def test_compute_streak_empty():
     assert stype == "W"
 
 
+# ── Day-streak tests ─────────────────────────────────────────────────────────
+
+
+def _make_day_row(
+    result: str, resolved_at: str, price: float = -110, qualifier_count: int = 1
+) -> dict:
+    return {
+        "result": result,
+        "resolved_at": resolved_at,
+        "sent_at": resolved_at,
+        "details_json": json.dumps(
+            {"value_books": [{"price": price}], "qualifier_count": qualifier_count}
+        ),
+    }
+
+
+def test_day_streak_all_green():
+    gen = CardGenerator.__new__(CardGenerator)
+    rows = [
+        _make_day_row("won", "2026-01-01T20:00:00"),
+        _make_day_row("won", "2026-01-02T20:00:00"),
+        _make_day_row("won", "2026-01-03T20:00:00"),
+    ]
+    count, dtype = gen._compute_day_streak(rows)
+    assert count == 3
+    assert dtype == "W"
+
+
+def test_day_streak_broken_by_red_day():
+    gen = CardGenerator.__new__(CardGenerator)
+    rows = [
+        _make_day_row("lost", "2026-01-01T20:00:00"),  # red — breaks run
+        _make_day_row("won", "2026-01-02T20:00:00"),
+        _make_day_row("won", "2026-01-03T20:00:00"),
+    ]
+    count, dtype = gen._compute_day_streak(rows)
+    assert count == 2
+    assert dtype == "W"
+
+
+def test_day_streak_red_run():
+    gen = CardGenerator.__new__(CardGenerator)
+    rows = [
+        _make_day_row("lost", "2026-01-01T20:00:00"),
+        _make_day_row("lost", "2026-01-02T20:00:00"),
+    ]
+    count, dtype = gen._compute_day_streak(rows)
+    assert count == 2
+    assert dtype == "L"
+
+
+def test_day_streak_net_units_decide_the_day():
+    """A day with more losses than wins by units is a red day."""
+    gen = CardGenerator.__new__(CardGenerator)
+    rows = [
+        # One win (+1.0) and one loss (-1.1 at -110) => net -0.1 => red day
+        _make_day_row("won", "2026-01-05T18:00:00"),
+        _make_day_row("lost", "2026-01-05T21:00:00"),
+    ]
+    count, dtype = gen._compute_day_streak(rows)
+    assert count == 1
+    assert dtype == "L"
+
+
+def test_day_streak_breakeven_day_skipped():
+    """A day that nets exactly 0 is neutral — it bridges two green days."""
+    gen = CardGenerator.__new__(CardGenerator)
+    rows = [
+        _make_day_row("won", "2026-01-01T20:00:00"),
+        # Even-money win + loss on 01-02 => +1.0 - 1.0 = 0 => skipped
+        _make_day_row("won", "2026-01-02T18:00:00", price=100),
+        _make_day_row("lost", "2026-01-02T21:00:00", price=100),
+        _make_day_row("won", "2026-01-03T20:00:00"),
+    ]
+    count, dtype = gen._compute_day_streak(rows)
+    assert count == 2
+    assert dtype == "W"
+
+
+def test_day_streak_buckets_by_phoenix_date():
+    """Two plays spanning UTC midnight but the same Phoenix night are one day."""
+    gen = CardGenerator.__new__(CardGenerator)
+    rows = [
+        # Both are 2026-01-01 in Phoenix (UTC-7): 23:00 local and 21:00 local
+        _make_day_row("won", "2026-01-02T06:00:00"),
+        _make_day_row("won", "2026-01-02T04:00:00"),
+    ]
+    count, dtype = gen._compute_day_streak(rows)
+    assert count == 1
+    assert dtype == "W"
+
+
+def test_day_streak_elite_multiplier_flips_day_sign():
+    """An elite (2u) loss can turn a day red that flat staking would call green."""
+    gen = CardGenerator.__new__(CardGenerator)
+    rows = [
+        # 2 non-elite wins (+2.0) + 1 elite loss at -110 (-2.2) => net -0.2 => red.
+        # Under flat staking it would be +2.0 - 1.1 = +0.9 => green.
+        _make_day_row("won", "2026-01-05T18:00:00"),
+        _make_day_row("won", "2026-01-05T19:00:00"),
+        _make_day_row("lost", "2026-01-05T21:00:00", qualifier_count=2),
+    ]
+    count, dtype = gen._compute_day_streak(rows)
+    assert count == 1
+    assert dtype == "L"
+
+
+def test_day_streak_empty():
+    gen = CardGenerator.__new__(CardGenerator)
+    count, dtype = gen._compute_day_streak([])
+    assert count == 0
+    assert dtype == "W"
+
+
 # ── Card rendering tests ────────────────────────────────────────────────────
 
 
@@ -187,6 +330,7 @@ def test_render_card_square():
         month_w=24, month_l=14, month_units=8.2,
         ytd_w=50, ytd_l=30, ytd_units=12.4,
         streak_count=10, streak_type="W",
+        day_streak_count=4, day_streak_type="W",
         date_str="March 11, 2026", month_name="March",
     )
     img = gen._render_card((1080, 1080), stats)
@@ -201,6 +345,7 @@ def test_render_card_story():
         month_w=5, month_l=8, month_units=-3.1,
         ytd_w=10, ytd_l=15, ytd_units=-5.5,
         streak_count=2, streak_type="L",
+        day_streak_count=3, day_streak_type="L",
         date_str="March 11, 2026", month_name="March",
     )
     img = gen._render_card((1080, 1920), stats)
@@ -216,6 +361,49 @@ async def test_no_results_returns_empty(settings, repo):
     gen = CardGenerator(settings, repo)
     paths = await gen.generate_daily_cards()
     assert paths == []
+
+
+@pytest.mark.asyncio
+async def test_get_stats_windows_month_by_resolved_at(settings, repo):
+    """A free play SENT last month but GRADED this month counts in the card's
+    month total — the card windows by resolved_at, matching the recap tweet.
+
+    Under the old sent_at windowing this play was dropped from the month, which
+    is why the card's monthly total disagreed with the tweet's MTD line.
+    """
+    gen = CardGenerator(settings, repo)
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    prior_month = (month_start - timedelta(days=5)).isoformat()
+
+    await repo.record_alert(
+        event_id="evt_resolved_window", alert_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers", is_free_play=True,
+        details_json=json.dumps({"value_books": [{"price": -110}]}),
+    )
+    # Backdate the send into the prior month; grading stays in this month.
+    await repo._db.execute(
+        "UPDATE sent_alerts SET sent_at = ? WHERE event_id = ?",
+        (prior_month, "evt_resolved_window"),
+    )
+    await repo._db.commit()
+
+    sig_at = now.isoformat()
+    await repo.record_signal_result(
+        event_id="evt_resolved_window", signal_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+        signal_direction="over", signal_strength=0.5, signal_at=sig_at,
+    )
+    await repo.resolve_signal(
+        event_id="evt_resolved_window", signal_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+        signal_at=sig_at, result="won",
+    )
+
+    stats = await gen._get_stats()
+    assert stats is not None
+    assert stats.month_w == 1  # counted despite being sent last month
+    assert stats.month_units == pytest.approx(1.0)
 
 
 @pytest.mark.asyncio
