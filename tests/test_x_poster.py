@@ -532,6 +532,84 @@ def test_format_recap_pending(settings, repo):
     assert "\u23f3" in text  # hourglass
     assert "PENDING" in text
     assert "Cowboys" in text
+
+
+def test_format_recap_green_day_streak_line(settings, repo):
+    """A 2+ green-day streak adds a profitable-days hype line under the header."""
+    poster = XPoster(settings, repo)
+
+    results = [
+        {"outcome_name": "Lakers", "market_key": "spreads", "result": "won",
+         "signal_strength": 0.85, "event_id": "e1", "sent_at": "2099-01-15",
+         "details_json": json.dumps({"value_books": [{"price": -110}]})},
+    ]
+
+    text = poster._format_recap(results, None, (5, "W"))
+    assert "5 straight profitable days" in text
+    assert "\U0001f525" in text  # fire emoji
+
+
+def test_format_recap_red_day_streak_line(settings, repo):
+    """A 2+ red-day streak adds a losing-days line (mirrors the W/L flag)."""
+    poster = XPoster(settings, repo)
+
+    text = poster._format_recap([], None, (3, "L"))
+    assert "3 straight losing days" in text
+    assert "\U0001f4c9" in text  # chart-down emoji
+
+
+def test_format_recap_day_streak_below_threshold_omitted(settings, repo):
+    """A 1-day 'streak' is not noteworthy and must not appear."""
+    poster = XPoster(settings, repo)
+
+    text = poster._format_recap([], None, (1, "W"))
+    assert "straight" not in text
+
+
+def test_format_recap_play_streak_line(settings, repo):
+    """A 3+ play win streak adds a 'straight wins' line."""
+    poster = XPoster(settings, repo)
+
+    text = poster._format_recap([], None, None, (6, "W"))
+    assert "6 straight wins" in text
+
+
+def test_format_recap_play_streak_below_threshold_omitted(settings, repo):
+    """A 2-play streak is below the 3+ threshold and must not appear."""
+    poster = XPoster(settings, repo)
+
+    text = poster._format_recap([], None, None, (2, "W"))
+    assert "straight wins" not in text
+
+
+def test_format_recap_both_streaks_day_leads(settings, repo):
+    """When both streaks qualify and fit, the day streak appears above the play streak."""
+    poster = XPoster(settings, repo)
+
+    text = poster._format_recap([], None, (4, "W"), (5, "W"))
+    assert "4 straight profitable days" in text
+    assert "5 straight wins" in text
+    # Day streak is the headline — it must come first
+    assert text.index("profitable days") < text.index("straight wins")
+
+
+def test_format_recap_play_streak_dropped_before_day_streak(settings, repo):
+    """Under a tight char budget the play streak is dropped, the day streak kept."""
+    poster = XPoster(settings, repo)
+
+    # Five long pending plays consume most of the 280-char budget, leaving room
+    # for only one streak line. The day streak must be the survivor.
+    results = [
+        {"outcome_name": "A" * 31, "market_key": "spreads",
+         "result": None, "event_id": f"e{i}", "sent_at": "2099-01-15",
+         "details_json": None}
+        for i in range(5)
+    ]
+
+    text = poster._format_recap(results, None, (4, "W"), (5, "W"))
+    assert len(text) <= 280
+    assert "4 straight profitable days" in text
+    assert "straight wins" not in text
     assert "Record:" not in text  # no decided games
 
 
@@ -1326,6 +1404,7 @@ async def test_daily_recap_attaches_card(settings, repo):
         "/tmp/results_2026-03-12_1080x1080.png",
         "/tmp/results_2026-03-12_1080x1920.png",
     ]
+    mock_card_gen.compute_streaks.return_value = ((0, "W"), (0, "W"))
     poster = XPoster(settings, repo, card_gen=mock_card_gen)
     poster._enabled = True
     poster._client = MagicMock()
@@ -1368,6 +1447,7 @@ async def test_daily_recap_text_fallback_on_upload_failure(settings, repo):
     mock_card_gen.generate_daily_cards.return_value = [
         "/tmp/results_2026-03-12_1080x1080.png",
     ]
+    mock_card_gen.compute_streaks.return_value = ((0, "W"), (0, "W"))
     poster = XPoster(settings, repo, card_gen=mock_card_gen)
     poster._enabled = True
     poster._client = MagicMock()

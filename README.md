@@ -360,7 +360,13 @@ X_ACCESS_TOKEN_SECRET=your_access_token_secret
 X_FREE_PLAY_COMBOS=["pinnacle_divergence:*:totals"]
 ```
 
-**Daily recap tweet (12:45 UTC / 5:45 AM MT):** Each morning after grading, a recap of the previous day's free plays is posted to X with results (won/lost/pending), a running record, and an attached results card image (1080x1080 branded PNG with YTD profit, monthly record, and streak).
+**Daily recap tweet (12:45 UTC / 5:45 AM MT):** Each morning after grading, a recap of the previous day's free plays is posted to X with results (won/lost/pending), a running record, and an attached results card image (1080x1080 branded PNG with YTD profit, monthly record, and streaks).
+
+Two streaks are surfaced when active, on both the card and as hype lines under the recap tweet header:
+- **Day streak** — consecutive profitable or losing *days*, bucketed by Phoenix (no-DST) calendar date with each day decided by its net risk-adjusted units (shows at 2+). Card: "4-Day Profit Streak"; tweet: "🔥 4 straight profitable days" / "📉 3 straight losing days". This is the headline metric — with the daily play volume a profitable-*day* run is the real story while a winning-*play* run is rare.
+- **Play streak** — consecutive winning or losing free plays (shows at 3+). Card: "5W Streak"; tweet: "🔥 5 straight wins" / "📉 3 straight losses".
+
+The card and tweet always agree because both read the streaks from a single computation in the card generator. On the tweet the day streak gets first claim on the 280-char budget; the play streak is added only if it still fits — so when room is tight the play streak is dropped, never the day streak.
 
 #### Tweet Quality Filters
 

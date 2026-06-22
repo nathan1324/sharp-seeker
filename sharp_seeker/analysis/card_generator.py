@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from zoneinfo import ZoneInfo
+
 import structlog
 from PIL import Image, ImageDraw, ImageFont
 
@@ -15,6 +17,12 @@ from sharp_seeker.config import Settings
 from sharp_seeker.db.repository import Repository
 
 log = structlog.get_logger()
+
+# Day streaks are bucketed by Phoenix (MST, no DST) calendar date — the same
+# zone the rest of the system uses for time-of-day logic — so an evening game
+# resolving before local midnight stays on its own day instead of rolling into
+# the next UTC date.
+_PHX = ZoneInfo("America/Phoenix")
 
 # ── Asset paths (try local dev path first, then Docker /app/) ────────────────
 
@@ -67,6 +75,8 @@ class CardStats:
     streak_type: str   # "W" or "L"
     date_str: str      # "March 11, 2026"
     month_name: str    # "March"
+    day_streak_count: int = 0
+    day_streak_type: str = "W"   # "W" (green days) or "L" (red days)
 
 
 class CardGenerator:
@@ -133,6 +143,7 @@ class CardGenerator:
         ytd_w, ytd_l, ytd_u = self._tally(ytd_resolved)
 
         streak_count, streak_type = self._compute_streak(ytd_resolved)
+        day_streak_count, day_streak_type = self._compute_day_streak(ytd_resolved)
 
         yesterday_date = (now - timedelta(days=1))
         date_str = yesterday_date.strftime("%B %d, %Y")
@@ -150,6 +161,8 @@ class CardGenerator:
             ytd_units=round(ytd_u, 2),
             streak_count=streak_count,
             streak_type=streak_type,
+            day_streak_count=day_streak_count,
+            day_streak_type=day_streak_type,
             date_str=date_str,
             month_name=month_name,
         )
@@ -219,6 +232,60 @@ class CardGenerator:
 
         return streak_count, streak_type or "W"
 
+    def _compute_day_streak(self, rows: list) -> tuple[int, str]:
+        """Walk resolved results day-by-day for the current profit/loss streak.
+
+        A "day" is the Phoenix calendar date of resolved_at (falling back to
+        sent_at). A day is green if its net risk-adjusted units > 0, red if
+        < 0. Days that net exactly 0 (e.g. all pushes, or wins and losses that
+        cancel) are skipped — they neither extend nor break the run, mirroring
+        how pushes don't break the play streak. Returns (count, "W"|"L").
+        """
+        day_units: dict[str, float] = {}
+        for row in rows:
+            r = dict(row)
+            day = _phx_date(r.get("resolved_at") or r.get("sent_at") or "")
+            if not day:
+                continue
+            result = r.get("result")
+            if result == "won":
+                day_units[day] = day_units.get(day, 0.0) + 1.0
+            elif result == "lost":
+                day_units[day] = day_units.get(day, 0.0) - self._risk_amount(r)
+
+        streak_type = ""
+        streak_count = 0
+        for day in sorted(day_units, reverse=True):
+            net = day_units[day]
+            if abs(net) < 1e-9:
+                continue  # break-even day — neutral, skip like a push
+            d_type = "W" if net > 0 else "L"
+            if not streak_type:
+                streak_type, streak_count = d_type, 1
+            elif d_type == streak_type:
+                streak_count += 1
+            else:
+                break
+
+        return streak_count, streak_type or "W"
+
+    async def compute_streaks(self) -> tuple[tuple[int, str], tuple[int, str]]:
+        """Current (play_streak, day_streak) for callers that want the numbers
+        without rendering a card (e.g. the recap tweet).
+
+        Each is (count, "W"|"L") — the play streak counts consecutive winning/
+        losing free plays, the day streak counts consecutive profitable/losing
+        days. Uses the same YTD query and math as the card so the tweet and the
+        card image never disagree.
+        """
+        now = datetime.now(timezone.utc)
+        since_ytd = now.replace(
+            month=1, day=1, hour=0, minute=0, second=0, microsecond=0
+        ).isoformat()
+        rows = await self._repo.get_free_play_results_since(since_ytd)
+        resolved = [r for r in rows if dict(r).get("result") is not None]
+        return self._compute_streak(resolved), self._compute_day_streak(resolved)
+
     def _render_card(self, size: tuple[int, int], stats: CardStats) -> Image.Image:
         """Render a results card image at the given size."""
         w, h = size
@@ -253,6 +320,7 @@ class CardGenerator:
             y_col_record = y_col_label + 50
             y_col_units = y_col_record + 80
             y_streak = y_col_units + 80
+            y_day_streak = y_streak + 58
             y_footer = 1920 - 80
         else:
             # ── Square (1080x1080): tight, vertically centered ───────
@@ -267,6 +335,7 @@ class CardGenerator:
             y_col_record = y_col_label + 45
             y_col_units = y_col_record + 75
             y_streak = y_col_units + 65
+            y_day_streak = y_streak + 52
             y_footer = 1080 - 50
 
         # ── Logo ─────────────────────────────────────────────────────
@@ -331,10 +400,34 @@ class CardGenerator:
             streak_color = GREEN if stats.streak_type == "W" else RED
             _draw_centered(draw, streak_display, font_streak, streak_color, cx, y_streak)
 
+        # ── Day streak (consecutive green / red days) ────────────────
+        if stats.day_streak_count >= 2:
+            kind = "Profit" if stats.day_streak_type == "W" else "Loss"
+            day_display = "{count}-Day {kind} Streak".format(
+                count=stats.day_streak_count, kind=kind,
+            )
+            day_color = GREEN if stats.day_streak_type == "W" else RED
+            _draw_centered(draw, day_display, font_units, day_color, cx, y_day_streak)
+
         # ── Footer ───────────────────────────────────────────────────
         _draw_centered(draw, "@SandboxSport", font_footer, GRAY, cx, y_footer)
 
         return img
+
+
+def _phx_date(ts: str) -> str:
+    """Phoenix (MST, no DST) calendar date 'YYYY-MM-DD' for an ISO timestamp.
+
+    Timestamps are stored in UTC; naive values are assumed UTC. Returns "" if
+    the timestamp can't be parsed.
+    """
+    try:
+        dt = datetime.fromisoformat(ts)
+    except (ValueError, TypeError):
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(_PHX).strftime("%Y-%m-%d")
 
 
 def compute_risk(price: float) -> float:
