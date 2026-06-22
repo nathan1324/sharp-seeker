@@ -111,6 +111,34 @@ def test_compute_units_mixed():
     assert units == pytest.approx(2.0 - 100 / 150)
 
 
+def _make_elite_row(result: str, price: float) -> dict:
+    """A tally row for a 2+ qualifier (elite) play, staked at 2u."""
+    details = json.dumps(
+        {"value_books": [{"bookmaker": "fanduel", "price": price}], "qualifier_count": 2}
+    )
+    return {
+        "event_id": "e1", "market_key": "h2h", "outcome_name": "Lakers",
+        "sent_at": "2026-01-15T12:00:00+00:00", "details_json": details,
+        "result": result, "signal_strength": 0.8,
+    }
+
+
+def test_tally_elite_win_doubles_units():
+    """An elite win at -110 is staked 2u → +2.0u (matches the tweet)."""
+    gen = CardGenerator.__new__(CardGenerator)
+    w, l, units = gen._tally([_make_elite_row("won", -110)])
+    assert (w, l) == (1, 0)
+    assert units == pytest.approx(2.0)
+
+
+def test_tally_elite_loss_doubles_risk():
+    """An elite loss at -110 risks 2x → -2.2u (matches the tweet)."""
+    gen = CardGenerator.__new__(CardGenerator)
+    w, l, units = gen._tally([_make_elite_row("lost", -110)])
+    assert (w, l) == (0, 1)
+    assert units == pytest.approx(-2.2)
+
+
 # ── Streak tests ─────────────────────────────────────────────────────────────
 
 
@@ -179,12 +207,16 @@ def test_compute_streak_empty():
 # ── Day-streak tests ─────────────────────────────────────────────────────────
 
 
-def _make_day_row(result: str, resolved_at: str, price: float = -110) -> dict:
+def _make_day_row(
+    result: str, resolved_at: str, price: float = -110, qualifier_count: int = 1
+) -> dict:
     return {
         "result": result,
         "resolved_at": resolved_at,
         "sent_at": resolved_at,
-        "details_json": json.dumps({"value_books": [{"price": price}]}),
+        "details_json": json.dumps(
+            {"value_books": [{"price": price}], "qualifier_count": qualifier_count}
+        ),
     }
 
 
@@ -262,6 +294,21 @@ def test_day_streak_buckets_by_phoenix_date():
     count, dtype = gen._compute_day_streak(rows)
     assert count == 1
     assert dtype == "W"
+
+
+def test_day_streak_elite_multiplier_flips_day_sign():
+    """An elite (2u) loss can turn a day red that flat staking would call green."""
+    gen = CardGenerator.__new__(CardGenerator)
+    rows = [
+        # 2 non-elite wins (+2.0) + 1 elite loss at -110 (-2.2) => net -0.2 => red.
+        # Under flat staking it would be +2.0 - 1.1 = +0.9 => green.
+        _make_day_row("won", "2026-01-05T18:00:00"),
+        _make_day_row("won", "2026-01-05T19:00:00"),
+        _make_day_row("lost", "2026-01-05T21:00:00", qualifier_count=2),
+    ]
+    count, dtype = gen._compute_day_streak(rows)
+    assert count == 1
+    assert dtype == "L"
 
 
 def test_day_streak_empty():

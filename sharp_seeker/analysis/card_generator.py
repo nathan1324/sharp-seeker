@@ -168,21 +168,47 @@ class CardGenerator:
         )
 
     def _tally(self, rows: list) -> tuple[int, int, float]:
-        """Count wins, losses, and compute unit profit for a set of results."""
+        """Count wins, losses, and compute unit profit for a set of results.
+
+        Elite plays (2+ qualifiers) are staked at 2u — matching the staking in
+        analysis/reports.py and the recap tweet, so the card's unit totals agree
+        with the tweet rather than under-counting elite plays.
+        """
         wins = 0
         losses = 0
         units = 0.0
         for row in rows:
             r = dict(row)
             result = r.get("result")
+            mult = self._stake_multiplier(r)
             if result == "won":
                 wins += 1
-                units += 1.0  # flat 1u to win
+                units += 1.0 * mult
             elif result == "lost":
                 losses += 1
-                units -= self._risk_amount(r)
+                units -= self._risk_amount(r) * mult
             # push = 0u
         return wins, losses, units
+
+    @staticmethod
+    def _stake_multiplier(row_dict: dict) -> int:
+        """Stake multiplier for a play: 2 for elite (2+ qualifier) plays, else 1.
+
+        Mirrors analysis/reports.py and alerts/x_poster.py so every unit figure
+        across the card and tweets uses the same staking.
+        """
+        details_raw = row_dict.get("details_json")
+        if not details_raw:
+            return 1
+        try:
+            details = (
+                json.loads(details_raw)
+                if isinstance(details_raw, str)
+                else details_raw
+            )
+        except (json.JSONDecodeError, TypeError):
+            return 1
+        return 2 if details.get("qualifier_count", 0) >= 2 else 1
 
     @staticmethod
     def _risk_amount(row_dict: dict) -> float:
@@ -248,10 +274,11 @@ class CardGenerator:
             if not day:
                 continue
             result = r.get("result")
+            mult = self._stake_multiplier(r)
             if result == "won":
-                day_units[day] = day_units.get(day, 0.0) + 1.0
+                day_units[day] = day_units.get(day, 0.0) + 1.0 * mult
             elif result == "lost":
-                day_units[day] = day_units.get(day, 0.0) - self._risk_amount(r)
+                day_units[day] = day_units.get(day, 0.0) - self._risk_amount(r) * mult
 
         streak_type = ""
         streak_count = 0
