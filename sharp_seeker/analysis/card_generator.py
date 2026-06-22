@@ -120,23 +120,25 @@ class CardGenerator:
         ytd_start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
         since_ytd = ytd_start.isoformat()
 
-        ytd_rows = await self._repo.get_free_play_results_since(since_ytd)
-        if not ytd_rows:
-            return None
-
-        # Filter to resolved only
-        ytd_resolved = [r for r in ytd_rows if dict(r).get("result") is not None]
+        # Window everything by resolved_at (when a play was graded), matching
+        # the recap tweet and the project-wide recap convention. Windowing by
+        # sent_at instead would split a play sent in one month but graded in the
+        # next across the two periods, so the card's month/YTD totals disagreed
+        # with the tweet's. resolved_since also carries the resolved_at column
+        # the day streak buckets on.
+        ytd_resolved = await self._repo.get_free_play_results_resolved_since(since_ytd)
         if not ytd_resolved:
             return None
 
-        # Yesterday: plays graded in last 24h (resolved_at, not sent_at)
+        # Yesterday: plays graded in last 24h
         yesterday_resolved = await self._repo.get_free_play_results_resolved_since(
             since_yesterday
         )
 
-        # Month: filter
-        month_rows = await self._repo.get_free_play_results_since(since_month)
-        month_resolved = [r for r in month_rows if dict(r).get("result") is not None]
+        # Month: plays graded since the first of the month
+        month_resolved = await self._repo.get_free_play_results_resolved_since(
+            since_month
+        )
 
         y_w, y_l, y_u = self._tally(yesterday_resolved)
         m_w, m_l, m_u = self._tally(month_resolved)

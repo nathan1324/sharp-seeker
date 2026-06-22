@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -360,6 +361,49 @@ async def test_no_results_returns_empty(settings, repo):
     gen = CardGenerator(settings, repo)
     paths = await gen.generate_daily_cards()
     assert paths == []
+
+
+@pytest.mark.asyncio
+async def test_get_stats_windows_month_by_resolved_at(settings, repo):
+    """A free play SENT last month but GRADED this month counts in the card's
+    month total — the card windows by resolved_at, matching the recap tweet.
+
+    Under the old sent_at windowing this play was dropped from the month, which
+    is why the card's monthly total disagreed with the tweet's MTD line.
+    """
+    gen = CardGenerator(settings, repo)
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    prior_month = (month_start - timedelta(days=5)).isoformat()
+
+    await repo.record_alert(
+        event_id="evt_resolved_window", alert_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers", is_free_play=True,
+        details_json=json.dumps({"value_books": [{"price": -110}]}),
+    )
+    # Backdate the send into the prior month; grading stays in this month.
+    await repo._db.execute(
+        "UPDATE sent_alerts SET sent_at = ? WHERE event_id = ?",
+        (prior_month, "evt_resolved_window"),
+    )
+    await repo._db.commit()
+
+    sig_at = now.isoformat()
+    await repo.record_signal_result(
+        event_id="evt_resolved_window", signal_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+        signal_direction="over", signal_strength=0.5, signal_at=sig_at,
+    )
+    await repo.resolve_signal(
+        event_id="evt_resolved_window", signal_type="pinnacle_divergence",
+        market_key="spreads", outcome_name="Lakers",
+        signal_at=sig_at, result="won",
+    )
+
+    stats = await gen._get_stats()
+    assert stats is not None
+    assert stats.month_w == 1  # counted despite being sent last month
+    assert stats.month_units == pytest.approx(1.0)
 
 
 @pytest.mark.asyncio
