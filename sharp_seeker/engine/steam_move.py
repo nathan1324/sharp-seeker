@@ -96,6 +96,27 @@ class SteamMoveDetector(BaseDetector):
                 continue
 
             direction = "up" if aligned is up else "down"
+
+            # Directional gate: emit ONLY the side bettors should actually take,
+            # so a single signal that survives upstream filters can never be the
+            # wrong (lengthening) side. This mirrors _pick_best_signal exactly —
+            # without it, correctness was enforced only as a mirror-dedup
+            # tiebreaker, so when the correct side was dropped before dedup the
+            # opposite (lengthening) side shipped uncorrected.
+            #   h2h / spreads: the shortening side is "down" (line moved against
+            #     this side's bettors → stale books still hold the old, better
+            #     number = the value).
+            #   totals: "up" favors Over, "down" favors Under.
+            if market_key == "totals":
+                is_bet_side = (
+                    (outcome_name.lower() == "over" and direction == "up")
+                    or (outcome_name.lower() == "under" and direction == "down")
+                )
+            else:
+                is_bet_side = direction == "down"
+            if not is_bet_side:
+                continue
+
             avg_delta = sum(abs(m[1]) for m in aligned) / len(aligned)
             strength = min(1.0, len(aligned) / max(len(book_data), 1))
 
