@@ -56,7 +56,7 @@ def main():
         params.append(SINCE)
 
     sql = (
-        "SELECT market_key, result, signal_strength, details_json, "
+        "SELECT market_key, sport_key, result, signal_strength, details_json, "
         "json_extract(details_json, '$.pinnacle_recent_direction') AS direction "
         "FROM signal_results WHERE " + where
     )
@@ -73,13 +73,8 @@ def main():
     def blank():
         return {"won": 0, "lost": 0, "push": 0, "units": 0.0}
 
-    buckets = {}
-    for row in rows:
-        direction = row.get("direction") or "unknown"
-        market = row["market_key"]
+    def tally(stats, row):
         result = row["result"]
-        key = (direction, market)
-        stats = buckets.setdefault(key, blank())
         if result == "won":
             stats["won"] += 1
             stats["units"] += american_to_profit(bet_price(row.get("details_json")))
@@ -88,6 +83,18 @@ def main():
             stats["units"] -= 1.0
         else:
             stats["push"] += 1
+
+    buckets = {}
+    # h2h-only, keyed by (sport, direction) — directly answers "is MLB ML PD
+    # worth chasing for volume, and does 'against' (falling knife) underperform?"
+    sport_h2h = {}
+    for row in rows:
+        direction = row.get("direction") or "unknown"
+        market = row["market_key"]
+        tally(buckets.setdefault((direction, market), blank()), row)
+        if market == "h2h":
+            sport = row.get("sport_key") or "unknown"
+            tally(sport_h2h.setdefault((sport, direction), blank()), row)
 
     span = f" (since {SINCE})" if SINCE else " (all time)"
     print(f"PD direction analysis{span} — DB: {DB_PATH}")
@@ -124,6 +131,23 @@ def main():
         roi = (100.0 * s["units"] / plays) if plays else 0.0
         print("    {:<9} {:>4}-{:<4} ({} push)  win {:>5.1f}%  units {:>+8.2f}  ROI {:>+6.1f}%".format(
             direction, s["won"], s["lost"], s["push"], win_pct, s["units"], roi
+        ))
+
+    # PD h2h (moneyline) by sport × direction — the MLB-ML question.
+    print("\n  PD h2h (moneyline) by sport x direction:")
+    sh = "    {:<16} {:<9} {:>4} {:>4} {:>4} {:>6} {:>9} {:>8}".format(
+        "sport", "direction", "W", "L", "P", "win%", "units", "ROI%"
+    )
+    print(sh)
+    print("    " + "-" * (len(sh) - 4))
+    for (sport, direction) in sorted(sport_h2h):
+        s = sport_h2h[(sport, direction)]
+        decided = s["won"] + s["lost"]
+        win_pct = (100.0 * s["won"] / decided) if decided else 0.0
+        plays = s["won"] + s["lost"] + s["push"]
+        roi = (100.0 * s["units"] / plays) if plays else 0.0
+        print("    {:<16} {:<9} {:>4} {:>4} {:>4} {:>5.1f}% {:>+9.2f} {:>+7.1f}%".format(
+            sport, direction, s["won"], s["lost"], s["push"], win_pct, s["units"], roi
         ))
 
 
