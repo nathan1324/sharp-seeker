@@ -22,8 +22,10 @@ the main line.
 Credits: ~1/sport for discovery + ~2/triggered-event. Bounded by MAX_EVENTS.
 
 Usage (server, during active hours so games are upcoming):
-  docker compose exec sharp-seeker python /app/scripts/probe_alt_lines_for_juiced_pd.py [sport] [max_events]
-  (defaults: sport=baseball_mlb, max_events=20; pass "all" to sweep configured sports)
+  docker compose exec sharp-seeker python /app/scripts/probe_alt_lines_for_juiced_pd.py [sport] [max_events] [trigger] [min_delta]
+  (defaults: sport=baseball_mlb, max_events=20, trigger=-126, min_delta=1.0;
+   pass "all" to sweep configured sports. trigger=-126 targets the only band that
+   actually loses per analyze_juiced_pd_totals.py; for NBA/NHL pass min_delta 0.5.)
 """
 
 from __future__ import annotations
@@ -37,8 +39,12 @@ from sharp_seeker.config import Settings
 SPORT_ARG = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else "baseball_mlb"
 MAX_EVENTS = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2] else 20
 
-JUICE_TRIGGER = -115          # value-side price worse than this fires the lookup
-MIN_DELTA = 1.0              # US-vs-Pinnacle total gap to count as a divergence
+# Value-side price worse than this fires the lookup. Default -126: the 60d split
+# showed -116..-125 is our BEST band (+31.69u) and must be left alone; only -126
+# and worse actually loses (33 plays, -5.77u, WR below break-even).
+JUICE_TRIGGER = int(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3] else -126
+# US-vs-Pinnacle total gap to count as a divergence (MLB 1.0; NBA/NHL 0.5).
+MIN_DELTA = float(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4] else 1.0
 PIN = "pinnacle"
 # PD-active US books (betmgm + williamhill_us are excluded from PD per config).
 PD_US = ("draftkings", "fanduel", "betrivers")
