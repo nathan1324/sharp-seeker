@@ -112,6 +112,40 @@ async def test_steam_moneyline(settings, repo):
 
 
 @pytest.mark.asyncio
+async def test_steam_h2h_emits_only_shortening_side(settings, repo):
+    """Regression (Cubs/Mets incident): when sharp money hits the dog, the dog
+    shortens and the favorite lengthens. The detector must emit ONLY the
+    shortening side (the side to bet), never the lengthening mirror — otherwise
+    a wrong-side signal can ship if the correct side is dropped by an upstream
+    filter before mirror-dedup runs.
+    """
+    event = "evt_cubs_mets"
+    t1 = "2025-01-15T12:00:00+00:00"
+    t2 = "2025-01-15T12:20:00+00:00"
+
+    # Varied final prices so the side clears the detector's dispersion guard.
+    mets_to = {"draftkings": 112, "fanduel": 108, "betmgm": 110}
+    cubs_to = {"draftkings": -128, "fanduel": -132, "betmgm": -130}
+    snapshots = []
+    for bm in ("draftkings", "fanduel", "betmgm"):
+        # Mets (dog) shorten +130 -> ~+110 : negative delta -> "down" = bet side
+        snapshots.append(_snap(event, bm, "h2h", "Mets", 130, None, t1))
+        snapshots.append(_snap(event, bm, "h2h", "Mets", mets_to[bm], None, t2))
+        # Cubs (fav) lengthen -150 -> ~-130 : positive delta -> "up" = wrong side
+        snapshots.append(_snap(event, bm, "h2h", "Cubs", -150, None, t1))
+        snapshots.append(_snap(event, bm, "h2h", "Cubs", cubs_to[bm], None, t2))
+    await repo.insert_snapshots(snapshots)
+
+    detector = SteamMoveDetector(settings, repo)
+    signals = await detector.detect(event, t2)
+
+    # Exactly one signal, and it must be the shortening (Mets) side.
+    assert len(signals) == 1
+    assert signals[0].outcome_name == "Mets"
+    assert signals[0].details["direction"] == "down"
+
+
+@pytest.mark.asyncio
 async def test_steam_hold_in_details(settings, repo):
     """Steam move should include us_hold when both sides of the market are available."""
     event = "evt_hold1"

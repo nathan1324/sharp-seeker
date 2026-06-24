@@ -19,9 +19,15 @@ written to `sent_alerts` count as "sent".
 ### Steam Move — `sharp_seeker/engine/steam_move.py`
 - **Triggers when:** 3+ US books (`steam_min_books`) move the same line in the
   same direction within `steam_window_minutes` (default 30).
+- **Directional gate (h2h + spreads + totals):** emits ONLY the side bettors
+  should take — the shortening side (`direction == "down"`) for h2h/spreads;
+  Over on `"up"` / Under on `"down"` for totals. The mirror (lengthening) side
+  is dropped at the detector, so a single signal surviving upstream filters can
+  never be the wrong side. See Change Log 2026-06-24.
 - **Suppressions:**
   - Skip if < `steam_min_books` aligned.
   - Skip if no price dispersion (all books at same line).
+  - Skip the lengthening mirror side (directional gate above).
 - **Per-sport overrides:** none.
 
 ### Rapid Change — `sharp_seeker/engine/rapid_change.py`
@@ -143,6 +149,30 @@ combos/hours yet. Pipeline filters above are NOT bypassed.
 
 Append a dated entry for every signaling change. Include: what changed, why
 (data snapshot, date range, sample size, win%/units/ROI), and file touched.
+
+### 2026-06-24 — Steam Move wrong-side fix (directional gate at the detector)
+- **Trigger:** operator flagged a Cubs ML steam alert where the sharp move was
+  actually toward the Mets (dog → fav). Signal fired correctly but on the WRONG
+  side (Cubs lengthening), confirmed by Pinnacle moving away from Cubs.
+- **Root cause:** `SteamMoveDetector` emitted a signal for *every* outcome with
+  aligned movement — including the lengthening mirror side. Directional
+  correctness was enforced only in `_pick_best_signal` (the mirror-dedup
+  tiebreaker), which runs ONLY when both sides land in the same dedup group
+  (`len(sigs) > 1`). When the correct (shortening) side was dropped *before*
+  dedup — by the strength filter / max-strength cap / the detector's own
+  dispersion guard (asymmetric per side) — the wrong side fell through the
+  `len(sigs) <= 1` branch and shipped uncorrected. The lengthening side's
+  `value_books` were also bogus (stale books = the *worst* price, not value).
+- **Change:** added a directional gate in `steam_move.py` right after `direction`
+  is computed — emit only `direction == "down"` for h2h/spreads, and Over-on-up
+  / Under-on-down for totals (mirrors `_pick_best_signal` exactly). The
+  lengthening mirror is now `continue`d at the source. `_pick_best_signal`
+  becomes a pure tiebreaker.
+- **Effect on volume:** does NOT change correct-side volume — it only removes
+  wrong-side posts that should never have existed. Not a volume lever.
+- **Files:** `sharp_seeker/engine/steam_move.py`; regression test
+  `tests/test_steam_move.py::test_steam_h2h_emits_only_shortening_side`
+  (Mets-shortening / Cubs-lengthening pair → only the Mets signal). 270 tests pass.
 
 ### 2026-06-07 — MLB "getting killed" investigation (NO CHANGE — loss is historical)
 - **Trigger:** operator observed MLB losing on Discord grades and suspected our
