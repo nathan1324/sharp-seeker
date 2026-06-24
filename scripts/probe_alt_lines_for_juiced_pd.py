@@ -47,6 +47,9 @@ _GATE = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else "all"
 JUICE_TRIGGER = None if _GATE in ("all", "any") else int(_GATE)
 # US-vs-Pinnacle total gap to count as a divergence (MLB 1.0; NBA/NHL 0.5).
 MIN_DELTA = float(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4] else 1.0
+# Mirror the detector's noise cap: delta >= 2.0 is thrown out as stale/garbage
+# (pinnacle_divergence.py). Without this the probe studies lines we'd never bet.
+MAX_DELTA = 2.0
 # Floor for the "better-priced rungs" listing (display only, independent of gate).
 CHEAP_FLOOR = -115
 PIN = "pinnacle"
@@ -149,7 +152,8 @@ def find_triggers(events):
                     continue
                 us_point = us_pts[0]
                 us_price = us[side][us_point]
-                if abs(us_point - pin_point) < MIN_DELTA:
+                gap = abs(us_point - pin_point)
+                if gap < MIN_DELTA or gap >= MAX_DELTA:
                     continue
                 if not better_value(side, us_point, pin_point):
                     continue
@@ -233,8 +237,9 @@ def main():
             triggers = find_triggers(events)
             gate_desc = "any price" if JUICE_TRIGGER is None else ("price worse than " + str(JUICE_TRIGGER))
             print("\n=== " + sport + " ===")
-            print("PD-style totals divergences (" + gate_desc
-                  + ", delta >= " + str(MIN_DELTA) + "): " + str(len(triggers)))
+            print("PD-style totals divergences (" + gate_desc + ", "
+                  + str(MIN_DELTA) + " <= delta < " + str(MAX_DELTA) + "): "
+                  + str(len(triggers)))
 
             for trig in triggers:
                 if n_events >= MAX_EVENTS:
