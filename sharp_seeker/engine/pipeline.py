@@ -20,6 +20,57 @@ from sharp_seeker.engine.steam_move import SteamMoveDetector
 log = structlog.get_logger()
 
 
+def _price_rank(price) -> float:
+    """Bettor-value of an American price as a sortable number: higher = better
+    payout (+150 > -110 > -130). Missing prices sort last."""
+    return price if isinstance(price, (int, float)) else float("-inf")
+
+
+def _best_price(sig: Signal) -> float:
+    """Best (most favorable) price across a signal's value books."""
+    vbs = sig.details.get("value_books") or []
+    return max((_price_rank(vb.get("price")) for vb in vbs), default=float("-inf"))
+
+
+def _merge_same_side_value_books(best: Signal, sigs: list[Signal]) -> None:
+    """Line-shopping: consolidate every book offering the SAME side at the SAME
+    point as the chosen signal into ``best.details['value_books']``, best price
+    first.
+
+    Detectors like Pinnacle Divergence emit one single-book signal per book, so
+    three books on Over 11.5 arrive as three signals and dedup would otherwise
+    keep just one (arbitrary) book's price. Merging them means the recommendation
+    shows the best price and the rest render as shoppable alternatives — same
+    bet, every book that lists it, no added variance.
+
+    Books at a different (worse) point are a different bet and are left out. A
+    no-op when only one signal is on the chosen side (e.g. Steam/Rapid emit a
+    single multi-book signal per side — we must not strip their other points).
+    """
+    same_side = [s for s in sigs if s.outcome_name == best.outcome_name]
+    if len(same_side) <= 1:
+        return
+    primary = best.details.get("value_books") or []
+    if not primary:
+        return
+    best_point = primary[0].get("point")
+    merged: dict[str, dict] = {}
+    for s in same_side:
+        for vb in s.details.get("value_books", []):
+            if vb.get("point") != best_point:
+                continue
+            bk = vb.get("bookmaker")
+            if not bk:
+                continue
+            cur = merged.get(bk)
+            if cur is None or _price_rank(vb.get("price")) > _price_rank(cur.get("price")):
+                merged[bk] = vb
+    if len(merged) > 1:
+        best.details["value_books"] = sorted(
+            merged.values(), key=lambda vb: _price_rank(vb.get("price")), reverse=True
+        )
+
+
 def _pick_best_signal(sigs: list[Signal]) -> Signal:
     """From mirror-side signals, pick the most actionable one.
 
@@ -72,8 +123,15 @@ def _pick_best_signal(sigs: list[Signal]) -> Signal:
         # Prefer the side with the larger move
         return max(sigs, key=lambda s: abs(s.details.get("delta", 0)))
 
-    # Fallback: most value books, then highest strength
-    return max(sigs, key=lambda s: (len(s.details.get("value_books", [])), s.strength))
+    # Fallback: most value books, then highest strength, then best price for the
+    # bettor. The price tiebreaker only separates otherwise-equal signals (e.g.
+    # PD books at the same number), so a genuinely better line (higher strength)
+    # is never traded away for a worse one — it just stops us posting -130 when
+    # -106 on the same number is available.
+    return max(
+        sigs,
+        key=lambda s: (len(s.details.get("value_books", [])), s.strength, _best_price(s)),
+    )
 
 
 class DetectionPipeline:
@@ -237,6 +295,9 @@ class DetectionPipeline:
                 deduped_signals.extend(sigs)
             else:
                 best = _pick_best_signal(sigs)
+                # Line-shopping: surface every book on the chosen side at the
+                # chosen number, best price first (recommendation + alternatives).
+                _merge_same_side_value_books(best, sigs)
                 deduped_signals.append(best)
                 log.debug(
                     "market_side_dedup",
@@ -244,6 +305,7 @@ class DetectionPipeline:
                     signal_type=key[1],
                     market=key[2],
                     kept=best.outcome_name,
+                    books=[vb.get("bookmaker") for vb in best.details.get("value_books", [])],
                     dropped=[s.outcome_name for s in sigs if s is not best],
                 )
 

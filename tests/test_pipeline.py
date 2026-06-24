@@ -8,7 +8,11 @@ import pytest
 
 from sharp_seeker.config import Settings
 from sharp_seeker.engine.base import Signal, SignalType
-from sharp_seeker.engine.pipeline import DetectionPipeline, _pick_best_signal
+from sharp_seeker.engine.pipeline import (
+    DetectionPipeline,
+    _merge_same_side_value_books,
+    _pick_best_signal,
+)
 from unittest.mock import AsyncMock, MagicMock
 
 
@@ -365,6 +369,117 @@ def test_pick_best_fallback_uses_value_books():
     ]
     best = _pick_best_signal(sigs)
     assert best.outcome_name == "Team B"
+
+
+def test_pick_best_pd_prefers_better_price_at_same_number():
+    """Same side, same number, equal strength → keep the best-priced book.
+
+    Three books on Over 11.5 (DK -130, FD -106, BetRivers -118). All identical
+    except price; the bettor should be sent to FanDuel's -106, not whichever
+    book happened to be iterated first.
+    """
+    sigs = [
+        _make_signal(
+            SignalType.PINNACLE_DIVERGENCE,
+            outcome="Over",
+            market="totals",
+            strength=0.33,
+            details={"value_books": [{"bookmaker": "draftkings", "price": -130, "point": 11.5}]},
+        ),
+        _make_signal(
+            SignalType.PINNACLE_DIVERGENCE,
+            outcome="Over",
+            market="totals",
+            strength=0.33,
+            details={"value_books": [{"bookmaker": "fanduel", "price": -106, "point": 11.5}]},
+        ),
+        _make_signal(
+            SignalType.PINNACLE_DIVERGENCE,
+            outcome="Over",
+            market="totals",
+            strength=0.33,
+            details={"value_books": [{"bookmaker": "betrivers", "price": -118, "point": 11.5}]},
+        ),
+    ]
+    best = _pick_best_signal(sigs)
+    assert best.details["value_books"][0]["bookmaker"] == "fanduel"
+
+
+def test_pick_best_keeps_better_number_over_better_price():
+    """A genuinely better line (higher strength) wins even at a worse price —
+    we never trade a better number for a cheaper price."""
+    sigs = [
+        _make_signal(
+            SignalType.PINNACLE_DIVERGENCE,
+            outcome="Over",
+            market="totals",
+            strength=0.33,  # Over 11.5, cheap price
+            details={"value_books": [{"bookmaker": "fanduel", "price": -101, "point": 11.5}]},
+        ),
+        _make_signal(
+            SignalType.PINNACLE_DIVERGENCE,
+            outcome="Over",
+            market="totals",
+            strength=0.50,  # Over 11.0, better number, worse price
+            details={"value_books": [{"bookmaker": "draftkings", "price": -140, "point": 11.0}]},
+        ),
+    ]
+    best = _pick_best_signal(sigs)
+    assert best.details["value_books"][0]["point"] == 11.0
+
+
+def test_merge_same_side_value_books_line_shops():
+    """Merge consolidates all books at the chosen number, best price first."""
+    sigs = [
+        _make_signal(
+            SignalType.PINNACLE_DIVERGENCE, outcome="Over", market="totals", strength=0.33,
+            details={"value_books": [{"bookmaker": "draftkings", "price": -130, "point": 11.5}]},
+        ),
+        _make_signal(
+            SignalType.PINNACLE_DIVERGENCE, outcome="Over", market="totals", strength=0.33,
+            details={"value_books": [{"bookmaker": "fanduel", "price": -106, "point": 11.5}]},
+        ),
+        _make_signal(
+            SignalType.PINNACLE_DIVERGENCE, outcome="Over", market="totals", strength=0.33,
+            details={"value_books": [{"bookmaker": "betrivers", "price": -118, "point": 11.5}]},
+        ),
+    ]
+    best = _pick_best_signal(sigs)
+    _merge_same_side_value_books(best, sigs)
+    books = [vb["bookmaker"] for vb in best.details["value_books"]]
+    assert books == ["fanduel", "betrivers", "draftkings"]  # best price first
+
+
+def test_merge_excludes_books_at_a_different_number():
+    """A book at a worse number is a different bet and is left out of the merge."""
+    sigs = [
+        _make_signal(
+            SignalType.PINNACLE_DIVERGENCE, outcome="Over", market="totals", strength=0.50,
+            details={"value_books": [{"bookmaker": "fanduel", "price": -106, "point": 11.0}]},
+        ),
+        _make_signal(
+            SignalType.PINNACLE_DIVERGENCE, outcome="Over", market="totals", strength=0.33,
+            details={"value_books": [{"bookmaker": "draftkings", "price": -101, "point": 11.5}]},
+        ),
+    ]
+    best = _pick_best_signal(sigs)  # FanDuel Over 11.0 (higher strength)
+    _merge_same_side_value_books(best, sigs)
+    books = [vb["bookmaker"] for vb in best.details["value_books"]]
+    assert books == ["fanduel"]
+
+
+def test_merge_noop_for_single_multibook_signal():
+    """Steam/Rapid emit one multi-book signal per side — merge must not strip
+    books that sit at other points."""
+    sig = _make_signal(
+        SignalType.STEAM_MOVE, outcome="Over", market="totals", strength=0.7,
+        details={"value_books": [
+            {"bookmaker": "draftkings", "price": -110, "point": 8.5},
+            {"bookmaker": "fanduel", "price": -110, "point": 9.0},
+        ]},
+    )
+    _merge_same_side_value_books(sig, [sig])
+    assert len(sig.details["value_books"]) == 2
 
 
 # ── Per-signal-type filtering tests ──────────────────────────────────

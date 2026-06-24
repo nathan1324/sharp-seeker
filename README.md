@@ -40,7 +40,7 @@ Raw signals pass through an 8-stage filter before alerting:
 3. **Blocklist filter** — drops losing type+market combos via `SIGNAL_BLOCKLIST` (supports 2-key `type:market` and 3-key `type:sport:market` patterns)
 4. **Quiet hours filter** — suppresses specific signal types during configured UTC hours via `SIGNAL_QUIET_HOURS`
 5. **Live signal filter** — drops signals for games that have already started
-6. **Market-side dedup** — when both sides of a spread/total fire, keeps only the actionable side using signal-type-aware logic
+6. **Market-side dedup** — when both sides of a spread/total fire, keeps only the actionable side using signal-type-aware logic. When several books offer the same side at the same number (e.g. Pinnacle Divergence emits one signal per book), they are consolidated into a single recommendation at the **best available price**, with the remaining books listed as shoppable alternatives — same bet, best price, no added variance.
 7. **Value books filter** — requires at least one actionable value bet
 8. **Cooldown dedup** — suppresses repeat alerts for the same (event, signal, market, outcome) within 60 minutes
 
