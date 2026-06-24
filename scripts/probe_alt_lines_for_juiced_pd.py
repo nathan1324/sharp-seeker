@@ -39,12 +39,16 @@ from sharp_seeker.config import Settings
 SPORT_ARG = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else "baseball_mlb"
 MAX_EVENTS = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2] else 20
 
-# Value-side price worse than this fires the lookup. Default -126: the 60d split
-# showed -116..-125 is our BEST band (+31.69u) and must be left alone; only -126
-# and worse actually loses (33 plays, -5.77u, WR below break-even).
-JUICE_TRIGGER = int(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3] else -126
+# Price gate (arg3). Default "all" = evaluate the ladder on EVERY divergence -
+# the profit-maximization question is "could a better rung beat the main line on
+# ANY signal", not just juiced ones. Pass an int (e.g. -126) to restrict to
+# prices worse than that. None = no gate.
+_GATE = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else "all"
+JUICE_TRIGGER = None if _GATE in ("all", "any") else int(_GATE)
 # US-vs-Pinnacle total gap to count as a divergence (MLB 1.0; NBA/NHL 0.5).
 MIN_DELTA = float(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4] else 1.0
+# Floor for the "better-priced rungs" listing (display only, independent of gate).
+CHEAP_FLOOR = -115
 PIN = "pinnacle"
 # PD-active US books (betmgm + williamhill_us are excluded from PD per config).
 PD_US = ("draftkings", "fanduel", "betrivers")
@@ -149,7 +153,7 @@ def find_triggers(events):
                     continue
                 if not better_value(side, us_point, pin_point):
                     continue
-                if not (us_price < JUICE_TRIGGER):
+                if JUICE_TRIGGER is not None and not (us_price < JUICE_TRIGGER):
                     continue
                 triggers.append({
                     "event_id": ev["id"],
@@ -211,6 +215,7 @@ def main():
     last_remaining = None
     n_events = 0
     n_improved = 0
+    uplift_sum = 0.0   # sum of (best_rung_EV - main_line_EV) over improved plays
 
     try:
         for sport in sports:
@@ -226,10 +231,10 @@ def main():
                 continue
             last_remaining = rem or last_remaining
             triggers = find_triggers(events)
+            gate_desc = "any price" if JUICE_TRIGGER is None else ("price worse than " + str(JUICE_TRIGGER))
             print("\n=== " + sport + " ===")
-            print("Juiced PD-style totals triggers (price worse than "
-                  + str(JUICE_TRIGGER) + ", delta >= " + str(MIN_DELTA) + "): "
-                  + str(len(triggers)))
+            print("PD-style totals divergences (" + gate_desc
+                  + ", delta >= " + str(MIN_DELTA) + "): " + str(len(triggers)))
 
             for trig in triggers:
                 if n_events >= MAX_EVENTS:
@@ -260,19 +265,21 @@ def main():
                     tag = ""
                     if main_ev is not None and best["ev"] > main_ev + 1e-9 \
                             and (best["point"] != trig["us_point"] or best["price"] != trig["us_price"]):
-                        tag = "   <-- better than main line"
+                        tag = ("   <-- better than main line (+"
+                               + format(best["ev"] - main_ev, ".3f") + " EV)")
                         n_improved += 1
+                        uplift_sum += best["ev"] - main_ev
                     print("    best-EV rung: " + trig["side"] + " " + str(best["point"])
                           + " @ " + str(best["price"]) + "   EV " + format(best["ev"], "+.3f")
                           + "  (fair " + format(best["fair"], ".1%") + ")" + tag)
 
-                # Cheaper-price rungs (<= -115) ranked by EV, top 3, for eyeballing.
+                # Better-priced rungs (>= CHEAP_FLOOR) ranked by EV, top 3.
                 cheaper = sorted(
-                    [r for r in rungs if r["price"] >= JUICE_TRIGGER],
+                    [r for r in rungs if r["price"] >= CHEAP_FLOOR],
                     key=lambda r: r["ev"], reverse=True,
                 )[:3]
                 if cheaper:
-                    line = "    rungs <= -115: " + ", ".join(
+                    line = "    rungs >= " + str(CHEAP_FLOOR) + ": " + ", ".join(
                         str(r["point"]) + "@" + str(r["price"]) + "(EV" + format(r["ev"], "+.3f") + ")"
                         for r in cheaper
                     )
@@ -283,12 +290,19 @@ def main():
         client.close()
 
     print("\n=== SUMMARY ===")
-    print("Triggers evaluated: " + str(n_events))
-    print("Where an alt rung beats the main-line EV: " + str(n_improved))
+    print("Divergences evaluated: " + str(n_events))
+    pct = (100.0 * n_improved / n_events) if n_events else 0.0
+    print("Where an alt rung beats the main-line EV: " + str(n_improved)
+          + "  (" + format(pct, ".0f") + "%)")
+    if n_improved:
+        print("Avg EV uplift on those plays: +" + format(uplift_sum / n_improved, ".3f")
+              + "u/u   total across snapshot: +" + format(uplift_sum, ".2f") + "u")
     if last_remaining is not None:
         print("API credits remaining: " + str(last_remaining))
-    print("\nIf 'improved' is a meaningful share, the alt feature earns its place;")
-    print("pick the decision rule (best-EV rung, or best EV among rungs <= -115).")
+    print("\nReality check: EV here is vs Pinnacle's ALT ladder, which is less")
+    print("liquid than its main line - a single snapshot is suggestive, not proof.")
+    print("If uplift is consistent and material, shadow-log alt picks alongside")
+    print("real signals and GRADE both for ~2 weeks before switching the detector.")
 
 
 if __name__ == "__main__":
