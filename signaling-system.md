@@ -150,6 +150,29 @@ combos/hours yet. Pipeline filters above are NOT bypassed.
 Append a dated entry for every signaling change. Include: what changed, why
 (data snapshot, date range, sample size, win%/units/ROI), and file touched.
 
+### 2026-06-24 — PD direction read-out (NO CHANGE — sample too thin; MLB PD ML ~absent)
+- **Trigger:** operator got a Cubs ML PD signal where the line then moved to the
+  Mets, and wanted (a) to suppress falling-knife (`against`) PD and (b) more MLB
+  PD ML. Ran `scripts/pd_direction_analysis.py "" 2026-06-01` (46 resolved PD
+  h2h/spread signals).
+- **Result — `against` suppression NOT justified:** `against` n=2 (2-0, +2.38u).
+  No evidence it underperforms. The worst bucket was actually `flat` (6-11,
+  -36.5%, n=17); `toward` -13.8% (n=13); `unknown` +45.8% (n=14). `unknown`/
+  `flat` are largely data-availability artifacts (need ≥2 Pinnacle snapshots in
+  the 30-min window to compute direction) → polling cadence is too sparse to
+  read Pinnacle micro-direction reliably. The Cubs play itself was ungraded at
+  read time, so it's an anecdote, not in the data. **Decision: do NOT gate on
+  `pinnacle_recent_direction` yet — revisit at higher n.**
+- **Result — MLB PD ML is essentially nonexistent:** only 1 resolved MLB h2h PD
+  signal since 06-01 (0-1). PD moneyline volume is ~all WNBA. MLB ML markets are
+  efficient → tight cross-book hold caught by the 0-2% block + US books rarely
+  diverge 3% from Pinnacle on a baseball ML. The absence is most likely correct.
+  **Decision: do NOT loosen `pd_sport_ml_prob_overrides[baseball_mlb]` — no
+  demonstrated edge; would manufacture unproven volume.** If revisited, backtest
+  a lower threshold first.
+- **Files:** none changed; `scripts/pd_direction_analysis.py` enhanced with an
+  h2h-by-sport × direction table.
+
 ### 2026-06-24 — Steam Move wrong-side fix (directional gate at the detector)
 - **Trigger:** operator flagged a Cubs ML steam alert where the sharp move was
   actually toward the Mets (dog → fav). Signal fired correctly but on the WRONG
