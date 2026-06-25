@@ -36,8 +36,11 @@ ARG1 = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else "30"
 DB_PATH = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else "/app/data/sharp_seeker.db"
 SPORT = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else "baseball_mlb"
 
-# Cushion buckets (runs between our line and Pinnacle's fair number).
-BUCKETS = [(1.0, 1.25), (1.25, 1.5), (1.5, 2.0), (2.0, 99.0)]
+# Cushion buckets (runs between our line and Pinnacle's fair number). Span the
+# full plausible range from 0 so nothing is silently dropped — the firing
+# threshold varies by sport/config and we want to SEE where the cushions land.
+BUCKETS = [(0.0, 0.5), (0.5, 0.75), (0.75, 1.0), (1.0, 1.25),
+           (1.25, 1.5), (1.5, 2.0), (2.0, 99.0)]
 
 
 def _since():
@@ -145,17 +148,27 @@ def main():
 
     overall = _new()
     buckets = {b: _new() for b in BUCKETS}
-    no_cushion = 0
+    no_cushion = outside = 0
+    cmin = cmax = csum = None
+    cn = 0
     for row in cur:
         cushion, price = _parse(row["details_json"])
         _add(overall, row["result"], price)
         if cushion is None:
             no_cushion += 1
             continue
+        cn += 1
+        csum = cushion if csum is None else csum + cushion
+        cmin = cushion if cmin is None else min(cmin, cushion)
+        cmax = cushion if cmax is None else max(cmax, cushion)
+        placed = False
         for (lo, hi) in BUCKETS:
             if lo <= cushion < hi:
                 _add(buckets[(lo, hi)], row["result"], price)
+                placed = True
                 break
+        if not placed:
+            outside += 1
     conn.close()
 
     scope = SPORT if SPORT != "all" else "all sports"
@@ -164,6 +177,11 @@ def main():
     print("OVERALL: " + _fmt(overall))
     if no_cushion:
         print("  (" + str(no_cushion) + " rows missing us/pinnacle values - excluded from buckets)")
+    if cn:
+        print("Cushion (runs): min " + format(cmin, ".2f") + "  mean "
+              + format(csum / cn, ".2f") + "  max " + format(cmax, ".2f"))
+    if outside:
+        print("  (" + str(outside) + " rows had a cushion outside all buckets)")
     print("\nBy cushion (runs our line sits past Pinnacle's fair number):")
     print("  cushion        n   W-L-P      WR    BE    avg price   units")
     for (lo, hi) in BUCKETS:
