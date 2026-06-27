@@ -21,6 +21,7 @@ _BOOK_DISPLAY: dict[str, str] = {
     "fanduel": "FanDuel",
     "betmgm": "BetMGM",
     "fanatics": "Fanatics",
+    "hardrockbet": "Hard Rock Bet",
 }
 
 

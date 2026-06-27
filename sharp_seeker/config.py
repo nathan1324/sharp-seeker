@@ -22,6 +22,7 @@ class Settings(BaseSettings):
             "williamhill_us",
             "betrivers",
             "fanatics",
+            "hardrockbet",
         ]
     )
 
