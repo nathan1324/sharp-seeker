@@ -172,7 +172,7 @@ All settings are configured via `.env` file. See [`.env.example`](.env.example) 
 | `DISCORD_WEBHOOK_OVERRIDES` | `{}` | Per-sport+signal webhook routing (JSON, see below) |
 | `ODDS_API_MONTHLY_CREDITS` | `100000` | Monthly API credit budget |
 | `SPORTS` | `["basketball_nba"]` | Sports to track (JSON array) |
-| `BOOKMAKERS` | `["draftkings","fanduel","betmgm","pinnacle","williamhill_us","betrivers"]` | Bookmakers to monitor (JSON array) |
+| `BOOKMAKERS` | `["draftkings","fanduel","betmgm","pinnacle","williamhill_us","betrivers","fanatics","hardrockbet","espnbet"]` | Bookmakers to monitor (JSON array) |
 | `POLL_INTERVAL_MINUTES` | `12` | Minutes between polls |
 | `QUIET_HOURS_START` | `5` | UTC hour to stop polling |
 | `QUIET_HOURS_END` | `14` | UTC hour to resume polling |

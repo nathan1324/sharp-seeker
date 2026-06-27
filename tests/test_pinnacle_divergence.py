@@ -692,3 +692,53 @@ async def test_mlb_totals_neg_hold_other_line_still_fires(settings, repo):
     assert len(signals) == 1
     assert signals[0].details["us_value"] == 8.0
     assert signals[0].details["cross_book_hold"] < 0
+
+
+@pytest.mark.asyncio
+async def test_fanatics_treated_as_us_value_book(settings, repo):
+    """Fanatics is a recognized US book → it fires PD like DK/FD/BetRivers."""
+    event = "evt_fanatics"
+    t = "2025-01-15T12:00:00+00:00"
+
+    # Fanatics has a better total (Over 7.5 vs Pinnacle 8.0) → 0.5 delta.
+    snapshots = [
+        _snap(event, "pinnacle", "totals", "Over", -110, 8.0, t, sport_key="icehockey_nhl"),
+        _snap(event, "fanatics", "totals", "Over", -110, 7.5, t, sport_key="icehockey_nhl"),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    settings.pd_sport_totals_overrides = {"icehockey_nhl": 0.5}
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 1
+    assert signals[0].details["us_book"] == "fanatics"
+
+
+@pytest.mark.asyncio
+async def test_espnbet_treated_as_us_value_book(settings, repo):
+    """ESPN Bet (key 'espnbet', now TheScoreBet) is a recognized US value book."""
+    event = "evt_espnbet"
+    t = "2025-01-15T12:00:00+00:00"
+
+    snapshots = [
+        _snap(event, "pinnacle", "totals", "Over", -110, 8.0, t, sport_key="icehockey_nhl"),
+        _snap(event, "espnbet", "totals", "Over", -110, 7.5, t, sport_key="icehockey_nhl"),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    settings.pd_sport_totals_overrides = {"icehockey_nhl": 0.5}
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 1
+    assert signals[0].details["us_book"] == "espnbet"
+
+
+def test_new_book_display_names():
+    """User-facing names: espnbet renders as TheScoreBet (per operator)."""
+    from sharp_seeker.alerts.models import display_book
+
+    assert display_book("espnbet") == "TheScoreBet"
+    assert display_book("hardrockbet") == "Hard Rock Bet"
+    assert display_book("fanatics") == "Fanatics"
