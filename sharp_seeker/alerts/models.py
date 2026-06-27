@@ -22,6 +22,7 @@ _BOOK_DISPLAY: dict[str, str] = {
     "betmgm": "BetMGM",
     "fanatics": "Fanatics",
     "hardrockbet": "Hard Rock Bet",
+    "espnbet": "TheScoreBet",  # Penn rebranded ESPN Bet → theScore; API key stays "espnbet"
 }
 
 

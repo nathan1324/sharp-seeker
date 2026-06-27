@@ -23,6 +23,7 @@ class Settings(BaseSettings):
             "betrivers",
             "fanatics",
             "hardrockbet",
+            "espnbet",
         ]
     )
 
