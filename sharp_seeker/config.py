@@ -21,6 +21,7 @@ class Settings(BaseSettings):
             "pinnacle",
             "williamhill_us",
             "betrivers",
+            "fanatics",
         ]
     )
 

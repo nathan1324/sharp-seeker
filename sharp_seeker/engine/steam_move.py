@@ -18,7 +18,7 @@ from sharp_seeker.engine.hold import (
 
 log = structlog.get_logger()
 
-US_BOOKS = {"draftkings", "fanduel", "betmgm", "williamhill_us", "betrivers"}
+US_BOOKS = {"draftkings", "fanduel", "betmgm", "williamhill_us", "betrivers", "fanatics"}
 
 
 class SteamMoveDetector(BaseDetector):
