@@ -639,3 +639,56 @@ async def test_hold_works_for_h2h(settings, repo):
     assert len(signals) == 1
     assert signals[0].details["us_hold"] is not None
     assert signals[0].details["pinnacle_hold"] is not None
+
+
+# ── MLB 9.0-9.5 line × negative-hold suppression ──────────────────
+
+
+@pytest.mark.asyncio
+async def test_mlb_totals_9_9_5_neg_hold_suppressed(settings, repo):
+    """MLB totals on the 9.0-9.5 line at NEGATIVE cross-book hold are dropped.
+
+    This is the lone losing cell in the line×hold cross-tab (49% WR, -9.85u).
+    """
+    event = "evt_mlb_9_neg"
+    t = "2025-01-15T12:00:00+00:00"
+
+    # DK Over 9.0 vs Pinnacle Over 9.5 → 0.5 delta, us_val 9.0 (in band).
+    # +105 both sides → cross-book hold ≈ -0.024 (negative).
+    snapshots = [
+        _snap(event, "pinnacle", "totals", "Over", 105, 9.5, t, sport_key="baseball_mlb"),
+        _snap(event, "pinnacle", "totals", "Under", 105, 9.5, t, sport_key="baseball_mlb"),
+        _snap(event, "draftkings", "totals", "Over", 105, 9.0, t, sport_key="baseball_mlb"),
+        _snap(event, "draftkings", "totals", "Under", 105, 9.0, t, sport_key="baseball_mlb"),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    settings.pd_sport_totals_overrides = {"baseball_mlb": 0.5}
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert signals == []
+
+
+@pytest.mark.asyncio
+async def test_mlb_totals_neg_hold_other_line_still_fires(settings, repo):
+    """The suppression is scoped to 9.0-9.5 — an 8.0 line at neg hold still fires."""
+    event = "evt_mlb_8_neg"
+    t = "2025-01-15T12:00:00+00:00"
+
+    # Same negative-hold setup, but on the 8.0/8.5 line (out of the dead band).
+    snapshots = [
+        _snap(event, "pinnacle", "totals", "Over", 105, 8.5, t, sport_key="baseball_mlb"),
+        _snap(event, "pinnacle", "totals", "Under", 105, 8.5, t, sport_key="baseball_mlb"),
+        _snap(event, "draftkings", "totals", "Over", 105, 8.0, t, sport_key="baseball_mlb"),
+        _snap(event, "draftkings", "totals", "Under", 105, 8.0, t, sport_key="baseball_mlb"),
+    ]
+    await repo.insert_snapshots(snapshots)
+
+    settings.pd_sport_totals_overrides = {"baseball_mlb": 0.5}
+    detector = PinnacleDivergenceDetector(settings, repo)
+    signals = await detector.detect(event, t)
+
+    assert len(signals) == 1
+    assert signals[0].details["us_value"] == 8.0
+    assert signals[0].details["cross_book_hold"] < 0
