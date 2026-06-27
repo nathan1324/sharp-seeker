@@ -268,6 +268,26 @@ class PinnacleDivergenceDetector(BaseDetector):
                 ):
                     continue
 
+                # Suppress MLB totals on the 9.0-9.5 line at NEGATIVE cross-book
+                # hold. Data (2026-06-27; full season + last 60d, sent-only,
+                # line x hold cross-tab): this is the ONE losing cell in the
+                # entire MLB PD-totals grid — 74 plays, 49% WR, -9.85u — while
+                # every other line/hold cell is positive. 9.0/9.5 are MLB's
+                # modal, most-liquid, sharpest-priced totals; a divergence there
+                # into a TIGHT (negative cross-book) market is least likely to be
+                # real edge. Kept deliberately narrow: 9.0-9.5 at 2%+ hold (n=11,
+                # +1.35u) is left alone — too thin to judge and not bleeding. The
+                # band is 8.5 < line <= 9.5, matching the analysis bucket (only
+                # 9.0/9.5 occur on MLB's half-run grid).
+                if (
+                    market_key == "totals"
+                    and meta[0] == "baseball_mlb"
+                    and cross_hold is not None
+                    and cross_hold < 0
+                    and 8.5 < us_val <= 9.5
+                ):
+                    continue
+
                 # Price dispersion: how spread out are US books on this side?
                 # High dispersion = value book is a real outlier = better signal.
                 # Low dispersion = books agree = less reliable.
